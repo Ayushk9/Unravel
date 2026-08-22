@@ -10,6 +10,25 @@
   --color-stamp: #1f5e4a;
   --color-flag: #ae3a2c;
 
+  /* Semantic state accents — the two additions DESIGN.md deferred to Phase 1.
+     Four states, one system: positive (stamp), caution, negative (flag),
+     neutral/informational. Every primitive pairs these with an icon and a
+     text label — never colour alone. Contrast verified >= 4.5:1 against both
+     --color-paper and the --card surface (#f5f6f2). */
+  --color-caution: #7a5c18;
+  --color-neutral: #2b5470;
+
+  /* Soft tint/border pairs for filled badges, bands, and cards — a stamped
+     tint on paper, not a saturated fintech pill. */
+  --color-positive-bg: color-mix(in srgb, var(--color-stamp) 12%, var(--color-paper));
+  --color-positive-border: color-mix(in srgb, var(--color-stamp) 45%, var(--color-paper));
+  --color-caution-bg: color-mix(in srgb, var(--color-caution) 14%, var(--color-paper));
+  --color-caution-border: color-mix(in srgb, var(--color-caution) 50%, var(--color-paper));
+  --color-negative-bg: color-mix(in srgb, var(--color-flag) 12%, var(--color-paper));
+  --color-negative-border: color-mix(in srgb, var(--color-flag) 45%, var(--color-paper));
+  --color-neutral-bg: color-mix(in srgb, var(--color-neutral) 12%, var(--color-paper));
+  --color-neutral-border: color-mix(in srgb, var(--color-neutral) 45%, var(--color-paper));
+
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "IBM Plex Serif", ui-serif, Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;

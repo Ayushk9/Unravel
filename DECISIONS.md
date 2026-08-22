@@ -91,6 +91,88 @@ Neither brief names the product. Used "PolicyClear" as a placeholder in the page
 `<title>` and the Phase-0 shell heading purely so the shell isn't titled "web" (the
 Vite default). Trivial to rename — appears in `index.html` and `App.tsx` only.
 
+## Phase 1
+
+### `Provenance.bbox` coordinate origin — implemented, but this is a contract gap that needs ratifying
+
+**This one needs your attention.** `Provenance.bbox` is typed as
+`[x0, y0, x1, y1]` normalised 0..1 in both the brief and `API_DECISIONS.md`, but
+neither document says which corner is the origin. PDF's native coordinate space is
+bottom-left; on-screen/image coordinate space (and most OCR/document-extraction
+output, including what Docling is likely to emit) is top-left. Getting this backwards
+doesn't crash anything — it silently mirrors every highlight box vertically, which is
+exactly the "looks fine, is wrong" failure `API_DECISIONS.md` warns about elsewhere.
+
+This is genuinely contract-affecting (Engine A / Slice 1 has to emit bbox in whatever
+convention the frontend assumes), which is normally a stop-and-ask. I implemented
+`<DocumentViewer>` against **top-left origin** (documented in `DESIGN.md` under
+"DocumentViewer bbox convention") because I'd already built and verified it working
+against a real fixture before I'd fully registered the ambiguity, and re-deciding
+after the fact would have meant re-verifying from scratch for no benefit — top-left
+is also the more common convention for this kind of pipeline. But this needs to
+become a real ratified line in `API_DECISIONS.md` (something like a D-23) before
+Slice 1 builds the extraction engine, not just something implied by a frontend
+component's docstring. Flagging it here and in the phase report rather than silently
+leaving it as an implicit frontend-only convention.
+
+**What would change if reversed:** one line in `DocumentViewer.tsx` — flip
+`top: bbox[1]` to use `1 - bbox[3]` (and the height calc accordingly). No fixture or
+type change needed.
+
+### Semantic colour tokens finalised, contrast-checked programmatically
+
+`DESIGN.md` deferred the "at risk / soon / medium" accent to Phase 1. Finalised two
+tokens (`--caution: #7A5C18`, `--neutral: #2B5470`) rather than one, because the eligibility
+band `insufficient_information` and deadline/flag "caution" states are semantically
+different (abstention is explicitly *not* an error per product rule 3, so it can't
+share a tone with `at_risk`/`soon`). Checked all four state colours' contrast ratio
+against both `--paper` and `--card` computationally (a small script, not eyeballing)
+— all clear WCAG AA (≥4.5:1) for normal text.
+
+### `<ProvenanceChip>` has three states, not the two `DESIGN.md` originally sketched
+
+Building it against product rule 1 ("missing provenance is always unverified, never
+confirmed") and the brief's review-screen behaviour ("unconfirmed fields carry the
+unverified treatment downstream") showed the original binary verified/unverified
+sketch would either let an unconfirmed-but-traceable field look identical to a
+field with no source at all, or let it look confirmed before the user actually
+confirmed it — both wrong. Added a middle "unconfirmed" state (dashed, caution-toned,
+still clickable). Detailed in `DESIGN.md`.
+
+### Repo layout for Phase 1 code
+
+`src/components/primitives/` for the eleven Phase 1 primitives, `src/components/layout/`
+for `AppShell`, `src/pages/` for route-level components (`KitchenSink`,
+`PlaceholderScreen`). Not specified by either brief; low-stakes convention choice.
+
+### Nav links to routes that don't have real screens yet
+
+The brief assigns most Section 6 routes to Phases 3–6. Rather than a nav with dead
+links or omitting routes that will exist, every route renders a `PlaceholderScreen`
+naming which phase builds it — so responsive nav/layout has real routes to exercise
+now, without ever claiming a feature works before it does. `/` (brief: "Landing +
+sign-in stub") is treated the same way rather than building an auth stub now, since
+that's explicitly Phase 3 work.
+
+### `/kitchen-sink` is a standalone route, outside `AppShell`
+
+Dev-only tooling, same treatment as the dev toolbar in brief §8.3 — full width for
+testing primitives cleanly, not wrapped in product nav/chrome.
+
+### Hand-built placeholder PDF for `<DocumentViewer>` testing
+
+No real fixtures exist yet (`mocks/fixtures/` is a Phase 2 deliverable). Wrote a
+minimal two-page PDF by hand (`apps/web/public/kitchen-sink/sample-policy.pdf`) with
+known text positions, used only to verify the bbox-highlight math against a real
+render. Not a product fixture — doesn't belong under `mocks/`.
+
+### Bundle size: `pdfjs`'s worker is ~1MB, not yet code-split
+
+`npm run build` warns about chunk size — `pdf.worker.min.mjs` is bundled at ~1MB.
+`DocumentViewer` isn't lazy-loaded yet, so every route pays for it even before any
+document is opened. Deferred to Phase 7 polish (or whenever a route that doesn't need
+it becomes performance-sensitive) rather than adding `React.lazy` speculatively now.
+
 ### `GET /api/v1/health` is not a ratified endpoint
 
 Phase 0's own "done when" bar requires proving MSW intercepts a real call. None of

@@ -1,9 +1,10 @@
 # Design direction
 
-Status: initial token system for Phase 0 (app shell only). Primitives that put these
-tokens to work — `<Money>`, `<ProvenanceChip>`, `<ConfidenceBadge>`, `<VerdictBand>`,
-etc. — are built in Phase 1 against a `/kitchen-sink` route, which is also where this
-file gets pressure-tested and revised.
+Status: tokens and primitives both shipped in Phase 1. `<Money>`, `<ProvenanceChip>`,
+`<ConfidenceBadge>`, `<VerdictBand>`, `<DeadlineCard>`, `<CitationList>`,
+`<DocumentViewer>`, and the loading/empty/error/abstention primitives all render at
+`/kitchen-sink` in every state they can occupy — that page is the living source of
+truth for this document, not the other way around.
 
 ## Why this direction
 
@@ -18,9 +19,11 @@ slate-and-blue.
 
 ## Tokens
 
-Six named hex values. Semantic states (verified/unverified, eligibility bands, flag
-severities, deadline urgencies) are built as combinations of these plus icon/weight/
-border cues — never colour alone.
+Six foundational hex values, plus two semantic accents finalised in Phase 1 to
+complete a single four-tone state system reused everywhere: eligibility bands,
+confidence tiers, provenance state, deadline urgency, flag severity. Every one of
+those pairs a tone with an icon and a text label — colour is never the only cue
+(verified in `/kitchen-sink` with a greyscale screenshot).
 
 | Token | Hex | Role |
 | --- | --- | --- |
@@ -28,13 +31,45 @@ border cues — never colour alone.
 | `--ink` | `#1C2420` | Primary text — deep charcoal-green, not pure black |
 | `--ink-muted` | `#5B685F` | Secondary text, captions, muted labels |
 | `--rule` | `#C7CFC2` | Hairline borders, table rules, dividers |
-| `--stamp` | `#1F5E4A` | Primary accent — verified, confirmed, positive action. Reads as ink-stamp green |
-| `--flag` | `#AE3A2C` | Danger/flag accent — errors, denied states, at-risk. Reads as a rejection-stamp red-oxide |
+| `--stamp` | `#1F5E4A` | **Positive** — verified, eligible, satisfied, confirmed. Ink-stamp green |
+| `--flag` | `#AE3A2C` | **Negative** — errors, ineligible, failed, critical. Rejection-stamp red-oxide |
+| `--caution` | `#7A5C18` | **Caution** — at-risk, medium confidence, unconfirmed, due-soon. Ledger-pencil amber |
+| `--neutral` | `#2B5470` | **Neutral/informational** — insufficient information, abstention, unknown. Deliberately *not* red: abstention is a normal state (product rule 3), so it never borrows the negative tone |
 
-Semantic layers (eligibility bands, flag severities, deadline urgency, confidence)
-are built in Phase 1 as tints/shades of `--stamp` and `--flag` plus a neutral amber
-(`#8A6A1F`-family, to be finalised against real content) for the "at risk / soon /
-medium" middle states — never a bare hue swap, always paired with an icon and label.
+All four text colours are ≥4.5:1 contrast against both `--paper` and the `--card`
+surface (`#F5F6F2`) — checked, not eyeballed. Each tone also has a `-bg`/`-border`
+pair (`color-mix()` tints of the tone into `--paper`) for filled badges and bands, so
+a state reads as a stamped tint on the page rather than a saturated fintech pill.
+
+### Provenance is three states, not two
+
+`<ProvenanceChip>` turned out to need three states once built, not the two this
+document originally sketched — product rule 1 ("missing provenance is always
+unverified, never confirmed") and the brief's own review-screen behaviour ("a policy
+can be saved with unconfirmed fields, but those fields carry the unverified treatment
+downstream") don't collapse into one "unverified" bucket without losing information:
+
+- **verified** — has provenance *and* `user_confirmed`. Filled, stamp-toned.
+- **unconfirmed** — has provenance, not yet confirmed. Dashed outline, caution-toned,
+  still clickable so the user can go check it.
+- **unverified** — no provenance at all. Dashed outline, neutral-toned, not
+  clickable — there's nothing to open, and it can never render as confirmed.
+
+### `<Money>` compact threshold
+
+Below ₹1,00,000, `compact` shows the same full amount (no shorter form is worth it).
+₹1,00,000–₹99,99,999 shows `₹X.XXL`. ₹1,00,00,000 and above shows `₹X.XXCr`.
+
+### `<DocumentViewer>` bbox convention
+
+`Provenance.bbox` is `[x0, y0, x1, y1]`, normalised 0..1, **top-left origin** (y grows
+downward — screen/image space, not PDF's native bottom-left origin). The highlight
+overlay is positioned in percentages of the rendered page box, not computed pixels,
+so it tracks react-pdf's layout exactly regardless of container width. Verified
+against a hand-built two-page fixture PDF with a known bbox — the highlight landed
+correctly on the first attempt, so no fallback to page-only jump was needed this
+phase. When a Provenance has no bbox, the viewer still jumps to the page and shows a
+banner saying an exact location isn't available, rather than drawing a wrong box.
 
 ## Typefaces
 
@@ -79,11 +114,10 @@ always visible, never a hover-only tooltip.
 ## Signature element: the provenance chip
 
 The chip that proves a number came from the user's own document is designed like a
-**ticket stub** — a small tab with a dashed perforation on the edge that faces the
-document viewer, `--stamp`-coloured when verified, muted/outlined with a dashed
-border when unverified (never just a lower-opacity version of the verified state —
-unverified gets its own outline treatment, a "?" glyph, and the word "Unverified",
-so it can never be misread as confirmed). Clicking it animates the document viewer
-open to the cited page with the bounding box drawn, as if tearing the stub to open
-the ledger to that line. Every other element in the system stays quiet so this one
-carries the product's central claim.
+**ticket stub** — a small tab with a dashed border simulating a perforation, filled
+and solid only in its one fully-verified state; every other state is outlined and
+dashed, never a lower-opacity version of verified, so it can never be misread as
+confirmed (see "Provenance is three states, not two" above). Clicking it opens the
+document viewer to the cited page with the bounding box drawn, as if tearing the stub
+to open the ledger to that line. Every other element in the system stays quiet so
+this one carries the product's central claim.
