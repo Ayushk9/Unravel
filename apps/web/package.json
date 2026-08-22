@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "generate:types": "echo 'no backend OpenAPI schema yet — see docs/API_DECISIONS.md D-21' && exit 0"
   },
   "dependencies": {
@@ -35,7 +35,8 @@
     "msw": "^2.15.0",
     "oxlint": "^1.75.0",
     "typescript": "~6.0.2",
-    "vite": "^8.2.0"
+    "vite": "^8.2.0",
+    "vitest": "^4.1.11"
   },
   "msw": {
     "workerDirectory": [
