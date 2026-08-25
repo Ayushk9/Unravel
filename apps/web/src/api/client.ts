@@ -9,6 +9,7 @@
  * and error shape, D-09 bearer auth header on every request, D-10 no
  * household id is ever sent as a parameter.
  */
+import type { z } from "zod";
 import type { ApiErrorBody } from "./types";
 
 export const apiMode = import.meta.env.VITE_API_MODE ?? "mock";
@@ -38,27 +39,30 @@ export class ApiError extends Error {
   }
 }
 
-export interface RequestOptions {
+export interface RequestOptions<T> {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
   headers?: Record<string, string>;
   idempotencyKey?: string;
   signal?: AbortSignal;
+  /** Parses the response body at the client boundary (D-06's enum .catch() lives here). Omit only for endpoints that don't return a body (204s). */
+  schema?: z.ZodType<T>;
 }
 
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, headers, idempotencyKey, signal } = options;
+export async function apiFetch<T = unknown>(path: string, options: RequestOptions<T> = {}): Promise<T> {
+  const { method = "GET", body, headers, idempotencyKey, signal, schema } = options;
+  const isFormData = body instanceof FormData;
 
   const response = await fetch(`${VERSIONED_BASE}${path}`, {
     method,
     signal,
     headers: {
       Authorization: `Bearer ${STUB_TOKEN}`,
-      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(body && !isFormData ? { "Content-Type": "application/json" } : {}),
       ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       ...headers,
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
   });
 
   if (response.status === 204) {
@@ -71,5 +75,5 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     throw new ApiError(response.status, json as ApiErrorBody);
   }
 
-  return json as T;
+  return schema ? schema.parse(json) : (json as T);
 }

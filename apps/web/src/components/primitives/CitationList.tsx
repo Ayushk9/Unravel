@@ -1,16 +1,18 @@
-import { BookOpen, ExternalLink, FileText, Scale } from "lucide-react";
+import { BookOpen, ExternalLink, FileQuestion, FileText, Scale } from "lucide-react";
 import type { Citation } from "@/api/types";
 
 const kindIcon: Record<Citation["kind"], typeof FileText> = {
   policy_clause: FileText,
   regulation: BookOpen,
   ombudsman_award: Scale,
+  other: FileQuestion,
 };
 
 const kindLabel: Record<Citation["kind"], string> = {
   policy_clause: "Your policy",
   regulation: "Regulation",
   ombudsman_award: "Ombudsman award",
+  other: "Source",
 };
 
 export interface CitationListProps {

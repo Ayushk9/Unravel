@@ -181,3 +181,129 @@ Phase 2 alongside fixtures and `CONTRACTS.md`), so a minimal `/health` handler w
 added purely as an infra smoke test — it asserts the auth header is present (D-09)
 and returns `{ "status": "ok" }`. Not part of any feature slice; can be dropped or
 kept as a real backend health-check once Slice 1 exists.
+
+---
+
+## Phase 2
+
+### `npm run typecheck` was silently checking zero files since Phase 0 — fixed
+
+**This one matters more than anything else in this section.** The root
+`tsconfig.json` has `"files": []` and no `"include"` (by design — it's a
+references-only solution file for `tsc -b`). The `typecheck` script was
+`"tsc --noEmit"`, invoked *without* `-b`. Without `-b`, TypeScript ignores
+`"references"` entirely and uses only `"files"` as the root set — which is empty —
+so the command type-checked nothing at all and exited 0 unconditionally. Verified
+by injecting `const x: string = 123;` into `main.tsx` and running the script: exit
+code 0, no error. This means every "typecheck: clean" claim in the Phase 0 and
+Phase 1 reports was true only in the sense that an empty check can't fail — it
+never actually verified anything.
+
+It was masked because `npm run build` (`tsc -b && vite build`) *does* correctly
+type-check everything, and Phase 0/1's actual code happened to be clean under that
+too — so nothing user-visible broke. It surfaced now because `tsc -b` (via `build`)
+caught three real errors this phase (`mocks/db.ts`, `mocks/handlers/claims.ts`,
+`mocks/handlers/documents.ts` — a possibly-undefined index access and two
+`unknown`-typed idempotency-replay bodies passed to `HttpResponse.json`) that
+`npm run typecheck` had been silently missing.
+
+Fixed by changing the script to `"tsc -b --force"` — `--force` so a stale
+`.tsbuildinfo` cache can never mask a re-introduced error, matching the reliability
+`npm run typecheck` is supposed to guarantee as a standalone command. Re-verified
+with the same injected-error test: now correctly fails with `TS2322`.
+
+**What would change if reversed:** none — this is a straight bug fix, not a
+judgment call with a reasonable alternative.
+
+Full list of ambiguous/underspecified `API_DECISIONS.md` findings is in
+`CONTRACTS.md` §4 — that's the version meant for the backend team to review. This
+section covers the frontend-internal decisions that don't need their sign-off.
+
+### D-06 enum escape hatches were incomplete from Phase 0/1 — corrected
+
+Phase 0/1 copied every enum straight from the brief's §5 code block, which itself
+only gives a handful of enums an `"unknown"`/`"other"` member (`DocumentType`,
+`SubLimit.category`, `CheckStatus`). D-06 requires *every* string enum to have one.
+Went through `packages/contracts-ts/src/types.ts` and added the missing ones,
+choosing `"unknown"` for status/lifecycle-ish enums (`Confidence`,
+`StoredDocument.parse_status`, `ClaimState`, `ClaimEvent.source`,
+`Deadline.urgency`, `ValidationFlag.severity`, `OmbudsmanAward.outcome`,
+`Alert.severity`, `Job.status`) and `"other"` for classification enums
+(`SubLimit.cap_basis`, `WaitingPeriod.kind`, `Policy.policy_type`,
+`ValidationFlag.rule`, `Claim.claim_type`, `Claim.admission_type`, `Citation.kind`,
+`GrievanceDraft.rung`, `Alert.kind`). Deliberately did **not** add one to
+`EligibilityAssessment.band` — its `insufficient_information` member already is
+this enum's "we don't know" state, and a second near-synonymous value would confuse
+rather than protect. Every Phase 1 primitive with an exhaustive `Record<Enum, X>`
+map (`ConfidenceBadge`, `DeadlineCard`, `CitationList`) was updated to handle the
+new members — TypeScript's exhaustiveness check on `Record` caught every spot that
+needed it.
+
+**What would change if reversed:** narrowing an enum back down is a type-only
+change plus deleting the now-unreachable `Record` branches; no fixture or handler
+logic depends on the escape-hatch members existing.
+
+### `StoredDocument.claim_id` added — flagged as a real contract gap, not just logged
+
+Covered in `CONTRACTS.md` §4.2 in detail since it needs the backend team's
+attention, not just a frontend note. Summary: without it, nothing links a document
+to the claim it was uploaded for, which both Feature 4 (completeness) and the claim
+workspace's Documents tab need. Additive, nullable, non-breaking to existing
+consumers — but it does touch the `document` table, which `API_DECISIONS.md` §7
+calls frozen outside a PR to that document.
+
+### Fictional insurer and hospital names, not real ones
+
+`mocks/fixtures/insurers.ts` uses ten invented names (Suraksha, Kavach, Nirvaan,
+etc.) rather than real Indian insurers. The benchmarking feature attaches fabricated
+performance figures (`claim_settlement_ratio`, `complaints_per_10k_policies`, ...)
+to whatever name sits in that fixture — doing that under a real, identifiable
+company's name would misrepresent real regulator data even inside a mock, which is
+exactly the dishonesty this project's own product-integrity rules exist to prevent.
+Same reasoning for the six `OmbudsmanAward` fixtures: fully invented case
+references and summaries, and `external_url` is `null` on every one deliberately —
+pairing fabricated case data with a link to a real regulator domain would imply a
+verifiability the mock data doesn't have.
+
+### Deadlines and eligibility are computed live, not hand-typed fixture fields
+
+Both `Claim.deadlines` and the eligibility assessment are computed at request time
+from the claim's actual event log / the policy's actual `coverage_profile`
+(`mocks/deadlines.ts`, `mocks/eligibility.ts`) rather than stored as static fixture
+values. This is what the fixture-integrity requirement ("date arithmetic that
+computes correctly," "the event log dates actually produce the deadlines returned")
+demands by construction — hand-typing both the source data and its derived values
+separately is exactly how they'd eventually drift apart. The trade-off: dates that
+read as "active"/"11 days away" today will naturally become stale or expired if
+this is graded months from now. That's correct behaviour, not a bug — the deadline
+math is still honest about whatever the current date actually is.
+
+### Date arithmetic avoids `Date`-based month/timezone math
+
+`mocks/dateMath.ts` deliberately avoids `date-fns`' local-timezone-sensitive
+`addMonths`/`differenceInCalendarMonths` for the waiting-period and deadline
+calculations, in favour of plain ISO-date string comparison (correct and
+timezone-proof for zero-padded `YYYY-MM-DD` strings) for anything pass/fail, and
+manual UTC-safe helpers for IST-offset `ISODateTime` arithmetic. This is precisely
+the bug class D-12 warns about ("mixing naive and aware datetimes... produces
+off-by-one-day errors on exactly the deadlines that matter most") — worth the extra
+care given how central date correctness is to this project's fixture-integrity bar.
+
+### Dev toolbar's scenario state lives in `src/dev/`, not `mocks/`
+
+CLAUDE.md: "Components never import from `mocks/`." The dev toolbar's entire job is
+controlling mock scenario state, which is a real tension with that rule. Resolved
+by splitting the state: `src/dev/scenarios.ts` holds the pure scenario state (no
+MSW, no `Response` objects, zero `mocks/` imports) and is what `DevToolbar.tsx`
+imports; `mocks/scenarios.ts` imports *from* `src/dev/scenarios.ts` and adds the
+actual delayed/forced-`Response` mock-effect logic on top, which is what
+`mocks/handlers/*.ts` import. The dependency only ever runs `mocks/ -> src/dev/`,
+never the reverse — so the letter of the rule holds, and the toolbar still works.
+
+### Field-path correction addresses `sub_limits`/`waiting_periods` by label, not index
+
+`API_DECISIONS.md` D-15's own examples (`sub_limits.room_rent.cap_amount`,
+`waiting_periods.pre_existing.months`) address array entries by `category`/`kind`,
+not position. `db.ts`'s `patchCoverageField` matches on that basis. Worth noting
+because it's easy to misread the dotted-path convention as an array index at a
+glance.
