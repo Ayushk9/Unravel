@@ -2,6 +2,11 @@ import { createBrowserRouter } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { PlaceholderScreen } from "@/pages/PlaceholderScreen";
 import { KitchenSink } from "@/pages/KitchenSink";
+import { Dashboard } from "@/pages/Dashboard";
+import { PolicyList } from "@/pages/PolicyList";
+import { PolicyUpload } from "@/pages/PolicyUpload";
+import { PolicyDetail } from "@/pages/PolicyDetail";
+import { PolicyAsk } from "@/pages/PolicyAsk";
 
 /**
  * Route table from docs/claude-code-frontend-prompt.md §6. Screens not built
@@ -13,12 +18,12 @@ export const router = createBrowserRouter([
     path: "/",
     element: <AppShell />,
     children: [
-      { index: true, element: <PlaceholderScreen title="Sign in" phase="Phase 3" /> },
-      { path: "dashboard", element: <PlaceholderScreen title="Household dashboard" phase="Phase 3" /> },
-      { path: "policies", element: <PlaceholderScreen title="Policy list" phase="Phase 3" /> },
-      { path: "policies/upload", element: <PlaceholderScreen title="Upload a policy" phase="Phase 3" /> },
-      { path: "policies/:id", element: <PlaceholderScreen title="Policy detail" phase="Phase 3" /> },
-      { path: "policies/:id/ask", element: <PlaceholderScreen title="Ask about your policy" phase="Phase 3" /> },
+      { index: true, element: <PlaceholderScreen title="Sign in" phase="a later phase" /> },
+      { path: "dashboard", element: <Dashboard /> },
+      { path: "policies", element: <PolicyList /> },
+      { path: "policies/upload", element: <PolicyUpload /> },
+      { path: "policies/:id", element: <PolicyDetail /> },
+      { path: "policies/:id/ask", element: <PolicyAsk /> },
       { path: "claims", element: <PlaceholderScreen title="Claims" phase="Phase 4" /> },
       { path: "claims/new", element: <PlaceholderScreen title="File a claim" phase="Phase 4" /> },
       { path: "claims/:id", element: <PlaceholderScreen title="Claim workspace" phase="Phase 4" /> },

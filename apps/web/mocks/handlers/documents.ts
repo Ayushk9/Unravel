@@ -8,6 +8,55 @@ import { applyGlobalScenarios } from "../scenarios";
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/heic", "image/webp"];
 
+/**
+ * Runs once the parse_document job's simulated delay has elapsed. Registered
+ * here (not passed as a closure to db.createJob) so the job record stays
+ * plain, serializable data — required for it to survive a page refresh via
+ * sessionStorage. Finalizes the document (parse_status -> parsed) and, for
+ * policy-type uploads, creates the linked Policy — exactly once, since
+ * db.getJob() only invokes this the first time a job is observed as elapsed
+ * and caches the result from then on.
+ */
+db.registerJobResolver("parse_document", (params): ParseDocumentResult => {
+  const { documentId, claimId } = params as { documentId: string; claimId: string | null };
+  const looksLikePolicy = !claimId; // policy uploads happen outside a claim; claim uploads are bills/discharge summaries/etc.
+  const detectedType = looksLikePolicy ? "policy_schedule" : "itemised_bill";
+
+  db.updateDocument(documentId, {
+    page_count: looksLikePolicy ? 4 : 2,
+    detected_type: {
+      value: detectedType,
+      confidence: "high",
+      provenance: { document_id: documentId, page: 1, bbox: null, snippet: null },
+      user_confirmed: false,
+    },
+    parse_status: "parsed",
+  });
+
+  let policyId: string | null = null;
+  if (looksLikePolicy) {
+    // Reuse the retail policy's extraction shape (including its
+    // deliberately low-confidence room-rent cap — see brief §6.1's
+    // upload-review scenario) so the review screen has something
+    // realistic to demonstrate, regardless of what was actually
+    // uploaded in the mock.
+    const template = policyById(retailPolicy.id);
+    if (template?.coverage_profile) {
+      policyId = genId("policy");
+      const newPolicy: Policy = {
+        ...structuredClone(template),
+        id: policyId,
+        policy_number: `NEW/${genId("pol").toUpperCase()}`,
+        source_document_id: documentId,
+      };
+      if (newPolicy.coverage_profile) newPolicy.coverage_profile.policy_id = policyId;
+      db.addPolicy(newPolicy);
+    }
+  }
+
+  return { document_id: documentId, policy_id: policyId };
+});
+
 export const documentsHandlers = [
   http.post("*/api/v1/documents", async ({ request }) => {
     const authError = requireAuth(request);
@@ -50,52 +99,25 @@ export const documentsHandlers = [
       });
     }
 
+    // Created immediately, not after the job resolves — parse_status carries
+    // the progress instead, so the upload screen can show file name and (an
+    // estimated) page count throughout "Parsing", and GET /documents/{id}
+    // works right away rather than 404ing until the job finishes.
     const documentId = genId("doc");
-    const job = db.createJob("parse_document", [4000, 8000], (): ParseDocumentResult => {
-      const looksLikePolicy = !claimId; // policy uploads happen outside a claim; claim uploads are bills/discharge summaries/etc.
-      const detectedType = looksLikePolicy ? "policy_schedule" : "itemised_bill";
-
-      db.addDocument({
-        id: documentId,
-        file_name: file.name,
-        mime_type: file.type,
-        page_count: looksLikePolicy ? 4 : 2,
-        uploaded_at: new Date().toISOString(),
-        claim_id: claimId,
-        detected_type: {
-          value: detectedType,
-          confidence: "high",
-          provenance: { document_id: documentId, page: 1, bbox: null, snippet: null },
-          user_confirmed: false,
-        },
-        parse_status: "parsed",
-        parse_error: null,
-        deleted_at: null,
-      });
-
-      let policyId: string | null = null;
-      if (looksLikePolicy) {
-        // Reuse the retail policy's extraction shape (including its
-        // deliberately low-confidence room-rent cap — see brief §6.1's
-        // upload-review scenario) so the review screen has something
-        // realistic to demonstrate, regardless of what was actually
-        // uploaded in the mock.
-        const template = policyById(retailPolicy.id);
-        if (template?.coverage_profile) {
-          policyId = genId("policy");
-          const newPolicy: Policy = {
-            ...structuredClone(template),
-            id: policyId,
-            policy_number: `NEW/${genId("pol").toUpperCase()}`,
-            source_document_id: documentId,
-          };
-          if (newPolicy.coverage_profile) newPolicy.coverage_profile.policy_id = policyId;
-          db.addPolicy(newPolicy);
-        }
-      }
-
-      return { document_id: documentId, policy_id: policyId };
+    db.addDocument({
+      id: documentId,
+      file_name: file.name,
+      mime_type: file.type,
+      page_count: claimId ? 2 : 4,
+      uploaded_at: new Date().toISOString(),
+      claim_id: claimId,
+      detected_type: { value: null, confidence: "unknown", provenance: null, user_confirmed: false },
+      parse_status: "queued",
+      parse_error: null,
+      deleted_at: null,
     });
+
+    const job = db.createJob("parse_document", [4000, 8000], { documentId, claimId });
 
     const body: JobAccepted = { job_id: job.job_id, kind: job.kind, status: "queued" };
     db.storeIdempotentResponse(idempotencyKey, 202, body);

@@ -26,7 +26,7 @@ export function AppShell() {
       <header className="border-b border-rule bg-card">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <NavLink to="/" className="font-serif text-lg font-semibold text-foreground">
-            PolicyClear
+            Unravel
           </NavLink>
 
           <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">

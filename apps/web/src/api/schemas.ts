@@ -4,4 +4,4 @@
  * parse every response at the client boundary — see D-06 in
  * docs/API_DECISIONS.md for why enums parse through `.catch(...)` there.
  */
-export * from "@internal/contracts-ts";
+export * from "@unravel/contracts-ts";

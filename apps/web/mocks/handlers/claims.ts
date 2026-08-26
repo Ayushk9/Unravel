@@ -17,6 +17,54 @@ import { computeEligibility } from "../eligibility";
 import { errorResponse, genId, notFound, plainReadDelay, requireAuth } from "../utils";
 import { applyGlobalScenarios, getScenarios } from "../scenarios";
 
+/** Registered once at module load — see documents.ts's parse_document resolver for why this can't be a closure passed to db.createJob. */
+db.registerJobResolver("generate_grievance_draft", (params): GrievanceDraft => {
+  const { claimId, rung } = params as { claimId: string; rung: GrievanceDraft["rung"] };
+  const claim = db.getClaim(claimId);
+  const policy = claim ? db.getPolicy(claim.policy_id) : undefined;
+  const eligibility = claim && policy ? computeEligibility(claim, policy) : null;
+  const pedCheck = eligibility?.checks.find((c) => c.id === "ped_waiting_period");
+
+  return {
+    id: genId("grievance"),
+    claim_id: claimId,
+    rung,
+    subject: `Grievance regarding denial of claim at ${claim?.hospital_name ?? "the hospital"}`,
+    paragraphs: [
+      {
+        text: `I am writing regarding the denial of my claim for hospitalisation at ${claim?.hospital_name} from ${claim?.admitted_on} to ${claim?.discharged_on}.`,
+        citation_ids: [],
+        verified: true,
+      },
+      {
+        text: pedCheck
+          ? pedCheck.explanation
+          : "The denial ground cited does not, in my assessment, apply to the facts of this admission.",
+        citation_ids: pedCheck ? ["cite-policy"] : [],
+        verified: Boolean(pedCheck),
+      },
+      {
+        // Deliberately unverified — every draft should demonstrate the
+        // "flag unsupported sentences, never silently" rule (product
+        // rule 4), not just the happy path.
+        text: "Similar denials on this ground have previously been overturned by the Insurance Ombudsman.",
+        citation_ids: ["cite-award"],
+        verified: false,
+      },
+    ],
+    citations: [
+      { id: "cite-policy", kind: "policy_clause", label: policy?.product_name ?? "Policy", provenance: pedCheck?.governing_clause ?? null, external_url: null },
+      { id: "cite-award", kind: "ombudsman_award", label: "Similar PED-denial precedent", provenance: null, external_url: null },
+    ],
+    evidence_checklist: [
+      { item: "Discharge summary", satisfied: true },
+      { item: "Itemised bill", satisfied: true },
+      { item: "Denial letter", satisfied: true },
+    ],
+    citation_precision: 0.67,
+  };
+});
+
 function withComputedDeadlines(claim: Claim): Claim {
   return { ...claim, deadlines: computeDeadlines(claim) };
 }
@@ -220,54 +268,9 @@ export const claimsHandlers = [
 
     const claim = db.getClaim(params.id as string);
     if (!claim) return notFound("No claim with that id belongs to your household.");
-    const policy = db.getPolicy(claim.policy_id);
 
     const body = (await request.json()) as GrievanceDraftRequest;
-
-    const job = db.createJob("generate_grievance_draft", [20_000, 30_000], (): GrievanceDraft => {
-      const eligibility = policy ? computeEligibility(claim, policy) : null;
-      const pedCheck = eligibility?.checks.find((c) => c.id === "ped_waiting_period");
-
-      const draft: GrievanceDraft = {
-        id: genId("grievance"),
-        claim_id: claim.id,
-        rung: body.rung,
-        subject: `Grievance regarding denial of claim at ${claim.hospital_name}`,
-        paragraphs: [
-          {
-            text: `I am writing regarding the denial of my claim for hospitalisation at ${claim.hospital_name} from ${claim.admitted_on} to ${claim.discharged_on}.`,
-            citation_ids: [],
-            verified: true,
-          },
-          {
-            text: pedCheck
-              ? pedCheck.explanation
-              : "The denial ground cited does not, in my assessment, apply to the facts of this admission.",
-            citation_ids: pedCheck ? ["cite-policy"] : [],
-            verified: Boolean(pedCheck),
-          },
-          {
-            // Deliberately unverified — every draft should demonstrate the
-            // "flag unsupported sentences, never silently" rule (product
-            // rule 4), not just the happy path.
-            text: "Similar denials on this ground have previously been overturned by the Insurance Ombudsman.",
-            citation_ids: ["cite-award"],
-            verified: false,
-          },
-        ],
-        citations: [
-          { id: "cite-policy", kind: "policy_clause", label: policy?.product_name ?? "Policy", provenance: pedCheck?.governing_clause ?? null, external_url: null },
-          { id: "cite-award", kind: "ombudsman_award", label: "Similar PED-denial precedent", provenance: null, external_url: null },
-        ],
-        evidence_checklist: [
-          { item: "Discharge summary", satisfied: true },
-          { item: "Itemised bill", satisfied: true },
-          { item: "Denial letter", satisfied: true },
-        ],
-        citation_precision: 0.67,
-      };
-      return draft;
-    });
+    const job = db.createJob("generate_grievance_draft", [20_000, 30_000], { claimId: claim.id, rung: body.rung });
 
     const responseBody: JobAccepted = { job_id: job.job_id, kind: job.kind, status: "queued" };
     db.storeIdempotentResponse(idempotencyKey, 202, responseBody);

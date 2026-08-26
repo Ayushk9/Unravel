@@ -1,5 +1,5 @@
 {
-  "name": "@internal/contracts-ts",
+  "name": "@unravel/contracts-ts",
   "private": true,
   "version": "0.0.0",
   "type": "module",

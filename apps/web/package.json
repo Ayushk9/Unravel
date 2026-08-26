@@ -1,5 +1,5 @@
 {
-  "name": "web",
+  "name": "@unravel/web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -13,7 +13,7 @@
     "generate:types": "echo 'no backend OpenAPI schema yet — see docs/API_DECISIONS.md D-21' && exit 0"
   },
   "dependencies": {
-    "@internal/contracts-ts": "*",
+    "@unravel/contracts-ts": "*",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.101.4",
     "class-variance-authority": "^0.7.1",

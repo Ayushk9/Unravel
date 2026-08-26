@@ -1,17 +1,25 @@
 import { useState, type ReactNode } from "react";
-import type { Citation, Deadline, Provenance } from "@/api/types";
+import type { Alert, Citation, Deadline, Policy, Provenance, SubLimit, WaitingPeriod } from "@/api/types";
 import {
   AbstentionCard,
+  AlertCard,
   CitationList,
+  CitedProse,
   ConfidenceBadge,
   DeadlineCard,
   DocumentViewer,
   EmptyState,
   ErrorState,
+  ExtractedField,
+  FileDropzone,
+  JobProgress,
   Money,
+  PolicyCard,
   ProvenanceChip,
   Skeleton,
+  SubLimitsTable,
   VerdictBand,
+  WaitingPeriodTimeline,
 } from "@/components/primitives";
 
 const SAMPLE_PDF = "/kitchen-sink/sample-policy.pdf";
@@ -96,6 +104,105 @@ const sampleCitations: Citation[] = [
   },
 ];
 
+const sampleSubLimits: SubLimit[] = [
+  {
+    category: "room_rent",
+    label: "Room rent",
+    cap_amount: { value: 500000, confidence: "low", provenance: roomRentProvenance, user_confirmed: false },
+    cap_basis: "per_day",
+    percent_value: null,
+  },
+  {
+    category: "icu",
+    label: "ICU",
+    cap_amount: { value: 1000000, confidence: "high", provenance: roomRentProvenance, user_confirmed: true },
+    cap_basis: "per_day",
+    percent_value: null,
+  },
+];
+
+const sampleWaitingPeriodActive: WaitingPeriod = {
+  kind: "pre_existing",
+  months: { value: 48, confidence: "high", provenance: pedWaitingProvenance, user_confirmed: true },
+  applies_to: null,
+  starts_on: "2023-01-01",
+  expires_on: "2027-01-01",
+};
+
+const sampleWaitingPeriodExpired: WaitingPeriod = {
+  kind: "initial",
+  months: { value: 1, confidence: "high", provenance: pedWaitingProvenance, user_confirmed: true },
+  applies_to: null,
+  starts_on: "2026-01-01",
+  expires_on: "2026-02-01",
+};
+
+const sampleWaitingPeriodMissingDates: WaitingPeriod = {
+  kind: "maternity",
+  months: { value: 24, confidence: "medium", provenance: null, user_confirmed: false },
+  applies_to: null,
+  starts_on: null,
+  expires_on: null,
+};
+
+const samplePolicy: Policy = {
+  id: "policy-sample",
+  insurer: { id: "insurer-sample", name: "Kavach General Insurance", irdai_code: null },
+  policy_number: "KHA/RTL/2026/004521",
+  product_name: "Kavach Health Secure — Individual",
+  policy_type: "individual",
+  start_date: "2026-01-01",
+  end_date: "2027-01-01",
+  members: [],
+  coverage_profile: {
+    policy_id: "policy-sample",
+    sum_insured: { value: 100000000, confidence: "high", provenance: roomRentProvenance, user_confirmed: true },
+    co_pay_percent: { value: 10, confidence: "high", provenance: null, user_confirmed: true },
+    sub_limits: sampleSubLimits,
+    waiting_periods: [sampleWaitingPeriodActive],
+    exclusions: [],
+    intimation_deadline_hours: { value: 48, confidence: "high", provenance: null, user_confirmed: true },
+    extraction_completeness: 0.82,
+  },
+  source_document_id: "doc-sample-policy",
+};
+
+const sampleAlerts: Alert[] = [
+  {
+    id: "alert-1",
+    policy_id: "policy-sample",
+    kind: "waiting_period_expiring",
+    severity: "warning",
+    title: "Pre-existing disease waiting period ends in 11 days",
+    explanation: "After 2 Sep 2026, pre-existing conditions become claimable under your retail policy.",
+    suggested_action: null,
+    reference_source: null,
+    triggers_on: "2026-09-02",
+  },
+  {
+    id: "alert-2",
+    policy_id: "policy-sample",
+    kind: "no_maternity_cover",
+    severity: "info",
+    title: "Your employer policy excludes maternity",
+    explanation: "The retail policy in this household covers maternity after 24 months — worth knowing if it matters to you.",
+    suggested_action: "Compare the two policies",
+    reference_source: null,
+    triggers_on: null,
+  },
+  {
+    id: "alert-3",
+    policy_id: "policy-sample",
+    kind: "low_sum_insured",
+    severity: "critical",
+    title: "Room rent choice may trigger a proportionate deduction",
+    explanation: "A ₹12,000/day room is above your ₹5,000/day cap — insurers typically deduct proportionately across the whole bill, not just the room charge.",
+    suggested_action: null,
+    reference_source: "Estimate based on your policy's stated cap",
+    triggers_on: null,
+  },
+];
+
 function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3 border-b border-rule pb-8">
@@ -127,7 +234,9 @@ export function KitchenSink() {
         <p className="font-mono text-xs tracking-wide text-muted-foreground uppercase">Dev route — not part of the product</p>
         <h1 className="font-serif text-3xl font-semibold text-foreground">Kitchen sink</h1>
         <p className="max-w-prose text-sm text-muted-foreground">
-          Every Phase 1 primitive, in every state it can occupy. To verify state is
+          Every primitive, in every state it can occupy — Phase 1's eleven plus the
+          eight Phase 3 added while building the dashboard, policy list,
+          upload/review, policy detail, and Q&A screens. To verify state is
           distinguishable without colour, screenshot this page and desaturate it —
           every row should still read correctly (icon + label carry the meaning).
         </p>
@@ -182,6 +291,89 @@ export function KitchenSink() {
         <Row label="page jump only, no bbox">
           <ProvenanceChip provenance={exclusionProvenanceNoBbox} userConfirmed onOpen={setActiveProvenance} />
         </Row>
+      </Section>
+
+      <Section
+        title="ExtractedField"
+        note="Every extracted value in the product renders through this — label, value, confidence, provenance, and (when correctable) inline confirm/correct controls, all in one shape."
+      >
+        <div className="flex flex-col gap-2">
+          <ExtractedField
+            label="Room rent cap (low confidence, correctable)"
+            valueDisplay={<Money value={500000} />}
+            confidence="low"
+            userConfirmed={false}
+            provenance={roomRentProvenance}
+            snippet={roomRentProvenance.snippet}
+            onOpenProvenance={setActiveProvenance}
+            onConfirm={() => {}}
+            onCorrect={() => {}}
+            correctPlaceholder="Amount in rupees"
+          />
+          <ExtractedField
+            label="Sum insured (confirmed)"
+            valueDisplay={<Money value={1000000000} />}
+            confidence="high"
+            userConfirmed
+            provenance={roomRentProvenance}
+            onOpenProvenance={setActiveProvenance}
+          />
+          <ExtractedField
+            label="Exclusion (read-only, no correction handlers)"
+            valueDisplay={<span className="text-sm">Cosmetic surgery is excluded unless medically necessitated.</span>}
+            confidence="medium"
+            userConfirmed={false}
+            provenance={null}
+          />
+        </div>
+      </Section>
+
+      <Section title="SubLimitsTable">
+        <SubLimitsTable subLimits={sampleSubLimits} onOpenProvenance={setActiveProvenance} />
+      </Section>
+
+      <Section title="WaitingPeriodTimeline" note="A horizontal track showing months served vs remaining.">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <WaitingPeriodTimeline waitingPeriod={sampleWaitingPeriodActive} />
+          <WaitingPeriodTimeline waitingPeriod={sampleWaitingPeriodExpired} />
+          <WaitingPeriodTimeline waitingPeriod={sampleWaitingPeriodMissingDates} />
+        </div>
+      </Section>
+
+      <Section title="PolicyCard">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <PolicyCard policy={samplePolicy} />
+          <PolicyCard policy={samplePolicy} selectable={{ selected: true, onToggle: () => {} }} />
+        </div>
+      </Section>
+
+      <Section title="JobProgress" note="The three-stage upload indicator — Uploading -> Parsing -> Review.">
+        <div className="flex flex-col gap-4">
+          <JobProgress stage="uploading" />
+          <JobProgress stage="parsing" fileName="my-policy.pdf" pageCount={4} progressStep="extracting_tables" progressPercent={54} />
+          <JobProgress stage="parsing" fileName="my-policy.pdf" stillWorking />
+          <JobProgress stage="review" fileName="my-policy.pdf" />
+        </div>
+      </Section>
+
+      <Section title="CitedProse" note="[[n]] markers in the source text become clickable superscripts.">
+        <CitedProse
+          text="Your policy caps room rent at the amount shown in your sub-limits table [[1]]. Choosing a room above that cap can trigger a proportionate deduction across your entire bill."
+          citations={sampleCitations}
+          onOpenCitation={(c) => c.provenance && setActiveProvenance(c.provenance)}
+        />
+      </Section>
+
+      <Section title="FileDropzone">
+        <FileDropzone onFileSelected={() => {}} />
+      </Section>
+
+      <Section title="AlertCard" note="Same four-tone system as VerdictBand/DeadlineCard, mapped from severity.">
+        <div className="flex flex-col gap-2">
+          {sampleAlerts.map((alert) => (
+            <AlertCard key={alert.id} alert={alert} />
+          ))}
+        </div>
       </Section>
 
       <Section title="VerdictBand" note="No percentage, no gauge, no arc — a band and a sentence.">

@@ -21,7 +21,8 @@ than decided unilaterally.
 
 **Resolution:** user chose the monorepo option. Root `package.json` uses npm
 workspaces (`apps/*`, `packages/*`). `packages/contracts-ts` holds the hand-written
-domain types now (`src/types.ts`, exported via `@internal/contracts-ts`);
+domain types now (`src/types.ts`, exported via `@internal/contracts-ts` — renamed
+`@unravel/contracts-ts` in Phase 3 once the project had a real name);
 `apps/web/src/api/types.ts` re-exports them so app code still imports from
 `@/api/types` per convention. `apps/web` is the Vite frontend described in the brief.
 
@@ -85,11 +86,14 @@ The brief's directory tree (§4) shows `src/api/` and `mocks/` as siblings. Read
 literally: `apps/web/mocks/` (not `apps/web/src/mocks/`). Component code never
 imports from it either way, so this is a low-stakes placement call.
 
-### Placeholder product name "PolicyClear"
+### Placeholder product name "PolicyClear" — superseded
 
-Neither brief names the product. Used "PolicyClear" as a placeholder in the page
-`<title>` and the Phase-0 shell heading purely so the shell isn't titled "web" (the
-Vite default). Trivial to rename — appears in `index.html` and `App.tsx` only.
+Neither brief names the product, so Phase 0 used "PolicyClear" as a placeholder in
+the page `<title>` and the shell heading purely so the shell wasn't titled "web"
+(the Vite default). **Superseded in Phase 3:** the user named the project
+**Unravel** (matching the GitHub repo, `Ayushk9/Unravel`). Renamed everywhere —
+`index.html`, `AppShell.tsx`, `package.json` names, and this file. No further
+action needed; this entry is kept for history only.
 
 ## Phase 1
 
@@ -307,3 +311,113 @@ never the reverse — so the letter of the rule holds, and the toolbar still wor
 not position. `db.ts`'s `patchCoverageField` matches on that basis. Worth noting
 because it's easy to misread the dotted-path convention as an array index at a
 glance.
+
+---
+
+## Phase 3
+
+### Project renamed: PolicyClear -> Unravel
+
+The user named the project, matching the GitHub repo (`Ayushk9/Unravel`). Renamed
+everywhere it appeared: `index.html`, `AppShell.tsx`, and the internal package
+identifiers that were never "PolicyClear"-branded but were worth aligning too —
+root `package.json` (`health-insurance-assistant` -> `unravel`), `apps/web`
+(`web` -> `@unravel/web`), `packages/contracts-ts` (`@internal/contracts-ts` ->
+`@unravel/contracts-ts`), plus the two files that imported the latter by name.
+Reinstalled to relink the workspace symlinks under the new package names.
+
+### Mock PDF only had 2 pages — real fixture provenances reference up to page 22
+
+**Found by clicking through the app, not by reading JSON — exactly the kind of bug
+the brief's "check this by eye" instruction is for.** The Phase 1 kitchen-sink demo
+PDF (`apps/web/public/kitchen-sink/sample-policy.pdf`) had 2 pages, hand-authored
+for that demo alone. Once Phase 3 pointed real policy fixtures' `DocumentViewer` at
+the same file, any provenance referencing page 3+ (room rent at p.14, exclusions at
+p.18, intimation deadline at p.22 — all real values in `mocks/fixtures/policies.ts`)
+made react-pdf fail with "Failed to load the page" instead of showing anything.
+
+Regenerated the PDF with 22 pages — pages 1-2 are byte-identical to the original
+(kitchen-sink's own bbox-highlight demo has hardcoded bbox coordinates tied to that
+exact text, so those couldn't change), pages 3-22 carry the real clause text each
+fixture's `snippet` describes. Re-verified the Phase 1 bbox demo still aligns
+correctly after the regeneration (screenshot-checked, not assumed).
+
+**What would change if reversed:** none — this was a straightforward bug, not a
+judgment call. If a future phase adds more fixture provenances beyond page 22, the
+PDF needs more pages the same way.
+
+### The mock's `DocumentViewer` source is the same placeholder PDF for every policy
+
+Already documented as a Phase 2 constraint (the parse job's extraction is
+templated, not derived from the real uploaded bytes) — Phase 3 makes the
+consequence visible: `/policies/upload`, `/policies/:id`, and `/policies/:id/ask`
+all point `DocumentViewer` at the one fixture PDF regardless of which policy or
+upload is being viewed. Page numbers land correctly (see above) but the *text on
+the page* won't always literally match a given field's snippet, since three
+different logical "documents" (group schedule, retail schedule, retail wording)
+share one physical file. Real bbox/page accuracy is only demonstrated for the
+fields that were fixture-authored with it in mind. A real backend serving real
+uploaded files doesn't have this limitation.
+
+### `POST /policies` is not called by the upload flow — confirms the Phase 2 flag
+
+Building the actual review screen resolved the ambiguity flagged in `CONTRACTS.md`
+§4.4 empirically: the parse job itself creates the `Policy` record (so `PATCH
+.../fields/{path}` has something to target during review), and "saving" is just the
+user clicking through to `/policies/{id}` — there's no separate persistence step
+`POST /policies` would perform. The endpoint is still implemented and documented for
+the ratified slice-1 list, just genuinely unused by any screen this build produced.
+Reinforces, not resolves, that CONTRACTS.md flag.
+
+### "Hoist low-confidence fields to a top block" means *also* show them, not move them
+
+Brief §6.1: "hoist every confidence:'low' field into a 'Confirm these N values'
+block." Read literally, "hoist" could mean either duplicate-with-emphasis or
+relocate-and-remove-from-its-normal-place. Went with duplicate: the room-rent cap
+appears both in the actionable "Confirm these 1 value" block at the top of
+`/policies/upload`'s review stage *and* in its normal place in the sub-limits table
+below (read-only there). Chose this because removing it from the sub-limits table
+would make that table incomplete — a reviewer glancing at "all my sub-limits" would
+be missing the one that matters most. The correction control only needs to exist in
+one place; the value needs to be visible in both.
+
+### `<PolicyCard>` shows a confidence badge only when sum insured is unconfirmed
+
+Phase 3's binding constraint ("every extracted value renders through
+`<ConfidenceBadge>` + `<ProvenanceChip>`") is unambiguous for the review and detail
+screens, where the whole point is scrutinising extracted data. A dashboard/list
+summary card is a different register — showing a full provenance chip on every
+policy card would be noise the moment there's more than one policy, and clicking it
+has nowhere to go from that card. Compromise: `<ConfidenceBadge>` appears next to
+the sum-insured figure whenever it isn't `user_confirmed`, so an unverified figure
+is never silently presented as settled, but a fully-reviewed policy's card stays
+quiet. No `<ProvenanceChip>` on the card — that affordance lives on the detail page,
+one click away.
+
+### `useJobPolling`'s refresh-recovery required persisting the mock db to `sessionStorage`
+
+Not a "found while verifying" bug so much as infrastructure the Phase 3 requirement
+("a page refresh mid-job must recover the result from `GET /jobs/{id}`") made
+necessary and hadn't been needed before. The Phase 2 mock db was pure in-memory
+state, seeded fresh on every module load — which a real backend's job store isn't,
+but a page refresh reloads and re-executes all JS from scratch, wiping it exactly
+like a restart would. Fixed by persisting the whole mock db (documents, policies,
+claims, jobs, idempotency store) to `sessionStorage` after every mutation, and by
+making job records fully serializable — `db.createJob` used to take a `resultFactory`
+closure, which can't survive `JSON.stringify`. Replaced with a small resolver
+registry (`db.registerJobResolver(kind, fn)`, called once per handler file at module
+load) so job records only ever hold plain params, not functions. Verified end-to-end
+in a real browser: created an upload job, reloaded mid-parse, confirmed progress had
+continued (not restarted) from wall-clock elapsed time, let it finish, reloaded
+again, confirmed the policy wasn't created a second time.
+
+### Q&A citation markers are a mock-only `[[n]]` convention
+
+Nothing in `API_DECISIONS.md` specifies how generated prose should mark which
+citation backs which sentence — Feature 1's Q&A and Feature 7's grievance drafting
+both need this and neither ratified doc says how. Picked `[[n]]` (n = 1-indexed
+position in the response's `citations` array) embedded directly in `answer`/
+paragraph text, parsed by the new `<CitedProse>` primitive into clickable
+superscripts. A real backend just needs to emit the same token shape in its
+generated text. Worth a ratified line if a backend developer needs to match it
+exactly rather than infer it from this mock.

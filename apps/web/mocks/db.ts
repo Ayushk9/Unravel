@@ -1,7 +1,12 @@
 /**
  * In-memory mock "database", seeded from mocks/fixtures/ and mutated by
- * handlers for the lifetime of the page. Resets on reload — that's
- * intentional for a mock, not a bug to fix.
+ * handlers for the lifetime of the browser tab. Persisted to sessionStorage
+ * after every mutation and rehydrated on load — a real backend's job state
+ * survives a page refresh, and Phase 3 requires the mock to demonstrate that
+ * (refreshing mid-parse must recover the running job, not restart it). A
+ * pure in-memory store can't do that across a full page reload, so this is
+ * not optional. sessionStorage (not localStorage) so a closed tab still
+ * starts fresh, matching "resets on reload" for a genuinely new session.
  */
 import type { JsonBodyType } from "msw";
 import type { Claim, ClaimEvent, ClaimState, CoverageProfile, Job, JobKind, Policy, StoredDocument } from "@/api/types";
@@ -12,8 +17,55 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+const STORAGE_KEY = "unravel:mock-db:v1";
+
+interface JobRecord {
+  job: Job<unknown>;
+  createdAt: number;
+  durationMs: number;
+  /** Plain, serializable inputs — never a closure, so this record survives JSON round-tripping through sessionStorage. */
+  params: Record<string, unknown>;
+  cachedResult?: unknown;
+  failed?: boolean;
+}
+
+interface PersistedShape {
+  documents: StoredDocument[];
+  policies: Policy[];
+  claims: Claim[];
+  jobs: [string, JobRecord][];
+  idempotency: [string, { status: number; body: JsonBodyType }][];
+}
+
+function loadPersisted(): PersistedShape | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PersistedShape) : null;
+  } catch {
+    return null; // sessionStorage unavailable (private mode, etc.) — fall back to fixtures, in-memory only
+  }
+}
+
+function persist(): void {
+  try {
+    const payload: PersistedShape = {
+      documents,
+      policies,
+      claims,
+      jobs: [...jobs.entries()],
+      idempotency: [...idempotencyStore.entries()],
+    };
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Storage full or unavailable — the mock keeps working for the rest of
+    // this tab's life, it just won't survive the next refresh.
+  }
+}
+
+const persisted = loadPersisted();
+
 // --- documents ---
-let documents: StoredDocument[] = clone(fixtures.documents);
+let documents: StoredDocument[] = persisted ? persisted.documents : clone(fixtures.documents);
 
 export function listDocuments(): StoredDocument[] {
   return documents.filter((d) => !d.deleted_at);
@@ -23,16 +75,25 @@ export function getDocument(id: string): StoredDocument | undefined {
 }
 export function addDocument(doc: StoredDocument): void {
   documents.push(doc);
+  persist();
+}
+export function updateDocument(id: string, patch: Partial<StoredDocument>): StoredDocument | undefined {
+  const doc = getDocument(id);
+  if (!doc) return undefined;
+  Object.assign(doc, patch);
+  persist();
+  return doc;
 }
 export function softDeleteDocument(id: string): StoredDocument | undefined {
   const doc = getDocument(id);
   if (!doc) return undefined;
   doc.deleted_at = new Date().toISOString();
+  persist();
   return doc;
 }
 
 // --- policies ---
-let policies: Policy[] = clone(fixtures.policies);
+let policies: Policy[] = persisted ? persisted.policies : clone(fixtures.policies);
 
 export function listPolicies(): Policy[] {
   return policies;
@@ -42,6 +103,7 @@ export function getPolicy(id: string): Policy | undefined {
 }
 export function addPolicy(policy: Policy): void {
   policies.push(policy);
+  persist();
 }
 
 /** D-15: dotted-path field correction. Only the fields the review screen actually corrects are addressable. */
@@ -65,6 +127,7 @@ export function patchCoverageField(
     if (field && typeof field === "object" && "value" in field) {
       (field as { value: unknown }).value = value;
       (field as { user_confirmed: boolean }).user_confirmed = userConfirmed;
+      persist();
       return { ok: true, policy };
     }
   }
@@ -77,6 +140,7 @@ export function patchCoverageField(
     if (subLimit) {
       subLimit.cap_amount.value = typeof value === "number" ? value : subLimit.cap_amount.value;
       subLimit.cap_amount.user_confirmed = userConfirmed;
+      persist();
       return { ok: true, policy };
     }
   }
@@ -88,6 +152,7 @@ export function patchCoverageField(
     if (waitingPeriod) {
       waitingPeriod.months.value = typeof value === "number" ? value : waitingPeriod.months.value;
       waitingPeriod.months.user_confirmed = userConfirmed;
+      persist();
       return { ok: true, policy };
     }
   }
@@ -110,7 +175,7 @@ export function listBenchmarks() {
 }
 
 // --- claims ---
-let claims: Claim[] = clone(fixtures.claims);
+let claims: Claim[] = persisted ? persisted.claims : clone(fixtures.claims);
 
 export const CLAIM_TRANSITIONS: Record<ClaimState, ClaimState[]> = {
   intimated: ["documents_submitted", "queried"],
@@ -140,6 +205,7 @@ export function getClaim(id: string): Claim | undefined {
 }
 export function addClaim(claim: Claim): void {
   claims.push(claim);
+  persist();
 }
 
 export function appendClaimEvent(
@@ -168,6 +234,7 @@ export function appendClaimEvent(
   };
   claim.events.push(event);
   claim.current_state = computeCurrentState(claim.events);
+  persist();
   return { ok: true, claim };
 }
 
@@ -176,15 +243,15 @@ export function documentsForClaim(claimId: string): StoredDocument[] {
 }
 
 // --- jobs ---
-interface JobRecord {
-  job: Job<unknown>;
-  createdAt: number;
-  durationMs: number;
-  resultFactory: () => unknown;
-  cachedResult?: unknown;
+type JobResolver = (params: Record<string, unknown>) => unknown;
+const jobResolvers: Partial<Record<JobKind, JobResolver>> = {};
+
+/** Each handler file registers the resolver for the job kind it owns, once, at module load — keeps db.ts generic and resource logic in its own handler file. */
+export function registerJobResolver(kind: JobKind, resolver: JobResolver): void {
+  jobResolvers[kind] = resolver;
 }
 
-const jobs = new Map<string, JobRecord>();
+const jobs = new Map<string, JobRecord>(persisted?.jobs ?? []);
 
 const JOB_STEPS: Record<JobKind, string[]> = {
   parse_document: ["classifying_pages", "extracting_tables", "structuring_coverage_profile"],
@@ -192,11 +259,12 @@ const JOB_STEPS: Record<JobKind, string[]> = {
   generate_grievance_draft: ["assembling_evidence", "drafting_paragraphs", "verifying_citations"],
 };
 
-export function createJob(kind: JobKind, durationMsRange: [number, number], resultFactory: () => unknown): Job<unknown> {
+export function createJob(kind: JobKind, durationMsRange: [number, number], params: Record<string, unknown>): Job<unknown> {
   const job_id = genId("job");
   const durationMs = durationMsRange[0] + Math.random() * (durationMsRange[1] - durationMsRange[0]);
   const job: Job<unknown> = { job_id, kind, status: "queued", progress: null, result: null, error: null };
-  jobs.set(job_id, { job, createdAt: Date.now(), durationMs, resultFactory });
+  jobs.set(job_id, { job, createdAt: Date.now(), durationMs, params });
+  persist();
   return job;
 }
 
@@ -206,8 +274,17 @@ export function getJob(jobId: string): Job<unknown> | undefined {
 
   const elapsed = Date.now() - record.createdAt;
   if (elapsed >= record.durationMs) {
-    if (record.cachedResult === undefined) {
-      record.cachedResult = record.resultFactory();
+    if (record.cachedResult === undefined && !record.failed) {
+      const resolver = jobResolvers[record.job.kind];
+      try {
+        record.cachedResult = resolver ? resolver(record.params) : null;
+      } catch {
+        record.failed = true;
+      }
+      persist();
+    }
+    if (record.failed) {
+      return { ...record.job, status: "failed", progress: { step: "failed", percent: 100 }, result: null, error: "This job failed. Try uploading again." };
     }
     return { ...record.job, status: "succeeded", progress: { step: "done", percent: 100 }, result: record.cachedResult };
   }
@@ -220,13 +297,14 @@ export function getJob(jobId: string): Job<unknown> | undefined {
 }
 
 // --- idempotency (D-13) ---
-const idempotencyStore = new Map<string, { status: number; body: JsonBodyType }>();
+const idempotencyStore = new Map<string, { status: number; body: JsonBodyType }>(persisted?.idempotency ?? []);
 
 export function getIdempotentResponse(key: string): { status: number; body: JsonBodyType } | undefined {
   return idempotencyStore.get(key);
 }
 export function storeIdempotentResponse(key: string, status: number, body: JsonBodyType): void {
   idempotencyStore.set(key, { status, body });
+  persist();
 }
 
 export function resetDb(): void {
@@ -235,4 +313,9 @@ export function resetDb(): void {
   claims = clone(fixtures.claims);
   jobs.clear();
   idempotencyStore.clear();
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
 }

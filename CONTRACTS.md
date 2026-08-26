@@ -135,13 +135,22 @@ rather than an error — a real backend would run actual rules here.
 is every 1s for the first 10s, then every 3s, hard timeout at 180s (D-08). Simulated
 job durations in this mock: `parse_document` 4–8s, `answer_question` 3–6s,
 `generate_grievance_draft` 20–30s, each picked once per job at creation (not
-re-randomised per poll).
+re-randomised per poll). Job state (and the rest of the mock db) is persisted to
+`sessionStorage` and rehydrated on load (`apps/web/mocks/db.ts`) — a page refresh
+mid-job recovers the running job's actual elapsed progress instead of restarting it,
+matching what a real backend's persistent job store would do.
 
 **Idempotency replay** stores the exact response body and status the first request
 produced, keyed by the `Idempotency-Key` header value, and returns it byte-for-byte
 on a repeat — no re-processing (`apps/web/mocks/db.ts`, `idempotencyStore`). This
-mock doesn't expire the 24h window D-13 specifies (a page refresh clears the whole
-mock DB anyway); a real backend must.
+mock doesn't expire the 24h window D-13 specifies; a real backend must.
+
+**Citation markers in generated prose** (Q&A answers, and eventually grievance
+paragraphs) use a `[[n]]` token embedded in the text, where `n` is the 1-indexed
+position in that response's `citations` array — parsed by `<CitedProse>`
+(`apps/web/src/components/primitives/CitedProse.tsx`) into a clickable superscript.
+This is a convention this mock invented, not something either ratified doc
+specifies — worth a formal line if the backend team needs to match it exactly.
 
 ---
 
@@ -202,11 +211,21 @@ assumption so Phase 2 could proceed; none should be read as settled.
    flagging that it's load-bearing here: the Ombudsman filing deadline shown on the
    denied claim fixture is computed from a placeholder, not a real figure.
 
+9. **Citation-marker convention in generated prose is unratified** (added in Phase
+   3). Q&A answers embed `[[n]]` tokens in the text so the frontend can render
+   clickable superscripts; nothing in `API_DECISIONS.md` specifies this, and
+   Feature 7 (grievance drafting, Phase 5) will need the same mechanism. See §3.
+
 ---
 
-## 5. What's deliberately not built this phase
+## 5. What's deliberately not built yet
 
-Per `docs/claude-code-frontend-prompt.md` §10, Phase 2 is contracts + fixtures +
-handlers + this document + the dev toolbar — not screens. No route renders this data
-yet (Phase 3 onward does). The `/kitchen-sink` primitives from Phase 1 haven't been
-wired to live data either; that also starts in Phase 3.
+Per `docs/claude-code-frontend-prompt.md` §10: Phase 2 (contracts, fixtures,
+handlers, this document, the dev toolbar) and Phase 3 (Features 5 and 1 — the
+dashboard, policy list, upload/parse/review, policy detail, and grounded Q&A
+screens) are both done as of this document's current state. Features 6, 4, 2
+(claims, timeline, eligibility, wizard), 3 and 7 (bill validation, grievance
+drafting), and 8 and 9 (alerts inbox, benchmarking) are not — their routes still
+render `PlaceholderScreen`. The endpoints and fixtures those features need
+(`/claims/*`, `/alerts`, `/insurers/benchmarks`, `/ombudsman-awards`) already exist
+from Phase 2; only the screens are missing.

@@ -6,4 +6,4 @@
  * snake_case throughout, matching the wire format exactly (D-02) — no camelCase
  * transform at this boundary.
  */
-export * from "@internal/contracts-ts";
+export * from "@unravel/contracts-ts";

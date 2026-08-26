@@ -4,6 +4,100 @@ import * as db from "../db";
 import { errorResponse, notFound, plainReadDelay, requireAuth } from "../utils";
 import { applyGlobalScenarios, getScenarios } from "../scenarios";
 
+/**
+ * Registered once at module load — see documents.ts's parse_document
+ * resolver for why this can't be a closure passed to db.createJob.
+ * getScenarios() is read live, at resolution time, not snapshotted when the
+ * question was asked, so a toolbar toggle during the "still working" wait
+ * still takes effect.
+ *
+ * Citation markers: the answer text embeds `[[n]]` tokens (n = 1-indexed
+ * position in `citations`) — CitedProse (src/components/primitives) parses
+ * these into clickable superscripts. This is a mock-only convention, not
+ * part of the ratified contract; a real backend just needs to emit the same
+ * marker shape in the generated prose.
+ */
+db.registerJobResolver("answer_question", (params): QuestionAnswerResult => {
+  const { policyId, question } = params as { policyId: string; question: string };
+  const policy = db.getPolicy(policyId);
+  const forceAbstain = getScenarios().forceAbstention;
+
+  if (forceAbstain || !policy?.coverage_profile) {
+    return {
+      answer: "",
+      citations: [],
+      abstained: true,
+      missing_context: "Your policy documents don't answer this. The clause may be in a document you haven't uploaded.",
+    };
+  }
+
+  const profile = policy.coverage_profile;
+  const roomRent = profile.sub_limits.find((s) => s.category === "room_rent");
+  const q = question.toLowerCase();
+
+  if (q.includes("room") || q.includes("rent") || q.includes("12,000") || q.includes("12000")) {
+    return {
+      answer: roomRent
+        ? `Your policy caps room rent at the amount shown in your sub-limits table [[1]]. Choosing a room above that cap doesn't just cost you the difference in rent — insurers typically apply a proportionate deduction across your entire bill, not just the room charge, so this one number can matter more than it looks.`
+        : `Based on your policy's coverage profile, this depends on the specific clause — see the cited source [[1]].`,
+      citations: [
+        {
+          id: "cite-room-rent",
+          kind: "policy_clause",
+          label: `${policy.product_name} — room rent sub-limit`,
+          provenance: roomRent?.cap_amount.provenance ?? null,
+          external_url: null,
+        },
+      ],
+      abstained: false,
+      missing_context: null,
+    };
+  }
+
+  if (q.includes("knee") || q.includes("surgery") || q.includes("exclu")) {
+    const exclusion = profile.exclusions[0];
+    if (!exclusion || exclusion.value === null) {
+      return {
+        answer: "",
+        citations: [],
+        abstained: true,
+        missing_context: "Your policy documents don't say whether this procedure is excluded. The clause may be in a document you haven't uploaded.",
+      };
+    }
+    return {
+      answer: `Your policy excludes: "${exclusion.value}" [[1]]. Knee surgery isn't itself on that list, so it's most likely covered subject to your waiting periods and sub-limits — but this is a plain-language read of your document, not a claims decision.`,
+      citations: [
+        {
+          id: "cite-exclusion",
+          kind: "policy_clause",
+          label: `${policy.product_name} — exclusions`,
+          provenance: exclusion.provenance,
+          external_url: null,
+        },
+      ],
+      abstained: false,
+      missing_context: null,
+    };
+  }
+
+  return {
+    answer: roomRent
+      ? `Based on your policy's coverage profile [[1]], this depends on the specific clause governing your question. Try asking about a specific term — room rent, waiting periods, or an exclusion — for a more precise answer.`
+      : `Based on your policy's coverage profile, this depends on the specific clause — see the cited source [[1]].`,
+    citations: [
+      {
+        id: "cite-general",
+        kind: "policy_clause",
+        label: policy.product_name,
+        provenance: roomRent?.cap_amount.provenance ?? null,
+        external_url: null,
+      },
+    ],
+    abstained: false,
+    missing_context: null,
+  };
+});
+
 /** Dev-toolbar "low-confidence extraction" scenario: downgrades every extracted field so a screen can demo the review/unverified treatment on demand, regardless of which real policy is open. */
 function withLowConfidenceOverride(policy: Policy): Policy {
   if (!getScenarios().forceLowConfidence || !policy.coverage_profile) return policy;
@@ -106,38 +200,9 @@ export const policiesHandlers = [
     if (!policy) return notFound("No policy with that id belongs to your household.");
 
     const body = (await request.json()) as QuestionRequest;
-    const forceAbstain = getScenarios().forceAbstention;
-
-    const job = db.createJob("answer_question", [3000, 6000], (): QuestionAnswerResult => {
-      if (forceAbstain || !policy.coverage_profile) {
-        return {
-          answer: "",
-          citations: [],
-          abstained: true,
-          missing_context: "Your policy documents don't answer this. The clause may be in a document you haven't uploaded.",
-        };
-      }
-      const roomRent = policy.coverage_profile.sub_limits.find((s) => s.category === "room_rent");
-      return {
-        answer: roomRent
-          ? `Your room rent is capped at the amount shown in your policy's sub-limits table. Choosing a room above that cap can trigger a proportionate deduction across your whole bill.`
-          : `Based on your policy's coverage profile, this depends on the specific clause — see the cited source.`,
-        citations: [
-          {
-            id: "cite-1",
-            kind: "policy_clause",
-            label: policy.product_name,
-            provenance: roomRent?.cap_amount.provenance ?? null,
-            external_url: null,
-          },
-        ],
-        abstained: false,
-        missing_context: null,
-      };
-    });
+    const job = db.createJob("answer_question", [3000, 6000], { policyId: policy.id, question: body.question });
 
     const responseBody: JobAccepted = { job_id: job.job_id, kind: job.kind, status: "queued" };
-    void body; // question text isn't used to branch the mock's canned answer
     return HttpResponse.json(responseBody, { status: 202 });
   }),
 ];
