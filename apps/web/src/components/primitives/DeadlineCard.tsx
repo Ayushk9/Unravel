@@ -1,4 +1,4 @@
-import { AlarmClock, AlertCircle, CalendarX, Clock } from "lucide-react";
+import { AlarmClock, AlertCircle, CalendarX, Clock, HelpCircle } from "lucide-react";
 import type { Deadline } from "@/api/types";
 import { formatISTDate } from "@/lib/formatDate";
 
@@ -15,6 +15,7 @@ const urgencyIcon: Record<Urgency, typeof Clock> = {
   soon: AlarmClock,
   critical: AlertCircle,
   expired: CalendarX,
+  unknown: HelpCircle,
 };
 
 const urgencyClasses: Record<Urgency, string> = {
@@ -22,6 +23,7 @@ const urgencyClasses: Record<Urgency, string> = {
   soon: "border-caution-border bg-caution-bg text-caution",
   critical: "border-negative-border bg-negative-bg text-flag",
   expired: "border-rule bg-card text-ink-muted opacity-70",
+  unknown: "border-neutral-border bg-neutral-bg text-neutral",
 };
 
 const urgencyLabel: Record<Urgency, string> = {
@@ -29,6 +31,7 @@ const urgencyLabel: Record<Urgency, string> = {
   soon: "Due soon",
   critical: "Critical",
   expired: "Expired",
+  unknown: "Urgency not reported",
 };
 
 export interface DeadlineCardProps {

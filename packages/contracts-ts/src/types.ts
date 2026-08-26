@@ -7,6 +7,12 @@
  * ids are UUID strings, field names are snake_case to match the backend wire
  * format exactly (D-02) — never camelCased at this boundary. Every field is
  * present in every response; unknown values are `null`, never omitted (D-05).
+ *
+ * D-06: every string enum carries an explicit escape-hatch member so an added
+ * backend value degrades to a neutral rendering instead of a crash. Phase 0/1
+ * copied the brief's enums verbatim and missed several — this file is the
+ * corrected version; see /DECISIONS.md "Phase 2" for the "unknown" vs "other"
+ * convention used below and which enums intentionally did NOT get one.
  */
 
 export type UUID = string;
@@ -14,12 +20,12 @@ export type ISODate = string; // "2026-03-01"
 export type ISODateTime = string; // "2026-03-01T09:15:00+05:30"
 export type Paise = number; // ₹5,000 => 500000
 
-export type Confidence = "high" | "medium" | "low";
+export type Confidence = "high" | "medium" | "low" | "unknown";
 
 export interface Provenance {
   document_id: UUID;
   page: number; // 1-indexed
-  bbox: [number, number, number, number] | null; // x0,y0,x1,y1 normalised 0..1
+  bbox: [number, number, number, number] | null; // x0,y0,x1,y1 normalised 0..1, top-left origin
   snippet: string | null;
 }
 
@@ -41,12 +47,12 @@ export interface SubLimit {
   category: "room_rent" | "icu" | "procedure" | "ambulance" | "opd" | "other";
   label: string;
   cap_amount: Extracted<Paise>;
-  cap_basis: "per_day" | "per_claim" | "per_policy_year" | "percent_of_sum_insured";
+  cap_basis: "per_day" | "per_claim" | "per_policy_year" | "percent_of_sum_insured" | "other";
   percent_value: number | null;
 }
 
 export interface WaitingPeriod {
-  kind: "initial" | "disease_specific" | "pre_existing" | "maternity";
+  kind: "initial" | "disease_specific" | "pre_existing" | "maternity" | "other";
   months: Extracted<number>;
   applies_to: string | null; // e.g. "cataract"
   starts_on: ISODate | null;
@@ -76,7 +82,7 @@ export interface Policy {
   insurer: Insurer;
   policy_number: string;
   product_name: string;
-  policy_type: "individual" | "family_floater" | "group_employer" | "top_up";
+  policy_type: "individual" | "family_floater" | "group_employer" | "top_up" | "other";
   start_date: ISODate;
   end_date: ISODate;
   members: Member[];
@@ -103,8 +109,15 @@ export interface StoredDocument {
   page_count: number;
   uploaded_at: ISODateTime;
   detected_type: Extracted<DocumentType>;
-  parse_status: "queued" | "parsing" | "parsed" | "failed";
+  parse_status: "queued" | "parsing" | "parsed" | "failed" | "unknown";
   parse_error: string | null;
+  deleted_at: ISODateTime | null; // D-20: documents are soft-deleted
+  // Not in the brief's original type — added in Phase 2. Without it there is
+  // no way to know which documents belong to a claim, which Feature 4
+  // (completeness) and the claim workspace's Documents tab both need. See
+  // DECISIONS.md. Null for documents uploaded outside a claim (e.g. a policy
+  // schedule).
+  claim_id: UUID | null;
 }
 
 // --- Engine B: eligibility ---
@@ -122,6 +135,9 @@ export interface EligibilityCheck {
 
 export interface EligibilityAssessment {
   claim_id: UUID;
+  // NOT given a separate "unknown" escape hatch: insufficient_information already
+  // is this enum's "we don't know" state. A second, near-synonymous value would
+  // confuse rather than protect — see DECISIONS.md.
   band: "likely_eligible" | "at_risk" | "likely_ineligible" | "insufficient_information";
   checks: EligibilityCheck[];
   ombudsman_precedent: OmbudsmanAward[]; // similar fact patterns, may be empty
@@ -139,11 +155,20 @@ export interface BillLineItem {
 }
 
 export interface ValidationFlag {
-  severity: "info" | "warning" | "error";
-  rule: "non_payable_item" | "duplicate_line" | "arithmetic_mismatch" | "sub_limit_breach";
+  severity: "info" | "warning" | "error" | "unknown";
+  rule: "non_payable_item" | "duplicate_line" | "arithmetic_mismatch" | "sub_limit_breach" | "other";
   message: string;
   line_item_ids: UUID[];
   estimated_impact: Paise | null;
+}
+
+export interface BillValidationReport {
+  claim_id: UUID;
+  line_items: BillLineItem[];
+  flags: ValidationFlag[];
+  total_billed: Paise;
+  total_at_risk: Paise;
+  generated_at: ISODateTime;
 }
 
 // --- Engine B: document completeness ---
@@ -156,6 +181,8 @@ export interface CompletenessReport {
 }
 
 // --- Engine D: claim lifecycle ---
+// "unknown" here is a defensive parse-time fallback only — never a value the
+// client sets, and never a legal transition target in the state machine.
 export type ClaimState =
   | "intimated"
   | "documents_submitted"
@@ -164,7 +191,8 @@ export type ClaimState =
   | "approved"
   | "denied"
   | "escalated"
-  | "resolved";
+  | "resolved"
+  | "unknown";
 
 export interface ClaimEvent {
   id: UUID;
@@ -173,7 +201,7 @@ export interface ClaimEvent {
   to_state: ClaimState;
   occurred_at: ISODateTime;
   note: string | null;
-  source: "user" | "insurer_letter" | "system";
+  source: "user" | "insurer_letter" | "system" | "unknown";
 }
 
 export interface Deadline {
@@ -182,15 +210,15 @@ export interface Deadline {
   due_at: ISODateTime;
   days_remaining: number;
   basis: string; // which rule + which event derived it
-  urgency: "normal" | "soon" | "critical" | "expired";
+  urgency: "normal" | "soon" | "critical" | "expired" | "unknown";
 }
 
 export interface Claim {
   id: UUID;
   policy_id: UUID;
   member_id: UUID;
-  claim_type: "cashless" | "reimbursement";
-  admission_type: "planned" | "emergency";
+  claim_type: "cashless" | "reimbursement" | "other";
+  admission_type: "planned" | "emergency" | "other";
   hospital_name: string;
   admitted_on: ISODate | null;
   discharged_on: ISODate | null;
@@ -204,7 +232,7 @@ export interface Claim {
 // --- Engine C: grounded generation ---
 export interface Citation {
   id: string;
-  kind: "policy_clause" | "regulation" | "ombudsman_award";
+  kind: "policy_clause" | "regulation" | "ombudsman_award" | "other";
   label: string;
   provenance: Provenance | null;
   external_url: string | null;
@@ -213,7 +241,7 @@ export interface Citation {
 export interface GrievanceDraft {
   id: UUID;
   claim_id: UUID;
-  rung: "insurer_grievance_cell" | "irdai_bima_bharosa" | "insurance_ombudsman";
+  rung: "insurer_grievance_cell" | "irdai_bima_bharosa" | "insurance_ombudsman" | "other";
   subject: string;
   paragraphs: { text: string; citation_ids: string[]; verified: boolean }[];
   citations: Citation[];
@@ -227,7 +255,7 @@ export interface OmbudsmanAward {
   insurer_name: string;
   decided_on: ISODate;
   denial_ground: string;
-  outcome: "upheld" | "overturned" | "partially_allowed";
+  outcome: "upheld" | "overturned" | "partially_allowed" | "unknown";
   summary: string;
   external_url: string | null;
 }
@@ -241,8 +269,9 @@ export interface Alert {
     | "waiting_period_expiring"
     | "renewal_due"
     | "no_maternity_cover"
-    | "low_sum_insured";
-  severity: "info" | "warning" | "critical";
+    | "low_sum_insured"
+    | "other";
+  severity: "info" | "warning" | "critical" | "unknown";
   title: string;
   explanation: string;
   suggested_action: string | null;
@@ -285,17 +314,75 @@ export interface ApiErrorBody {
 }
 
 // --- Long-running jobs (D-07) ---
+export type JobKind = "parse_document" | "answer_question" | "generate_grievance_draft";
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "unknown";
+
 export interface JobAccepted {
   job_id: UUID;
-  kind: string;
+  kind: JobKind;
   status: "queued";
 }
 
 export interface Job<TResult = unknown> {
   job_id: UUID;
-  kind: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  kind: JobKind;
+  status: JobStatus;
   progress: { step: string; percent: number } | null;
   result: TResult | null;
   error: string | null;
+}
+
+export interface ParseDocumentResult {
+  document_id: UUID;
+  // Only policy_schedule/policy_wording uploads produce a Policy. Everything
+  // else (bills, discharge summaries, ...) just gets classified and parsed
+  // into whatever line items its type calls for.
+  policy_id: UUID | null;
+}
+
+export interface QuestionAnswerResult {
+  answer: string;
+  citations: Citation[];
+  abstained: boolean;
+  missing_context: string | null;
+}
+
+// --- Request bodies ---
+export interface DocumentUploadMeta {
+  // Sent as multipart form fields alongside the file (D-18), not JSON.
+  claim_id: UUID | null; // set when uploading in the claim wizard, else null
+}
+
+export interface PolicyCreateRequest {
+  source_document_id: UUID;
+}
+
+export interface FieldCorrectionRequest {
+  value: string | number | boolean | null;
+  user_confirmed: boolean;
+}
+
+export interface ClaimCreateRequest {
+  policy_id: UUID;
+  member_id: UUID;
+  claim_type: Claim["claim_type"];
+  admission_type: Claim["admission_type"];
+  hospital_name: string;
+  admitted_on: ISODate | null;
+  discharged_on: ISODate | null;
+  claimed_amount: Paise | null;
+}
+
+export interface ClaimEventRequest {
+  to_state: ClaimState;
+  occurred_at: ISODateTime;
+  note: string | null;
+}
+
+export interface QuestionRequest {
+  question: string;
+}
+
+export interface GrievanceDraftRequest {
+  rung: GrievanceDraft["rung"];
 }

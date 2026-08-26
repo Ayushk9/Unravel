@@ -12,12 +12,14 @@ const tierTone: Record<Confidence, StateTone> = {
   high: "positive",
   medium: "caution",
   low: "negative",
+  unknown: "neutral",
 };
 
 const tierLabel: Record<Confidence, string> = {
   high: "High confidence",
   medium: "Medium confidence — worth checking",
   low: "Low confidence — review this value",
+  unknown: "Confidence not reported",
 };
 
 export interface ConfidenceBadgeProps {
