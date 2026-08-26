@@ -2,19 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { usePolicies } from "@/api/endpoints/policies";
 import { useClaims } from "@/api/endpoints/claims";
 import { useAlerts } from "@/api/endpoints/alerts";
-import { AlertCard, EmptyState, ErrorState, PolicyCard, Skeleton } from "@/components/primitives";
-
-const claimStateLabel: Record<string, string> = {
-  intimated: "Intimated",
-  documents_submitted: "Documents submitted",
-  under_review: "Under review",
-  queried: "Query raised",
-  approved: "Approved",
-  denied: "Denied",
-  escalated: "Escalated",
-  resolved: "Resolved",
-  unknown: "Status unavailable",
-};
+import { AlertCard, ClaimStateBadge, EmptyState, ErrorState, PolicyCard, Skeleton } from "@/components/primitives";
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -88,7 +76,7 @@ export function Dashboard() {
             {activeClaims.map((claim) => (
               <div key={claim.id} className="flex min-w-56 shrink-0 flex-col gap-1 rounded border border-rule bg-card px-3 py-2.5">
                 <span className="text-sm font-medium text-foreground">{claim.hospital_name}</span>
-                <span className="text-xs text-muted-foreground">{claimStateLabel[claim.current_state] ?? claim.current_state}</span>
+                <ClaimStateBadge state={claim.current_state} className="w-fit" />
                 {claim.deadlines[0] && (
                   <span className="font-tabular font-mono text-xs text-caution">
                     {claim.deadlines[0].label}: {claim.deadlines[0].days_remaining >= 0 ? `${claim.deadlines[0].days_remaining}d left` : "expired"}

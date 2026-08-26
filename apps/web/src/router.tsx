@@ -7,6 +7,9 @@ import { PolicyList } from "@/pages/PolicyList";
 import { PolicyUpload } from "@/pages/PolicyUpload";
 import { PolicyDetail } from "@/pages/PolicyDetail";
 import { PolicyAsk } from "@/pages/PolicyAsk";
+import { ClaimList } from "@/pages/ClaimList";
+import { ClaimNew } from "@/pages/ClaimNew";
+import { ClaimWorkspace } from "@/pages/ClaimWorkspace";
 
 /**
  * Route table from docs/claude-code-frontend-prompt.md §6. Screens not built
@@ -24,9 +27,9 @@ export const router = createBrowserRouter([
       { path: "policies/upload", element: <PolicyUpload /> },
       { path: "policies/:id", element: <PolicyDetail /> },
       { path: "policies/:id/ask", element: <PolicyAsk /> },
-      { path: "claims", element: <PlaceholderScreen title="Claims" phase="Phase 4" /> },
-      { path: "claims/new", element: <PlaceholderScreen title="File a claim" phase="Phase 4" /> },
-      { path: "claims/:id", element: <PlaceholderScreen title="Claim workspace" phase="Phase 4" /> },
+      { path: "claims", element: <ClaimList /> },
+      { path: "claims/new", element: <ClaimNew /> },
+      { path: "claims/:id", element: <ClaimWorkspace /> },
       { path: "claims/:id/grievance", element: <PlaceholderScreen title="Grievance drafting" phase="Phase 5" /> },
       { path: "alerts", element: <PlaceholderScreen title="Alerts" phase="Phase 6" /> },
       { path: "insurers", element: <PlaceholderScreen title="Insurer benchmarking" phase="Phase 6" /> },

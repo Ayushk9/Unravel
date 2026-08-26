@@ -1,25 +1,53 @@
 import { useState, type ReactNode } from "react";
-import type { Alert, Citation, Deadline, Policy, Provenance, SubLimit, WaitingPeriod } from "@/api/types";
+import type {
+  Alert,
+  Citation,
+  CompletenessReport,
+  Claim,
+  DocumentType,
+  EligibilityAssessment,
+  EligibilityCheck,
+  Deadline,
+  Member,
+  OmbudsmanAward,
+  Policy,
+  Provenance,
+  StoredDocument,
+  SubLimit,
+  WaitingPeriod,
+} from "@/api/types";
 import {
   AbstentionCard,
   AlertCard,
   CitationList,
   CitedProse,
+  ClaimCard,
+  ClaimEventItem,
+  ClaimStateBadge,
+  CompletenessPanel,
   ConfidenceBadge,
   DeadlineCard,
+  DocumentRow,
+  DocumentTypeSelect,
   DocumentViewer,
+  EligibilityAssessmentView,
+  EligibilityCheckItem,
   EmptyState,
   ErrorState,
   ExtractedField,
   FileDropzone,
   JobProgress,
+  Modal,
   Money,
   PolicyCard,
+  PrecedentCard,
   ProvenanceChip,
   Skeleton,
   SubLimitsTable,
   VerdictBand,
   WaitingPeriodTimeline,
+  WizardSteps,
+  type WizardStep,
 } from "@/components/primitives";
 
 const SAMPLE_PDF = "/kitchen-sink/sample-policy.pdf";
@@ -203,6 +231,179 @@ const sampleAlerts: Alert[] = [
   },
 ];
 
+const sampleMember: Member = { id: "member-sample", full_name: "Ananya Rao", relationship: "self", date_of_birth: "1990-02-14" };
+
+const sampleClaim: Claim = {
+  id: "claim-sample",
+  policy_id: "policy-sample",
+  member_id: sampleMember.id,
+  claim_type: "reimbursement",
+  admission_type: "emergency",
+  hospital_name: "Manipal Hospital, Bengaluru",
+  admitted_on: "2026-07-05",
+  discharged_on: "2026-07-10",
+  claimed_amount: 18500000,
+  settled_amount: null,
+  current_state: "denied",
+  events: [
+    {
+      id: "e-1",
+      claim_id: "claim-sample",
+      from_state: null,
+      to_state: "intimated",
+      occurred_at: "2026-07-06T10:00:00+05:30",
+      note: "Claim intimated via app",
+      source: "user",
+    },
+    {
+      id: "e-2",
+      claim_id: "claim-sample",
+      from_state: "intimated",
+      to_state: "documents_submitted",
+      occurred_at: "2026-07-12T14:10:00+05:30",
+      note: "Discharge summary and itemised bill uploaded",
+      source: "user",
+    },
+    {
+      id: "e-3",
+      claim_id: "claim-sample",
+      from_state: "documents_submitted",
+      to_state: "under_review",
+      occurred_at: "2026-07-14T09:00:00+05:30",
+      note: "Insurer acknowledged receipt and began review",
+      source: "system",
+    },
+    {
+      id: "e-4",
+      claim_id: "claim-sample",
+      from_state: "under_review",
+      to_state: "denied",
+      occurred_at: "2026-08-10T11:00:00+05:30",
+      note: "Denied — condition assessed as pre-existing to policy inception",
+      source: "insurer_letter",
+    },
+  ],
+  deadlines: [sampleDeadlines[2]!],
+};
+
+const sampleDocumentParsed: StoredDocument = {
+  id: "doc-sample-parsed",
+  file_name: "discharge-summary-jul-2026.pdf",
+  mime_type: "application/pdf",
+  page_count: 3,
+  uploaded_at: "2026-07-12T14:05:00+05:30",
+  detected_type: { value: "discharge_summary", confidence: "high", provenance: roomRentProvenance, user_confirmed: true },
+  parse_status: "parsed",
+  parse_error: null,
+  deleted_at: null,
+  claim_id: sampleClaim.id,
+};
+
+const sampleDocumentParsing: StoredDocument = {
+  ...sampleDocumentParsed,
+  id: "doc-sample-parsing",
+  file_name: "itemised-bill-jul-2026.pdf",
+  detected_type: { value: null, confidence: "unknown", provenance: null, user_confirmed: false },
+  parse_status: "parsing",
+};
+
+const sampleCompletenessReport: CompletenessReport = {
+  claim_id: sampleClaim.id,
+  required: ["discharge_summary", "itemised_bill", "payment_receipt", "id_proof"],
+  present: ["discharge_summary", "itemised_bill"],
+  missing: ["payment_receipt", "id_proof"],
+  advisory_note: "Missing 2 documents before this claim looks complete.",
+};
+
+const sampleEligibilityChecks: EligibilityCheck[] = [
+  {
+    id: "check-failed",
+    title: "Pre-existing disease waiting period",
+    status: "failed",
+    explanation:
+      "Your policy's continuous cover began 1 Apr 2023. The pre-existing-disease waiting period is 48 months, so it runs to 1 Apr 2027. Your admission on 5 Jul 2026 falls 27 months inside it.",
+    governing_clause: pedWaitingProvenance,
+    missing_fact: null,
+    resolving_document: null,
+  },
+  {
+    id: "check-at-risk",
+    title: "Sum insured adequacy",
+    status: "at_risk",
+    explanation: "Your claimed amount is above your policy's sum insured, so part of the bill may not be payable.",
+    governing_clause: null,
+    missing_fact: null,
+    resolving_document: null,
+  },
+  {
+    id: "check-unknown",
+    title: "Initial waiting period",
+    status: "unknown",
+    explanation: "We don't know this claim's admission date yet, so we can't check it against the waiting period.",
+    governing_clause: null,
+    missing_fact: "Admission date",
+    resolving_document: "discharge_summary",
+  },
+  {
+    id: "check-satisfied",
+    title: "Room rent within cap",
+    status: "satisfied",
+    explanation: "Your room rent choice is within your policy's per-day cap.",
+    governing_clause: roomRentProvenance,
+    missing_fact: null,
+    resolving_document: null,
+  },
+];
+
+const sampleOmbudsmanAward: OmbudsmanAward = {
+  id: "award-sample",
+  case_reference: "GIC/2025/00142",
+  insurer_name: "Suraksha General Insurance",
+  decided_on: "2025-11-20",
+  denial_ground: "Pre-existing disease non-disclosure",
+  outcome: "overturned",
+  summary:
+    "Insurer denied the claim alleging the condition pre-existed the policy but produced no medical evidence beyond the discharge summary. The Ombudsman held continuous, unbroken renewal counts toward the waiting period from original inception.",
+  external_url: null,
+};
+
+const sampleEligibilityAssessment: EligibilityAssessment = {
+  claim_id: sampleClaim.id,
+  band: "likely_ineligible",
+  checks: sampleEligibilityChecks,
+  ombudsman_precedent: [sampleOmbudsmanAward],
+  generated_at: "2026-08-20T10:00:00+05:30",
+};
+
+const sampleAbstainedAssessment: EligibilityAssessment = {
+  claim_id: sampleClaim.id,
+  band: "insufficient_information",
+  checks: [sampleEligibilityChecks[2]!],
+  ombudsman_precedent: [],
+  generated_at: "2026-08-20T10:00:00+05:30",
+};
+
+const sampleWizardSteps: WizardStep[] = [
+  { key: "policy", label: "Policy & member" },
+  { key: "details", label: "Claim details" },
+  { key: "documents", label: "Documents" },
+  { key: "bill", label: "Bill review" },
+  { key: "eligibility", label: "Eligibility" },
+  { key: "summary", label: "Summary" },
+];
+
+const ALL_CLAIM_STATES = [
+  "intimated",
+  "documents_submitted",
+  "under_review",
+  "queried",
+  "approved",
+  "denied",
+  "escalated",
+  "resolved",
+  "unknown",
+] as const;
+
 function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3 border-b border-rule pb-8">
@@ -227,6 +428,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function KitchenSink() {
   const [activeProvenance, setActiveProvenance] = useState<Provenance | null>(null);
   const [errorRetryCount, setErrorRetryCount] = useState(0);
+  const [demoDocType, setDemoDocType] = useState<DocumentType>("itemised_bill");
+  const [modalOpen, setModalOpen] = useState(false);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6">
@@ -234,11 +437,12 @@ export function KitchenSink() {
         <p className="font-mono text-xs tracking-wide text-muted-foreground uppercase">Dev route — not part of the product</p>
         <h1 className="font-serif text-3xl font-semibold text-foreground">Kitchen sink</h1>
         <p className="max-w-prose text-sm text-muted-foreground">
-          Every primitive, in every state it can occupy — Phase 1's eleven plus the
-          eight Phase 3 added while building the dashboard, policy list,
-          upload/review, policy detail, and Q&A screens. To verify state is
-          distinguishable without colour, screenshot this page and desaturate it —
-          every row should still read correctly (icon + label carry the meaning).
+          Every primitive, in every state it can occupy — Phase 1's eleven, the
+          eight Phase 3 added for the dashboard/policy/Q&A screens, and the
+          eleven Phase 4 added for the claim list, wizard, and workspace. To
+          verify state is distinguishable without colour, screenshot this page
+          and desaturate it — every row should still read correctly (icon +
+          label carry the meaning).
         </p>
       </header>
 
@@ -465,6 +669,85 @@ export function KitchenSink() {
           resolvingDocument="Policy wording (full terms document)"
           action={{ label: "Upload policy wording", onClick: () => {} }}
         />
+      </Section>
+
+      <Section title="ClaimStateBadge" note="Phase 4. Same four-tone system, mapped from claim state.">
+        <div className="flex flex-wrap gap-2">
+          {ALL_CLAIM_STATES.map((s) => (
+            <ClaimStateBadge key={s} state={s} />
+          ))}
+        </div>
+      </Section>
+
+      <Section title="ClaimCard" note="Any claim with an active deadline surfaces it on the card, via DeadlineCard.">
+        <div className="max-w-sm">
+          <ClaimCard claim={sampleClaim} member={sampleMember} />
+        </div>
+      </Section>
+
+      <Section title="DocumentTypeSelect" note="Editable dropdown for correcting an auto-detected document type.">
+        <Row label="interactive">
+          <DocumentTypeSelect value={demoDocType} onChange={setDemoDocType} />
+          <span className="font-mono text-xs text-muted-foreground">selected: {demoDocType}</span>
+        </Row>
+      </Section>
+
+      <Section title="DocumentRow" note="Claim wizard's Documents step and the claim workspace's Documents tab both list documents this way.">
+        <div className="flex flex-col gap-2">
+          <DocumentRow document={sampleDocumentParsed} onTypeChange={() => {}} onView={() => {}} onDelete={() => {}} />
+          <DocumentRow document={sampleDocumentParsing} onTypeChange={() => {}} onView={() => {}} onDelete={() => {}} />
+        </div>
+      </Section>
+
+      <Section title="CompletenessPanel" note="Feature 4 — live view of POST /claims/{id}/completeness.">
+        <CompletenessPanel report={sampleCompletenessReport} />
+      </Section>
+
+      <Section title="EligibilityCheckItem" note="Ordered failed -> at_risk -> unknown -> satisfied. Expand a row for the full explanation.">
+        <div className="flex flex-col gap-2">
+          {sampleEligibilityChecks.map((check) => (
+            <EligibilityCheckItem key={check.id} check={check} onOpenProvenance={setActiveProvenance} onUploadResolvingDocument={() => {}} />
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        title="EligibilityAssessmentView"
+        note="Shared by the claim wizard's step 5 and the claim workspace's Eligibility tab. Second example shows insufficient_information's missing-fact card outranking the checks list."
+      >
+        <div className="flex flex-col gap-6">
+          <EligibilityAssessmentView assessment={sampleEligibilityAssessment} onOpenProvenance={setActiveProvenance} onUploadResolvingDocument={() => {}} />
+          <div className="border-t-2 border-dashed border-rule pt-6">
+            <EligibilityAssessmentView assessment={sampleAbstainedAssessment} onOpenProvenance={setActiveProvenance} onUploadResolvingDocument={() => {}} />
+          </div>
+        </div>
+      </Section>
+
+      <Section title="PrecedentCard" note="One entry in the eligibility tab's precedent panel — framed as a similar fact pattern, never a prediction.">
+        <PrecedentCard award={sampleOmbudsmanAward} />
+      </Section>
+
+      <Section title="ClaimEventItem" note="Rendered directly from the append-only event log, newest first.">
+        <ol className="flex flex-col">
+          {[...sampleClaim.events].reverse().map((event, i, arr) => (
+            <ClaimEventItem key={event.id} event={event} isLast={i === arr.length - 1} />
+          ))}
+        </ol>
+      </Section>
+
+      <Section title="WizardSteps" note="The claim wizard's progress rail.">
+        <div className="flex flex-col gap-3">
+          <WizardSteps steps={sampleWizardSteps} currentIndex={2} />
+        </div>
+      </Section>
+
+      <Section title="Modal" note="Used for the claim timeline's 'Add event' action — a deliberate action, not an inline edit.">
+        <button type="button" onClick={() => setModalOpen(true)} className="w-fit rounded border border-rule px-3 py-1.5 text-sm font-medium hover:bg-secondary">
+          Open modal
+        </button>
+        <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Example modal">
+          <p className="text-sm text-foreground">Modal content goes here.</p>
+        </Modal>
       </Section>
     </div>
   );

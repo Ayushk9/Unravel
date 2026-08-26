@@ -18,6 +18,7 @@ export interface ScenarioState {
   forceAbstention: boolean;
   forceEligibilityBand: EligibilityAssessment["band"] | null;
   forceExpiredDeadline: boolean;
+  forceIllegalTransition: boolean;
 }
 
 export const defaultScenarioState: ScenarioState = {
@@ -29,6 +30,7 @@ export const defaultScenarioState: ScenarioState = {
   forceAbstention: false,
   forceEligibilityBand: null,
   forceExpiredDeadline: false,
+  forceIllegalTransition: false,
 };
 
 let state: ScenarioState = { ...defaultScenarioState };

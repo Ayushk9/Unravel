@@ -9,6 +9,7 @@ export const queryKeys = {
     all: () => ["documents"] as const,
     list: (cursor: string | null) => ["documents", "list", cursor] as const,
     detail: (id: string) => ["documents", "detail", id] as const,
+    byClaim: (claimId: string) => ["documents", "byClaim", claimId] as const,
   },
   policies: {
     all: () => ["policies"] as const,

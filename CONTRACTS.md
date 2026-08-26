@@ -54,29 +54,32 @@ This is Phase 2 of the frontend build. It implements every ruling in
 |---|---|---|---|---|---|---|---|
 | 1 | `GET /health` | — | `{ status: "ok" }` | 401 | Sync | — | — |
 | 2 | `POST /documents` | multipart: `file`, `claim_id` | 202 `JobAccepted` (kind `parse_document`) | 401, 413 (>25MB), 422 (bad type / missing file) | **Job**, 4–8s | — | **Required** |
-| 3 | `GET /documents` | `?cursor&limit` | `Collection<StoredDocument>` | 401 | Sync | Cursor | — |
+| 3 | `GET /documents` | `?cursor&limit&claim_id` | `Collection<StoredDocument>` | 401 | Sync | Cursor | — |
 | 4 | `GET /documents/{id}` | — | `StoredDocument` | 401, 404 | Sync | — | — |
-| 5 | `DELETE /documents/{id}` | — | 204 | 401, 404 | Sync (soft delete, D-20) | — | — |
-| 6 | `GET /policies` | — | `Policy[]` | 401 | Sync | No (full array) | — |
-| 7 | `POST /policies` | `{ source_document_id }` | `Policy` | 401, 409, 422 | Sync | — | — |
-| 8 | `GET /policies/{id}` | — | `Policy` (embeds `coverage_profile`) | 401, 404 | Sync | — | — |
-| 9 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }` | `Policy` | 401, 404, 409, 422 | Sync | — | — |
-| 10 | `POST /policies/{id}/questions` | `{ question }` | 202 `JobAccepted` (kind `answer_question`) | 401, 404 | **Job**, 3–6s | — | — |
-| 11 | `GET /members` | — | `Member[]` | 401 | Sync | No (full array) | — |
-| 12 | `GET /claims` | — | `Claim[]` | 401 | Sync | No — see §4 gap | — |
-| 13 | `POST /claims` | `ClaimCreateRequest` | 201 `Claim` | 401, 422 | Sync | — | — |
-| 14 | `GET /claims/{id}` | — | `Claim` | 401, 404 | Sync | — | — |
-| 15 | `POST /claims/{id}/events` | `{ to_state, occurred_at, note }` | `Claim` (recomputed) | 401, 404, **409** (illegal transition — allowed targets in `field_errors`, see §3) | Sync | — | — |
-| 16 | `POST /claims/{id}/eligibility` | — | `EligibilityAssessment` | 401, 404 | Sync | — | — |
-| 17 | `POST /claims/{id}/completeness` | — | `CompletenessReport` | 401, 404 | Sync | — | — |
-| 18 | `POST /claims/{id}/bill-validation` | — | `BillValidationReport` | 401, 404, **409** (bill not parsed yet) | Sync | — | — |
-| 19 | `POST /claims/{id}/grievance-drafts` | `{ rung }` | 202 `JobAccepted` (kind `generate_grievance_draft`) | 401, 404 | **Job**, 20–30s | — | **Required** |
-| 20 | `GET /alerts` | — | `Alert[]` | 401 | Sync | No (full array) | — |
-| 21 | `GET /ombudsman-awards` | `?cursor&limit` | `Collection<OmbudsmanAward>` | 401 | Sync | Cursor | — |
-| 22 | `GET /insurers/benchmarks` | — | `InsurerBenchmark[]` | 401 | Sync | No (full array) | — |
-| 23 | `GET /jobs/{job_id}` | — | `Job<TResult>` | 401, 404 | Sync (this is what gets polled) | — | — |
+| 5 | `PATCH /documents/{id}` | `{ detected_type }` | `StoredDocument` | 401, 404, 422 | Sync | — | — |
+| 6 | `DELETE /documents/{id}` | — | 204 | 401, 404 | Sync (soft delete, D-20) | — | — |
+| 7 | `GET /policies` | — | `Policy[]` | 401 | Sync | No (full array) | — |
+| 8 | `POST /policies` | `{ source_document_id }` | `Policy` | 401, 409, 422 | Sync | — | — |
+| 9 | `GET /policies/{id}` | — | `Policy` (embeds `coverage_profile`) | 401, 404 | Sync | — | — |
+| 10 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }` | `Policy` | 401, 404, 409, 422 | Sync | — | — |
+| 11 | `POST /policies/{id}/questions` | `{ question }` | 202 `JobAccepted` (kind `answer_question`) | 401, 404 | **Job**, 3–6s | — | — |
+| 12 | `GET /members` | — | `Member[]` | 401 | Sync | No (full array) | — |
+| 13 | `GET /claims` | — | `Claim[]` | 401 | Sync | No — see §4 gap | — |
+| 14 | `POST /claims` | `ClaimCreateRequest` | 201 `Claim` | 401, 422 | Sync | — | — |
+| 15 | `GET /claims/{id}` | — | `Claim` | 401, 404 | Sync | — | — |
+| 16 | `POST /claims/{id}/events` | `{ to_state, occurred_at, note }` | `Claim` (recomputed) | 401, 404, **409** (illegal transition — allowed targets in `field_errors`, see §3) | Sync | — | — |
+| 17 | `POST /claims/{id}/eligibility` | — | `EligibilityAssessment` | 401, 404 | Sync | — | — |
+| 18 | `POST /claims/{id}/completeness` | — | `CompletenessReport` | 401, 404 | Sync | — | — |
+| 19 | `POST /claims/{id}/bill-validation` | — | `BillValidationReport` | 401, 404, **409** (bill not parsed yet) | Sync | — | — |
+| 20 | `POST /claims/{id}/grievance-drafts` | `{ rung }` | 202 `JobAccepted` (kind `generate_grievance_draft`) | 401, 404 | **Job**, 20–30s | — | **Required** |
+| 21 | `GET /alerts` | — | `Alert[]` | 401 | Sync | No (full array) | — |
+| 22 | `GET /ombudsman-awards` | `?cursor&limit` | `Collection<OmbudsmanAward>` | 401 | Sync | Cursor | — |
+| 23 | `GET /insurers/benchmarks` | — | `InsurerBenchmark[]` | 401 | Sync | No (full array) | — |
+| 24 | `GET /jobs/{job_id}` | — | `Job<TResult>` | 401, 404 | Sync (this is what gets polled) | — | — |
 
-23 endpoints. `#1` (`health`) is infra, not part of a vertical slice.
+24 endpoints. `#1` (`health`) is infra, not part of a vertical slice. `#3`'s
+`claim_id` filter and all of `#5` are Phase 4 additions, not in the ratified
+`API_DECISIONS.md` endpoint list — see §4.
 
 ---
 
@@ -152,6 +155,38 @@ position in that response's `citations` array — parsed by `<CitedProse>`
 This is a convention this mock invented, not something either ratified doc
 specifies — worth a formal line if the backend team needs to match it exactly.
 
+**Phase 4: `PATCH /documents/{id}` corrects a misclassified `detected_type`.**
+Not in the ratified endpoint list — added because the claim wizard's Documents
+step and the claim workspace's Documents tab both require an editable
+type-correction dropdown, and nothing existing addressed it. Body:
+`{ detected_type: DocumentType }`. Modelled on D-15's targeted-PATCH pattern:
+sets `user_confirmed: true` and bumps `confidence` to `"high"`, preserving the
+original `provenance`. See §4.
+
+**Phase 4: `GET /documents?claim_id=...` filters the existing paginated
+collection** rather than being a new endpoint — a claim's own documents are a
+subset of the same resource, so this is an additive query parameter on
+endpoint `#3`, not a contract-shape change. `apps/web/mocks/handlers/documents.ts`
+routes it through the existing `documentsForClaim()` lookup before paginating.
+
+**Phase 4: claim-context document classification is filename-keyword-matched**
+(`apps/web/mocks/handlers/documents.ts`, `detectClaimDocumentType`), not a fixed
+constant like Phase 3's upload flow. A file named e.g. `discharge-summary.pdf`
+classifies as `discharge_summary`; anything unmatched defaults to
+`itemised_bill`. Mock-only realism so the wizard's "3 of 4 required documents"
+scenario is actually reachable by uploading distinctly-named files, and so the
+editable-dropdown correction control has a reason to exist beyond the default
+case. Not a contract concern — a real classifier reads file content, not names.
+
+**Phase 4: the dev toolbar's "Force illegal transition (409)" is deterministic,
+not just "pick something illegal."** `POST /claims/{id}/events` checks this
+scenario flag before validating the requested transition at all, and if set,
+always 409s with the *current* claim's real allowed-target list in
+`field_errors` — regardless of what `to_state` was actually requested. This
+exists so the inline allowed-states recovery UI is reachable on demand rather
+than requiring the tester to already know the state machine well enough to
+pick an illegal move by hand.
+
 ---
 
 ## 4. Ambiguous or underspecified — needs a decision or a ratified line
@@ -216,16 +251,47 @@ assumption so Phase 2 could proceed; none should be read as settled.
    clickable superscripts; nothing in `API_DECISIONS.md` specifies this, and
    Feature 7 (grievance drafting, Phase 5) will need the same mechanism. See §3.
 
+10. **`PATCH /documents/{id}` for type correction is a new endpoint, not a ratified
+    one** (added in Phase 4 — endpoint `#5`, §3). The claim wizard and the claim
+    workspace's Documents tab both need to let the user correct a misclassified
+    document type, and nothing in `API_DECISIONS.md`'s slice-1 endpoint list covers
+    it. Modelled deliberately on D-15's targeted-PATCH shape rather than inventing
+    something new. Needs sign-off the same way item 2 above does.
+
+11. **`GET /documents?claim_id=...` is an additive filter on an existing paginated
+    endpoint, not a new one** (added in Phase 4, §3) — lower-risk than item 10
+    since it doesn't change the response shape, but still worth a ratified line so
+    Slice 1's implementer knows the frontend expects it.
+
+12. **The claim wizard's resumability doesn't cover steps 1–2.** The working
+    agreement requires persisting wizard state to the server or route, never
+    localStorage. Steps 1–2 (policy + member, then claim type/admission
+    type/hospital/dates/amount) happen before `POST /claims` exists to persist
+    anything to — `policy`/`member` selections are lifted to URL search params
+    (cheap id references), but the free-form fields in step 2 are not. A refresh
+    before step 2's submit restarts intake at step 1; every step from 3 onward is
+    fully resumable from `?claim={id}&step={n}` alone, since it all reads back from
+    the server. Same shape of degradation `/policies/upload` already accepts for a
+    refresh before its own upload begins — not a new kind of gap, just a new
+    instance of it. See `DECISIONS.md`.
+
 ---
 
 ## 5. What's deliberately not built yet
 
 Per `docs/claude-code-frontend-prompt.md` §10: Phase 2 (contracts, fixtures,
-handlers, this document, the dev toolbar) and Phase 3 (Features 5 and 1 — the
+handlers, this document, the dev toolbar), Phase 3 (Features 5 and 1 — the
 dashboard, policy list, upload/parse/review, policy detail, and grounded Q&A
-screens) are both done as of this document's current state. Features 6, 4, 2
-(claims, timeline, eligibility, wizard), 3 and 7 (bill validation, grievance
-drafting), and 8 and 9 (alerts inbox, benchmarking) are not — their routes still
-render `PlaceholderScreen`. The endpoints and fixtures those features need
-(`/claims/*`, `/alerts`, `/insurers/benchmarks`, `/ombudsman-awards`) already exist
-from Phase 2; only the screens are missing.
+screens), and Phase 4 (Features 6, 4, 2 — the claim list, claim wizard, claim
+timeline, and eligibility) are done as of this document's current state.
+
+Features 3 and 7 (bill validation, grievance drafting) and 8 and 9 (alerts inbox,
+benchmarking) are not — `/alerts` and `/insurers` still render `PlaceholderScreen`.
+The claim workspace's **Bill tab is a deliberate stub** this phase (per the Phase 4
+brief) — it renders an `EmptyState` naming Phase 5, not a placeholder route; the
+claim wizard's own bill-review step (4) shows a minimal read-only totals/flags
+summary from the same `BillValidationReport` data, explicitly *not* the full
+line-item table with source highlighting the brief describes for Feature 3 — that
+polish is Phase 5's job, not duplicated ahead of time. The endpoints and fixtures
+Phase 5/6 need (`/claims/{id}/grievance-drafts`, `/alerts`, `/insurers/benchmarks`,
+`/ombudsman-awards`) already exist from Phase 2; only those screens are missing.

@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DocumentType } from "@/api/types";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/api/queryKeys";
 import { collectionSchema, jobAcceptedSchema, storedDocumentSchema } from "@/api/schemas";
@@ -48,6 +49,42 @@ export function useUploadDocument() {
       });
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.documents.all() });
+    },
+  });
+}
+
+/**
+ * Phase 4 addition: `claim_id` is a Phase 2 filter query param on the same
+ * paginated GET /documents endpoint (not a new endpoint) — see CONTRACTS.md
+ * §2 and DECISIONS.md. A claim's own documents are few, so this fetches one
+ * page rather than paginating properly, and polls while any of them are
+ * still queued/parsing so the wizard's live document list (and, via the
+ * caller re-triggering completeness, the completeness panel) update without
+ * a manual refresh.
+ */
+export function useClaimDocuments(claimId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.documents.byClaim(claimId ?? "none"),
+    queryFn: () => apiFetch(`/documents?claim_id=${claimId}&limit=100`, { schema: documentsPageSchema }),
+    enabled: claimId !== null,
+    select: (page) => page.items,
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? [];
+      const stillWorking = items.some((d) => d.parse_status === "queued" || d.parse_status === "parsing");
+      return stillWorking ? 2000 : false;
+    },
+  });
+}
+
+/** Corrects a misclassified document type — editable dropdown in the claim wizard's Documents step and the claim workspace's Documents tab. */
+export function useCorrectDocumentType(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (detectedType: DocumentType) =>
+      apiFetch(`/documents/${id}`, { method: "PATCH", body: { detected_type: detectedType }, schema: storedDocumentSchema }),
+    onSuccess: (doc) => {
+      queryClient.setQueryData(queryKeys.documents.detail(id), doc);
       void queryClient.invalidateQueries({ queryKey: queryKeys.documents.all() });
     },
   });

@@ -68,6 +68,11 @@ function DevToolbarPanel() {
               checked={scenarios.forceExpiredDeadline}
               onChange={(v) => setScenarios({ forceExpiredDeadline: v })}
             />
+            <Toggle
+              label="Force illegal transition (409)"
+              checked={scenarios.forceIllegalTransition}
+              onChange={(v) => setScenarios({ forceIllegalTransition: v })}
+            />
           </div>
 
           <div className="mt-2 border-t border-rule pt-2">

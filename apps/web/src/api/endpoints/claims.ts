@@ -72,11 +72,13 @@ export function useEligibility(claimId: string | null) {
   });
 }
 
-export function useCompleteness(claimId: string | null) {
+/** `poll` (Phase 4): the claim wizard's Documents step re-derives completeness as uploads finish parsing, so it opts into a light poll rather than requiring a manual refetch after every upload. */
+export function useCompleteness(claimId: string | null, { poll = false }: { poll?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.claims.completeness(claimId ?? "none"),
     queryFn: () => apiFetch(`/claims/${claimId}/completeness`, { method: "POST", schema: completenessReportSchema }),
     enabled: claimId !== null,
+    refetchInterval: poll ? 2000 : false,
   });
 }
 

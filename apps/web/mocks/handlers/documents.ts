@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { JobAccepted, ParseDocumentResult, Policy } from "@/api/types";
+import type { DocumentType, DocumentTypeCorrectionRequest, JobAccepted, ParseDocumentResult, Policy } from "@/api/types";
 import * as db from "../db";
 import { policyById, retailPolicy } from "../fixtures";
 import { errorResponse, genId, notFound, paginate, plainReadDelay, requireAuth } from "../utils";
@@ -7,6 +7,36 @@ import { applyGlobalScenarios } from "../scenarios";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/heic", "image/webp"];
+
+const DOCUMENT_TYPES: DocumentType[] = [
+  "policy_schedule",
+  "policy_wording",
+  "discharge_summary",
+  "itemised_bill",
+  "payment_receipt",
+  "investigation_report",
+  "denial_letter",
+  "id_proof",
+  "unknown",
+];
+
+/**
+ * Phase 4: the real extraction pipeline doesn't exist, but a claim wizard
+ * demo where every uploaded document defaults to the same type would make
+ * the "editable dropdown corrects a misclassification" feature untestable
+ * except by accident. Keyword-matches the (user-chosen) file name as a
+ * stand-in for real classification — mock-only, not a contract concern.
+ */
+function detectClaimDocumentType(fileName: string): DocumentType {
+  const name = fileName.toLowerCase();
+  if (name.includes("discharge")) return "discharge_summary";
+  if (name.includes("bill") || name.includes("invoice")) return "itemised_bill";
+  if (name.includes("receipt") || name.includes("payment")) return "payment_receipt";
+  if (name.includes("aadhaar") || name.includes("pan") || name.includes("passport") || name.includes("id-proof") || name.includes("id_proof")) return "id_proof";
+  if (name.includes("denial") || name.includes("repudiat")) return "denial_letter";
+  if (name.includes("investigat") || name.includes("lab") || name.includes("report")) return "investigation_report";
+  return "itemised_bill"; // reasonable default for a claim-context upload with no filename hint
+}
 
 /**
  * Runs once the parse_document job's simulated delay has elapsed. Registered
@@ -20,7 +50,7 @@ const ALLOWED_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png", "image
 db.registerJobResolver("parse_document", (params): ParseDocumentResult => {
   const { documentId, claimId } = params as { documentId: string; claimId: string | null };
   const looksLikePolicy = !claimId; // policy uploads happen outside a claim; claim uploads are bills/discharge summaries/etc.
-  const detectedType = looksLikePolicy ? "policy_schedule" : "itemised_bill";
+  const detectedType: DocumentType = looksLikePolicy ? "policy_schedule" : detectClaimDocumentType(db.getDocument(documentId)?.file_name ?? "");
 
   db.updateDocument(documentId, {
     page_count: looksLikePolicy ? 4 : 2,
@@ -134,7 +164,12 @@ export const documentsHandlers = [
     const url = new URL(request.url);
     const cursor = url.searchParams.get("cursor");
     const limit = Number.parseInt(url.searchParams.get("limit") ?? "20", 10);
-    return HttpResponse.json(paginate(db.listDocuments(), cursor, limit));
+    // Phase 4: `claim_id` filters the same paginated collection rather than being a
+    // new endpoint — the claim wizard's Documents step and the claim workspace's
+    // Documents tab both need "this claim's documents only". See CONTRACTS.md §2/§4.
+    const claimId = url.searchParams.get("claim_id");
+    const source = claimId ? db.documentsForClaim(claimId) : db.listDocuments();
+    return HttpResponse.json(paginate(source, cursor, limit));
   }),
 
   http.get("*/api/v1/documents/:id", async ({ request, params }) => {
@@ -147,6 +182,36 @@ export const documentsHandlers = [
     const document = db.getDocument(params.id as string);
     if (!document || document.deleted_at) return notFound("No document with that id belongs to your household.");
     return HttpResponse.json(document);
+  }),
+
+  /**
+   * Phase 4 addition, not in the ratified endpoint list (see DECISIONS.md and
+   * CONTRACTS.md §4): corrects a misclassified `detected_type`. Modelled on
+   * D-15's PATCH-a-field pattern rather than a whole-resource PUT — it's a
+   * single targeted correction, and it marks the correction as confirmed the
+   * same way a coverage-profile field correction does.
+   */
+  http.patch("*/api/v1/documents/:id", async ({ request, params }) => {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+    await plainReadDelay();
+
+    const document = db.getDocument(params.id as string);
+    if (!document || document.deleted_at) return notFound("No document with that id belongs to your household.");
+
+    const body = (await request.json()) as DocumentTypeCorrectionRequest;
+    if (!DOCUMENT_TYPES.includes(body.detected_type)) {
+      return errorResponse(422, {
+        code: "validation_error",
+        message: "Not a recognised document type.",
+        field_errors: [{ field: "detected_type", message: "Unknown document type." }],
+      });
+    }
+
+    const updated = db.updateDocument(document.id, {
+      detected_type: { ...document.detected_type, value: body.detected_type, confidence: "high", user_confirmed: true },
+    });
+    return HttpResponse.json(updated);
   }),
 
   http.delete("*/api/v1/documents/:id", async ({ request, params }) => {

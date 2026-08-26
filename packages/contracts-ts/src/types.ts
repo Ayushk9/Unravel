@@ -383,6 +383,13 @@ export interface QuestionRequest {
   question: string;
 }
 
+// Phase 4 addition — not in the ratified D-15-style list, but the claim
+// wizard's Documents step and the claim workspace's Documents tab both need
+// a way to correct an auto-detected document type. See DECISIONS.md.
+export interface DocumentTypeCorrectionRequest {
+  detected_type: DocumentType;
+}
+
 export interface GrievanceDraftRequest {
   rung: GrievanceDraft["rung"];
 }

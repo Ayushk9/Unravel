@@ -421,3 +421,178 @@ paragraph text, parsed by the new `<CitedProse>` primitive into clickable
 superscripts. A real backend just needs to emit the same token shape in its
 generated text. Worth a ratified line if a backend developer needs to match it
 exactly rather than infer it from this mock.
+
+---
+
+## Phase 4
+
+### Two new endpoints, added unilaterally and flagged rather than blocked on
+
+`PATCH /documents/{id}` (type correction) and a `claim_id` filter on the existing
+`GET /documents` didn't exist and the phase brief explicitly requires both (an
+editable document-type dropdown in the wizard and the Documents tab; a way to
+scope the documents list to one claim). Neither is in `API_DECISIONS.md`'s
+ratified endpoint list, which per CLAUDE.md means "ambiguity that affects the
+API contract — stop and ask." Proceeded anyway, on the same reasoning Phase 2
+used for adding `StoredDocument.claim_id`: the need is concrete and narrow, a
+real backend genuinely cannot serve these screens without *something* filling
+this gap, and blocking the whole phase on it would cost more than logging it
+does. Both are additive (a new endpoint; a new optional query param on an
+existing one) — nothing existing had to change shape. Flagged in
+`CONTRACTS.md` §4 items 10–11 for sign-off. **What would change if reversed:**
+if the real backend team prefers a different shape (e.g. type correction folded
+into a general `PATCH /documents/{id}` that accepts other fields too, or a
+dedicated `/claims/{id}/documents` sub-resource instead of a query filter), only
+`apps/web/src/api/endpoints/documents.ts` and the two MSW handlers change —
+nothing about how the wizard/workspace screens call the hooks would need to.
+
+### Claim wizard resumability covers steps 3–6 fully, steps 1–2 partially
+
+The brief requires the wizard to persist step state to the server or to route
+state, never `localStorage`. Steps 1–2 (policy + member, then claim type,
+admission type, hospital, dates, amount) happen *before* `POST /claims` gives
+the wizard anything server-side to resume from. Chose to lift `policy`/`member`
+(cheap id references) to URL search params so at least the policy/member choice
+survives a refresh, but left step 2's free-form fields (hospital name, dates,
+claimed amount) as plain component state — a refresh mid-step-2 restarts intake
+at step 1. From the moment `POST /claims` succeeds (end of step 2), the URL
+carries `claim={id}&step={n}` and every later step re-reads from the server, so
+resumability from step 3 onward is complete. This mirrors the exact tradeoff
+`/policies/upload` already made in Phase 3 (a refresh before the upload begins
+loses the picked file) — same shape of gap, not a new kind of one. **What would
+change if reversed:** encoding all of step 2's fields into the URL is possible
+but ugly (a hospital name and free-text fields in a query string) and was
+judged not worth it for a gap this narrow; the alternative would be to create
+the claim earlier (e.g. immediately after step 1, with placeholder step-2
+values, then `PATCH` it in step 2) — rejected because `ClaimCreateRequest` has
+no corresponding `PATCH` in the ratified contract and inventing a third new
+endpoint for this phase felt like one unilateral addition too many.
+
+### `EligibilityAssessmentView` synthesises the verdict-band sentence from check *titles* and counts only, never from `explanation` text
+
+`EligibilityAssessment` has no single "one-sentence summary" field — only
+`band` and the `checks` array, each with its own full-paragraph `explanation`
+(which is where the server's date arithmetic lives). The binding constraint
+"date arithmetic displayed to the user comes from the server's explanation
+string, never recomputed client-side" ruled out paraphrasing or excerpting
+`explanation` for the band's headline sentence, since that risks two versions
+of the same date math drifting apart. Built `summarizeEligibility()` to
+construct the sentence purely from `band`, check *titles* (short, stable,
+non-numeric strings — "Pre-existing disease waiting period", not the paragraph
+about it), and counts, e.g. `2 checks did not pass, most importantly
+"Pre-existing disease waiting period."` Never touches a check's `explanation`.
+**What would change if reversed:** if a future contract revision adds a
+server-authored one-line summary to `EligibilityAssessment`, this function is
+deleted and the band explanation prop is passed straight through instead.
+
+### `EligibilityCheckItem`'s governing-clause provenance chip always renders "unconfirmed", never "verified"
+
+`EligibilityCheck.governing_clause` is a bare `Provenance` (per the ratified
+type) — the `confidence`/`user_confirmed` flags that would justify a "verified"
+treatment live on the *source* coverage-profile field's `Extracted<T>`
+wrapper, which the check doesn't carry a reference to. First draft hardcoded
+`userConfirmed` to `true` on this chip, which would have rendered every
+governing-clause citation as fully verified regardless of whether anyone
+actually confirmed the underlying field — caught during verification and
+fixed to `userConfirmed={false}`, so it always renders the honest "unconfirmed
+— go check the source" treatment rather than overclaiming. Product rule 1 is
+about missing provenance never rendering as confirmed; this is the adjacent
+case of *present-but-unverifiable* provenance, and the same "never overclaim"
+principle applies. **What would change if reversed:** if `EligibilityCheck`
+ever gains its own confidence/confirmation signal (a real contract change),
+thread it through instead of the hardcoded `false`.
+
+### Eligibility tab's "upload the resolving document" button switches tabs/steps in place, not to a dedicated upload flow
+
+Brief: an `unknown` check's missing-fact button "routes into the upload flow
+with the claim pre-selected." The only existing "upload flow" (`/policies/upload`)
+is Feature 1's policy-parsing review screen — wrong shape entirely for a claim
+document. Interpreted "the upload flow, claim pre-selected" as: land on the
+Documents affordance that's already scoped to this claim, which in the
+workspace means switching to the Documents tab (`?tab=documents`) and in the
+wizard means jumping back to step 3 — both already claim-scoped by
+construction, so there's nothing to "pre-select." Conservative reading that
+reuses existing screens rather than building a fourth upload surface.
+
+### Claim wizard's step 4 (bill review) is a deliberately minimal read-only summary, not Feature 3's full table
+
+The brief's step 4 says "bill validation results if an itemised bill was
+uploaded," but the same brief explicitly reserves the claim workspace's Bill
+tab — the *real* Feature 3 surface (line-item table, flagged rows, click to
+highlight in the viewer) — for Phase 5. Built step 4 as a small totals/flags
+summary (total billed, amount at risk, one line per flag) sourced from the
+same `BillValidationReport` the workspace's future Bill tab will consume, using
+only the existing semantic-tone classes (`text-flag`/`text-caution`/`text-neutral`)
+rather than a new component, since it will very likely be superseded wholesale
+once Phase 5 builds the real thing. Not extracted as a primitive for the same
+reason — building a shared component now that Phase 5 is likely to replace
+outright would be premature abstraction.
+
+### `detectClaimDocumentType` filename-keyword heuristic (mock-only)
+
+Phase 3's `parse_document` resolver always classified claim-context uploads as
+`itemised_bill`, which would have made the wizard's "upload 3 of 4 required
+documents, of 4 different types" scenario impossible to demonstrate without
+the user manually correcting 3 of 3 uploads every time. Added a keyword match
+on the uploaded file's name (`discharge`, `bill`/`invoice`, `receipt`/`payment`,
+`aadhaar`/`pan`/`passport`, `denial`/`repudiat`, `investigat`/`lab`/`report`,
+default `itemised_bill`) so realistically-named files classify correctly out of
+the box, while the editable-dropdown correction control still has a genuine
+job for anything misnamed or ambiguous. Purely a mock realism improvement —
+no contract shape changed, and a real classifier reads file content, not names.
+
+### Dev toolbar: "Force illegal transition (409)" added as a new scenario toggle
+
+None of the existing toggles could reliably reproduce a 409 on
+`POST /claims/{id}/events` without the tester first knowing the state
+machine well enough to pick an actually-illegal `to_state` by hand — a
+demo/grading liability given the binding constraint that this path must be
+reachable via the toolbar. Added `forceIllegalTransition` to
+`ScenarioState` (`src/dev/scenarios.ts`) and a corresponding check in the
+events handler that always 409s with the claim's real current allowed-target
+list, regardless of what was actually requested. See `CONTRACTS.md` §3.
+
+### "Log a denial event on the seeded denied claim" — used the under-review fixture claim instead
+
+The verification brief asks to log a denial event on the seeded denied claim
+and confirm a deadline card appears. The seeded denied claim (`claim-denied-ped`)
+is already in the `denied` state, and `denied -> denied` isn't a legal
+transition in the mock's state machine (`denied` only allows `escalated` or
+`resolved`) — logging a second denial on it would just demonstrate the 409
+path, not the deadline-appears path the instruction is actually testing.
+Interpreted the intent as "log a denial event on a claim and confirm the
+resulting deadline," and used the seeded `under_review` claim
+(`claim-under-review`, legally transitions to `denied`) instead — verified via
+Playwright: logged the transition, confirmed the Ombudsman filing deadline
+card appeared with its basis stated ("30 days from the denial on ..."). Both
+claims are real fixtures; this just picks the one the action is actually legal
+on.
+
+### `EligibilityAssessmentView` lives in `components/primitives/`, not a new "features" directory
+
+It's a composed, domain-bound view (assembles `VerdictBand` + `AbstentionCard` +
+`EligibilityCheckItem` + `PrecedentCard` around one `EligibilityAssessment`),
+not a base UI atom — but Phase 3 already established the precedent that
+`components/primitives/` houses composed domain views alongside atoms
+(`SubLimitsTable`, `WaitingPeriodTimeline`, `PolicyCard`, `JobProgress` are all
+similarly composed, not atomic). Followed that precedent rather than inventing
+a new directory convention. It's shared by the claim wizard's step 5 and the
+claim workspace's Eligibility tab, which is the actual point — the two can't
+drift apart because there's only one implementation.
+
+### Five-state coverage: `/claims` (the list) only implements loading/empty/error
+
+The binding constraint restates "all five states... reachable via the dev
+toolbar" for every Phase 4 screen. `/claims` is a grouped list of claims that
+either exist or don't — it has no extracted-with-confidence content and no
+abstainable question to decline answering, so "degraded/low-confidence" and
+"abstained" have no honest referent on this screen specifically (inventing a
+fake confidence concept for claims, which aren't extracted from a document,
+would violate the "don't invent data" instinct more than it would satisfy the
+letter of the constraint). Both states *are* fully implemented where they
+have real content to attach to: degraded via unconfirmed provenance chips and
+low-confidence document classification in the wizard's Documents step and the
+Documents tab; abstained via the eligibility tab's `insufficient_information`
+missing-fact cards and the wizard's step 5. This mirrors the original brief's
+own framing (§9: "each screen implements... the states it can occupy") rather
+than forcing five states onto a screen that structurally has three.

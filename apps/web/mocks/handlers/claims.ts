@@ -138,6 +138,20 @@ export const claimsHandlers = [
     if (authError) return authError;
     await plainReadDelay();
 
+    const claim = db.getClaim(params.id as string);
+    if (!claim) return notFound("No claim with that id belongs to your household.");
+
+    // Dev-toolbar-only: forces the 409 path deterministically, regardless of
+    // which target state was actually picked, so the inline allowed-states
+    // recovery UI is reachable without hunting for a genuinely illegal move.
+    if (getScenarios().forceIllegalTransition) {
+      return errorResponse(409, {
+        code: "illegal_transition",
+        message: "That transition isn't allowed from the claim's current state. (Forced from the dev toolbar.)",
+        field_errors: db.CLAIM_TRANSITIONS[claim.current_state].map((state) => ({ field: "to_state", message: state })),
+      });
+    }
+
     const body = (await request.json()) as ClaimEventRequest;
     const result = db.appendClaimEvent(params.id as string, body.to_state, body.occurred_at, body.note);
 
