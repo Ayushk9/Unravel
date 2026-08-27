@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { AlertTriangle, BadgeCheck, HelpCircle } from "lucide-react";
 import type { Provenance } from "@/api/types";
+import { isPageNumberUsable, logRejectedProvenance } from "@/lib/provenanceGuard";
 
 /**
  * The signature element (DESIGN.md): a ticket-stub chip that proves a fact
@@ -58,16 +60,41 @@ export function ProvenanceChip({ provenance, userConfirmed = false, onOpen, clas
   const v = variant[state];
   const Icon = v.icon;
 
+  // Task 3: a structurally invalid page number means there's nowhere for this
+  // chip to actually take you — disable it rather than navigate to garbage.
+  // (page > page_count can't be checked here — that needs the source
+  // document's page_count, which this component never has; DocumentViewer
+  // handles that half of the guard once the PDF is actually loaded.)
+  const pageUnusable = provenance != null && !isPageNumberUsable(provenance.page);
+
+  useEffect(() => {
+    if (provenance && pageUnusable) {
+      logRejectedProvenance(provenance, `page ${provenance.page} is not a usable page number`);
+    }
+  }, [provenance, pageUnusable]);
+
   const content = (
     <>
       <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-      <span>{v.label(provenance?.page)}</span>
+      <span>{pageUnusable ? "Can't open — invalid page" : v.label(provenance?.page)}</span>
     </>
   );
 
   const sharedClasses = `inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-medium ${v.classes} ${
     v.dashed ? "border-dashed" : ""
   } ${className ?? ""}`;
+
+  if (pageUnusable) {
+    return (
+      <span
+        className={`${sharedClasses} cursor-not-allowed opacity-70`}
+        aria-disabled="true"
+        title="This citation's page number looks invalid — it can't be opened."
+      >
+        {content}
+      </span>
+    );
+  }
 
   if (state === "unverified" || !provenance) {
     return (

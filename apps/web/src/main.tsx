@@ -10,7 +10,10 @@ import "./index.css";
 const queryClient = new QueryClient();
 
 async function enableMocking() {
-  if (apiMode !== "mock") {
+  // "live": nothing is mocked, MSW never starts. "mock" and "hybrid" both need
+  // the worker running — hybrid just has some routes passthrough() out of it
+  // (see mocks/browser.ts, mocks/hybridPassthrough.ts).
+  if (apiMode === "live") {
     return;
   }
   const { worker } = await import("../mocks/browser");

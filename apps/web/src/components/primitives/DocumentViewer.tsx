@@ -6,6 +6,7 @@ import "@/lib/pdf-worker";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { Provenance } from "@/api/types";
+import { logRejectedProvenance, validateBbox, validatePageAgainstCount } from "@/lib/provenanceGuard";
 import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
 import { Skeleton } from "./Skeleton";
@@ -45,6 +46,26 @@ export function DocumentViewer({ fileUrl, activeProvenance, className }: Documen
     }
   }, [activeProvenance]);
 
+  // Task 3: logging-only — never writes state from here. `numPages` (the
+  // document's real page_count) is only known once the PDF has loaded, so
+  // this reruns and re-evaluates once it arrives. The actual guard against
+  // requesting a page that can't exist is `displayPage` below, derived at
+  // render time rather than synced back into state.
+  useEffect(() => {
+    if (!activeProvenance) return;
+    const pageCheck = validatePageAgainstCount(activeProvenance.page, numPages);
+    if (!pageCheck.valid) {
+      logRejectedProvenance(activeProvenance, pageCheck.reason ?? "invalid page");
+      return;
+    }
+    if (activeProvenance.bbox != null) {
+      const bboxCheck = validateBbox(activeProvenance.bbox);
+      if (!bboxCheck.valid && bboxCheck.reason) {
+        logRejectedProvenance(activeProvenance, bboxCheck.reason);
+      }
+    }
+  }, [activeProvenance, numPages]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -79,7 +100,14 @@ export function DocumentViewer({ fileUrl, activeProvenance, className }: Documen
     );
   }
 
-  const hasBoxHighlight = activeProvenance?.bbox != null;
+  // Task 3: a highlight only ever draws if the bbox is both present AND
+  // structurally sane — any doubt degrades to the plain page-jump banner
+  // below. A wrong-looking highlight is worse than no highlight.
+  const hasBoxHighlight = activeProvenance?.bbox != null && validateBbox(activeProvenance.bbox).valid;
+
+  // Derived, not stored: never actually request a page from react-pdf that's
+  // outside the loaded document's real range, however `currentPage` got set.
+  const displayPage = numPages != null ? Math.min(Math.max(currentPage, 1), numPages) : currentPage;
 
   return (
     <div className={`flex flex-col gap-2 ${className ?? ""}`}>
@@ -99,7 +127,7 @@ export function DocumentViewer({ fileUrl, activeProvenance, className }: Documen
           loading={<Skeleton className="h-[600px] w-full" />}
         >
           <div className="relative w-fit border border-rule">
-            <Page pageNumber={currentPage} width={pageWidth} loading={<Skeleton className="h-[600px] w-full" />} />
+            <Page pageNumber={displayPage} width={pageWidth} loading={<Skeleton className="h-[600px] w-full" />} />
             {hasBoxHighlight && activeProvenance?.bbox && (
               <div
                 className="pointer-events-none absolute rounded-sm border-2 border-stamp bg-stamp/15"
@@ -119,20 +147,20 @@ export function DocumentViewer({ fileUrl, activeProvenance, className }: Documen
         <div className="flex items-center justify-center gap-3 text-sm">
           <button
             type="button"
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage <= 1}
+            onClick={() => setCurrentPage(Math.max(1, displayPage - 1))}
+            disabled={displayPage <= 1}
             aria-label="Previous page"
             className="rounded border border-rule p-1 disabled:opacity-40"
           >
             <ChevronLeft className="size-4" aria-hidden="true" />
           </button>
           <span className="font-tabular font-mono text-xs text-muted-foreground">
-            Page {currentPage} of {numPages}
+            Page {displayPage} of {numPages}
           </span>
           <button
             type="button"
-            onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
-            disabled={currentPage >= numPages}
+            onClick={() => setCurrentPage(Math.min(numPages, displayPage + 1))}
+            disabled={displayPage >= numPages}
             aria-label="Next page"
             className="rounded border border-rule p-1 disabled:opacity-40"
           >

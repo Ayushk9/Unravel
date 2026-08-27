@@ -596,3 +596,63 @@ Documents tab; abstained via the eligibility tab's `insufficient_information`
 missing-fact cards and the wizard's step 5. This mirrors the original brief's
 own framing (§9: "each screen implements... the states it can occupy") rather
 than forcing five states onto a screen that structurally has three.
+
+---
+
+## Hardening block (pre-live-cutover)
+
+### Task 2: added a route-level error boundary — not explicitly requested, but required to actually deliver "the UI still renders"
+
+Task 2 asked for `safeParse` on the live path so a bad response degrades
+instead of throwing, and confirmed this in isolation. Verified end-to-end
+against a fake backend returning a deliberately malformed `Policy` (missing
+`insurer` entirely) and found that `PolicyDetail.tsx` still crashed the whole
+route — `policy.data.insurer.name` is an unconditional property access, and
+`safeParse` returning the unvalidated payload doesn't stop a *downstream*
+component from throwing a plain `TypeError` when a field it assumes exists
+genuinely doesn't. Before this fix, that crash rendered React Router's raw
+dev stack-trace screen in place of the entire page — nav included — which is
+worse for a live demo than a mocked screen with wrong data. Auditing every
+component for optional-chaining on every field a real backend might omit is
+the "real" fix but is exactly the kind of invasive, error-prone change to
+make under Thursday-night time pressure across every screen.
+
+Added `src/components/RouteErrorFallback.tsx` and gave every leaf route (and
+the `AppShell`/`kitchen-sink` routes) React Router's `errorElement` (see
+`router.tsx`), reusing `<ErrorState>` so a crash still looks like part of the
+product, with a reload button. Applied per-leaf so the `AppShell` nav frame
+keeps rendering around a crashed screen rather than disappearing with it.
+This is the option that fails safest for a live demo — a nav-intact "this
+screen couldn't render, check the toolbar" beats either a raw crash screen or
+leaving the gap unaddressed and hoping no live response ever triggers it.
+
+**What would change if reversed:** if backend responses turn out reliable
+enough that this never fires, the boundary is inert and costs nothing to
+leave in. If it fires often in practice, that's a signal individual screens
+need defensive rendering for specific fields — the dev-toolbar validation
+badge plus this boundary's console log (`[route-error-boundary]`) together
+name exactly which route and which field to go fix.
+
+### Task 3: `ProvenanceChip`'s page-validity guard only checks `page < 1`, not `page > page_count`
+
+The task lists four degrade conditions, one of which is `page < 1 or page >
+page_count`, and separately says an unusable page should disable the chip
+"rather than navigating anywhere." `page_count` lives on `StoredDocument`,
+which `ProvenanceChip` never receives — every call site (`ExtractedField`,
+`SubLimitsTable`, `CitationList`, `EligibilityCheckItem`, ...) passes a bare
+`Provenance`, not the document it belongs to. Threading `page_count` through
+every one of those call sites is a real refactor, not a hardening-scale
+change, and not something to do for the first time under Thursday-night
+pressure. Split the guard instead: `ProvenanceChip` disables on the part it
+*can* always know for free — `page < 1` / non-finite / non-integer, which
+needs nothing external — and `DocumentViewer` enforces the fuller
+`page > page_count` check once the PDF is actually loaded (`numPages` is
+free there), clamping to the last real page rather than requesting one that
+doesn't exist. Net effect for the demo is the same — you can never end up
+looking at a highlight on a page that isn't real — the only difference is
+*which* component catches an over-range page: the chip catches `page < 1`
+before you ever click; the viewer catches `page > page_count` the moment the
+document's real length is known, silently, with the same console log. Also
+didn't log "bbox is null" as a rejection anywhere — a missing bbox is an
+existing, expected, non-broken state (already designed for since Phase 1),
+not something to tell the extraction side is wrong every time it happens.

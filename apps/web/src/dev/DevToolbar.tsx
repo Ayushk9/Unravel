@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Wrench, X } from "lucide-react";
+import { AlertTriangle, Wrench, X } from "lucide-react";
 import type { EligibilityAssessment } from "@/api/types";
 import { getScenarios, resetScenarios, setScenarios, subscribeScenarios, type ScenarioState } from "./scenarios";
+import { clearValidationIssues, getValidationIssues, subscribeValidationIssues, type ValidationIssue } from "./validationIssues";
 
 /**
  * Dev-build only (brief §8.3). Forces states without editing code or
@@ -32,11 +33,46 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
   );
 }
 
+function ValidationIssuesSection({ issues }: { issues: ValidationIssue[] }) {
+  if (issues.length === 0) return null;
+  return (
+    <div className="mt-2 border-t border-rule pt-2">
+      <div className="mb-1 flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-flag">
+          <AlertTriangle className="size-3.5" aria-hidden="true" />
+          Validation issues ({issues.length})
+        </span>
+        <button type="button" onClick={() => clearValidationIssues()} className="text-xs text-muted-foreground underline underline-offset-2">
+          Clear
+        </button>
+      </div>
+      <p className="mb-1.5 text-xs text-muted-foreground">
+        A live response didn't match its schema — the screen still rendered with the unvalidated payload. Full detail in the console.
+      </p>
+      <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto text-xs">
+        {[...issues].reverse().map((issue, i) => (
+          <li key={`${issue.at}-${i}`} className="rounded border border-negative-border bg-negative-bg px-2 py-1">
+            <span className="font-mono font-medium text-flag">
+              {issue.method} {issue.path}
+            </span>
+            <span className="block text-muted-foreground">
+              {issue.issues.length} field{issue.issues.length === 1 ? "" : "s"}: {issue.issues[0]?.message ?? "—"}
+              {issue.issues.length > 1 ? ` (+${issue.issues.length - 1} more)` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function DevToolbarPanel() {
   const [open, setOpen] = useState(false);
   const [scenarios, setLocalScenarios] = useState<ScenarioState>(getScenarios());
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>(getValidationIssues());
 
   useEffect(() => subscribeScenarios(setLocalScenarios), []);
+  useEffect(() => subscribeValidationIssues(setValidationIssues), []);
 
   return (
     <div className="fixed right-4 bottom-4 z-50 font-sans">
@@ -94,6 +130,8 @@ function DevToolbarPanel() {
             </label>
           </div>
 
+          <ValidationIssuesSection issues={validationIssues} />
+
           <button
             type="button"
             onClick={() => resetScenarios()}
@@ -107,9 +145,18 @@ function DevToolbarPanel() {
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Open dev toolbar"
-          className="flex size-10 items-center justify-center rounded-full border-2 border-ink bg-card shadow-lg hover:bg-secondary"
+          className="relative flex size-10 items-center justify-center rounded-full border-2 border-ink bg-card shadow-lg hover:bg-secondary"
         >
           <Wrench className="size-4" aria-hidden="true" />
+          {/* Glanceable without opening the panel — Task 2: "I need to know it happened without the panel seeing a red error screen." */}
+          {validationIssues.length > 0 && (
+            <span
+              aria-label={`${validationIssues.length} live response validation issue${validationIssues.length === 1 ? "" : "s"}`}
+              className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-card bg-flag text-[10px] font-bold text-primary-foreground"
+            >
+              {validationIssues.length > 9 ? "9+" : validationIssues.length}
+            </span>
+          )}
         </button>
       )}
     </div>

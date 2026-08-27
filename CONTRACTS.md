@@ -45,6 +45,18 @@ This is Phase 2 of the frontend build. It implements every ruling in
   `current_state` directly (D-16).
 - **Deadlines** (`due_at`, `days_remaining`, `basis`, `urgency`) are always computed
   server-side, from the event log, at request time — never stored statically (D-17).
+- **Frontend transport modes (`VITE_API_MODE`)** — not a backend concern, documented
+  here so the backend team knows what to expect from the frontend during the
+  transition: `mock` (MSW only), `live` (real backend only, MSW never starts), and
+  `hybrid` (per-request — a fixed allowlist of routes go live against
+  `VITE_API_BASE_URL`, everything else stays on MSW). The allowlist lives in
+  `apps/web/src/api/hybridRoutes.ts` (`HYBRID_LIVE_ROUTES`) and is currently:
+  `POST /documents`, `GET /jobs/{id}`, `GET /policies/{id}`. Hybrid mode exists so
+  individual endpoints can be cut over to the real backend one at a time as slices
+  land, without the whole app losing its mock fallback. See
+  `apps/web/mocks/hybridPassthrough.ts` for how MSW is kept from shadowing an
+  allowlisted route (its handlers are origin-agnostic `*/api/v1/...` patterns, which
+  would otherwise still match a request aimed at a real host).
 
 ---
 

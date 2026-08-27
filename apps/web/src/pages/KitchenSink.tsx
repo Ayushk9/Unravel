@@ -73,6 +73,22 @@ const exclusionProvenanceNoBbox: Provenance = {
   snippet: "Cosmetic surgery is excluded unless medically necessitated by an accident covered under this policy.",
 };
 
+/** Task 3 hardening demo: unnormalised coordinates leaking through (>1, and inverted) — must degrade to a page-level jump, never draw a highlight from this. */
+const invalidBboxProvenance: Provenance = {
+  document_id: "doc-sample-policy",
+  page: 1,
+  bbox: [340, 210, 120, 260], // out of 0..1 range AND x2 < x1 (inverted)
+  snippet: "Deliberately broken bbox — extraction pipeline leaked raw pixel coordinates instead of normalised 0..1.",
+};
+
+/** Task 3 hardening demo: the page number itself is unusable — the chip must disable rather than navigate anywhere. */
+const invalidPageProvenance: Provenance = {
+  document_id: "doc-sample-policy",
+  page: 0,
+  bbox: [0.1, 0.1, 0.3, 0.2],
+  snippet: "Deliberately broken page number.",
+};
+
 const sampleDeadlines: Deadline[] = [
   {
     id: "d-normal",
@@ -494,6 +510,12 @@ export function KitchenSink() {
         </Row>
         <Row label="page jump only, no bbox">
           <ProvenanceChip provenance={exclusionProvenanceNoBbox} userConfirmed onOpen={setActiveProvenance} />
+        </Row>
+        <Row label="invalid bbox (Task 3) — click still opens the page, no highlight draws">
+          <ProvenanceChip provenance={invalidBboxProvenance} userConfirmed onOpen={setActiveProvenance} />
+        </Row>
+        <Row label="invalid page (Task 3) — disabled, tooltip, never navigates">
+          <ProvenanceChip provenance={invalidPageProvenance} userConfirmed onOpen={setActiveProvenance} />
         </Row>
       </Section>
 
