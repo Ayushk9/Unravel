@@ -8,3 +8,12 @@ dist-ssr/
 !.env.example
 coverage/
 *.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
