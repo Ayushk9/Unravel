@@ -193,3 +193,21 @@ seems to dominate the cost more than text-recognition mode does.
    heuristic is noisy." A per-page ocr_score dump (cheap: `stats.json`
    already has the aggregate, per-page just needs including) would resolve
    this before it becomes load-bearing anywhere.
+
+7. **`Policy_Star_Comprehensive`'s actual sum insured is not in this
+   document at all — confirmed 2026-08-29, engine build, Fix 4.** Every
+   occurrence of "Sum Insured" in `full_document.md` and in the sub-limit
+   band tables (`table_2_page_10.csv` etc.) is either a glossary
+   definition ("Basic Sum Insured means...") or a table row-key spanning
+   the product's whole tier range — ₹5,00,000 through ₹1,00,00,000 — used
+   to look up *other* sub-limits by band, never a standalone stated figure
+   for *this* policyholder. That number lives in the Policy Schedule, a
+   separate document this spike has no sample of (the schedule is
+   typically a 1-2 page cover sheet issued per-policyholder, distinct from
+   the wordings/prospectus PDFs sampled here). Same root cause likely
+   explains why `room_rent` and `icu` sub-limits are absent too (see the
+   Engine A build notes, Fix 2) — this specific policy grants a fixed room
+   *category* ("Private Single A/C Room") rather than a rupee room-rent
+   cap, so there is no number there to extract either. Do not treat either
+   absence as an extraction bug without checking against a real Schedule
+   sample first.
