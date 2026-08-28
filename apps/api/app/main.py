@@ -1,9 +1,13 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
+from app.core.auth import get_current_household, seed_development_household
 from app.core.config import get_settings
 from app.core.errors import RequestIDMiddleware, install_exception_handlers
+from app.api.jobs import router as jobs_router
+from app.api.documents import router as documents_router
+from app.api.policies import router as policies_router
 
 
 def create_app() -> FastAPI:
@@ -16,8 +20,16 @@ def create_app() -> FastAPI:
     )
     application.add_middleware(RequestIDMiddleware)
     install_exception_handlers(application)
+    application.include_router(jobs_router)
+    application.include_router(documents_router)
+    application.include_router(policies_router)
 
-    @application.get("/api/v1/health")
+    @application.on_event("startup")
+    async def seed_dev_identity() -> None:
+        """Ensure the dev-only frontend identity has a household after migration."""
+        await seed_development_household()
+
+    @application.get("/api/v1/health", dependencies=[Depends(get_current_household)])
     async def health() -> dict[str, str]:
         """Report that the API process is available."""
         return {"status": "ok"}
