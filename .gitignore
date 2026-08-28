@@ -17,3 +17,7 @@ __pycache__/
 # Virtual environments
 .venv/
 venv/
+
+# Engine A spike — real third-party policy documents and their parse output
+engines/document/samples/
+engines/document/out/
