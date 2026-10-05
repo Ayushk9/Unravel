@@ -13,6 +13,7 @@ coverage/
 __pycache__/
 *.py[cod]
 *.pyo
+*.egg-info/
 
 # Virtual environments
 .venv/
@@ -21,3 +22,7 @@ venv/
 # Engine A spike — real third-party policy documents and their parse output
 engines/document/samples/
 engines/document/out/
+
+# Engine A — disk cache of LLM extraction responses, keyed by file content hash
+engines/document/.cache/
+engines/document/.pytest_cache/
