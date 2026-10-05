@@ -52,12 +52,12 @@ class SubLimit(ContractModel):
     category: Literal["room_rent", "icu", "procedure", "ambulance", "opd", "other"]
     label: str
     cap_amount: Extracted[int]
-    cap_basis: Literal["per_day", "per_claim", "per_policy_year", "percent_of_sum_insured"]
+    cap_basis: Literal["per_day", "per_claim", "per_policy_year", "percent_of_sum_insured", "other"]
     percent_value: float | None
 
 
 class WaitingPeriod(ContractModel):
-    kind: Literal["initial", "disease_specific", "pre_existing", "maternity"]
+    kind: Literal["initial", "disease_specific", "pre_existing", "maternity", "other"]
     months: Extracted[float]
     applies_to: str | None
     starts_on: date | None
