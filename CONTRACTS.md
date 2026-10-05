@@ -64,7 +64,7 @@ This is Phase 2 of the frontend build. It implements every ruling in
 
 | # | Method & path | Request | Response | Notable errors | Sync / Job | Paginated | Idempotency-Key |
 |---|---|---|---|---|---|---|---|
-| 1 | `GET /health` | — | `{ status: "ok" }` | 401 | Sync | — | — |
+| 1 | `GET /health` | — | `{ status: "ok" }` | — (public, D-24) | Sync | — | — |
 | 2 | `POST /documents` | multipart: `file`, `claim_id` | 202 `JobAccepted` (kind `parse_document`) | 401, 413 (>25MB), 422 (bad type / missing file) | **Job**, 4–8s | — | **Required** |
 | 3 | `GET /documents` | `?cursor&limit&claim_id` | `Collection<StoredDocument>` | 401 | Sync | Cursor | — |
 | 4 | `GET /documents/{id}` | — | `StoredDocument` | 401, 404 | Sync | — | — |
@@ -207,7 +207,7 @@ These are gaps found while building against `API_DECISIONS.md`, not places this
 implementation disagrees with it. Each was resolved with a documented, reversible
 assumption so Phase 2 could proceed; none should be read as settled.
 
-1. **`Provenance.bbox` coordinate origin is unspecified.** Built in Phase 1 as
+1. **Resolved by D-23 (top-left origin).** Original note: `Provenance.bbox` coordinate origin is unspecified. Built in Phase 1 as
    top-left origin (screen/image space). Genuinely contract-affecting — Engine A has
    to emit bbox in whatever convention the frontend assumes, or every highlight
    renders vertically mirrored. Needs a ratified line (see `DESIGN.md` and

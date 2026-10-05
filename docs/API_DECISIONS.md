@@ -75,6 +75,8 @@ Every string enum has an explicit `unknown` or `other` member on both sides. The
 
 *Why:* the document-type list and the alert-kind list will both grow during the semester. A frontend that crashes on an unrecognised enum makes the backend team afraid to add values, which is worse than the crash.
 
+*Ruling, 2026-10-05:* the escape-hatch member for `SubLimit.cap_basis` and `WaitingPeriod.kind` is `"other"`, matching `packages/contracts-ts`. `contracts/models.py` now carries it for both. Engine A's internal LLM schema uses `"unknown"` for an undeterminable basis; that name is internal to the engine and never reaches the wire.
+
 ---
 
 ## 2. Long-running work
@@ -205,6 +207,20 @@ Grounded Q&A responses are cached by a hash of (retrieved chunk ids + normalised
 `DELETE /api/v1/documents/{id}` sets `deleted_at`. All other deletes are hard.
 
 *Why:* "delete my documents" is a privacy expectation for medical records and needs to be recoverable from an accidental tap for a short window. Soft-deleting everything else just adds `WHERE deleted_at IS NULL` to every query for no benefit.
+
+### D-23 · `Provenance.bbox` uses a top-left origin
+`bbox` is `[x0, y0, x1, y1]`, normalised to 0..1 against the page's width and height, with the origin at the **top-left** corner of the page (y grows downward). Pages are 1-indexed. The same convention applies to `DocumentChunk.bbox`.
+
+*Why:* this is what the web `DocumentViewer` draws and what Engine A emits (`engines/document/geometry.py` converts Docling's mixed origins). A mismatch does not crash; it mirrors every highlight vertically, which looks plausible and is wrong.
+*Ratified:* 2026-10-05. Closes `CONTRACTS.md` §4 item 1.
+*Revisit:* never.
+
+### D-24 · `GET /health` is public
+`GET /api/v1/health` returns `{ "status": "ok" }` without requiring an `Authorization` header. Every other route requires the bearer token (D-09).
+
+*Why:* a health check exists so that something without credentials (an uptime probe, a deploy script, a developer with `curl`) can tell whether the process is up. Clients that send the header anyway are unaffected.
+*Ratified:* 2026-10-05. Supersedes the `401` listed for this route in `CONTRACTS.md` §2 row 1.
+*Revisit:* if the endpoint ever reports anything beyond liveness.
 
 ---
 
