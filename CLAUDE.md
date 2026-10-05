@@ -79,6 +79,9 @@ Stack is fixed: Python 3.12, FastAPI, SQLAlchemy 2.0 async, Alembic (one linear 
 - New ids come from `new_id()` in `apps/api/app/core/ids.py`. Never `uuid4()`.
 - Each `Extracted[T]` field is stored as five columns: `_value`, `_confidence`, `_provenance` (JSONB), `_original_value`, `_user_confirmed`. `_original_value` is written once and never updated: the parser's answer must survive user corrections, because that comparison is the extraction-accuracy evaluation data.
 - Engine A fills placeholder UUIDs. They are replaced by `remap_ids()` in `apps/api/app/services/extraction_mapper.py` before anything is stored. No placeholder may reach the database.
+- Login tokens are Supabase JWTs signed with ES256. `apps/api/app/core/auth.py` verifies them against the project's public keys (JWKS, derived from `SUPABASE_URL`); the API holds no signing secret. The stub token `mock-household-token` is accepted only when `ENVIRONMENT=dev`.
+- Protected routes depend on `get_current_household` and scope every query to `household.household_id`.
+- Alembic lives in `apps/api/alembic`; run it from `apps/api`. After changing a model, `alembic check` must report no differences.
 - Secrets live in `apps/api/.env`, which is gitignored. Never commit `.env` or keys. `.env.example` is committed.
 - Two virtualenvs: the root `.venv` runs the API; `engines/document/.venv` runs Engine A's tests. The root `pyproject.toml` installs `contracts` with `pip install -e .`; keep that working.
 
@@ -88,11 +91,11 @@ Run these and show the actual output:
 
 - `cd engines/document && .venv/bin/python -m pytest` (84 passed; the count must not change)
 - `cd apps/api && ../../.venv/bin/python -m pytest`
-- `alembic upgrade head && alembic downgrade -1 && alembic upgrade head` (from `apps/api`, once the schema exists)
+- `cd apps/api && ../../.venv/bin/python -m alembic upgrade head`, then `downgrade -1`, then `upgrade head`, then `check`
 - `curl /api/v1/health` returns `{"status":"ok"}`
 - `curl /api/v1/nonexistent` returns the error envelope, not `{"detail": ...}`
 - A request with no `Authorization` header to a protected route returns the 401 envelope
-- `python -c "from contracts.models import Extracted, CoverageProfile, SubLimit; print('ok')"`
+- `python -c "from contracts.models import Extracted, CoverageProfile, SubLimit; print('ok')"` (from the repo root)
 - `git status`: `.env` must not appear
 
 Every phase needs tests for what it adds. Standing ones: error envelope for 404/422/500; a model with a `None` field serialises the key as `null`; money fields are `int`; auth rejects missing and invalid tokens; `remap_ids` never leaves a placeholder UUID.
@@ -101,6 +104,7 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 
 - `cd apps/api && ../../.venv/bin/python -m uvicorn app.main:app --reload`: dev server on port 8000
 - `cd apps/api && ../../.venv/bin/python -m pytest`: API tests
+- `cd apps/api && ../../.venv/bin/python scripts/seed.py`: seed the dev household (idempotent)
 - `cd engines/document && .venv/bin/python -m pytest`: Engine A tests
 
 ## Frontend conventions
