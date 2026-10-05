@@ -1,0 +1,12 @@
+# Direct dependencies of the Unravel API, pinned. Install into the root venv:
+#   .venv/bin/python -m pip install -r apps/api/requirements.txt
+#   .venv/bin/python -m pip install -e .        (makes `contracts` importable)
+fastapi==0.142.2
+uvicorn==0.54.0
+pydantic==2.13.4
+pydantic-settings==2.15.0
+uuid6==2025.0.1
+
+# Tests
+pytest==9.1.1
+httpx==0.28.1
