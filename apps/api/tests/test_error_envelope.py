@@ -127,3 +127,37 @@ def test_client_supplied_request_id_is_ignored(client: TestClient) -> None:
 
     assert response.headers["x-request-id"] != "attacker-chosen"
     assert response.json()["error"]["request_id"] != "attacker-chosen"
+
+
+# --- CORS: the web app runs on another origin and must be able to read errors ---
+
+WEB_ORIGIN = "http://localhost:5173"
+
+
+def test_allowed_origin_can_read_a_500_and_its_request_id(client: TestClient) -> None:
+    response = client.get("/api/v1/_test/boom", headers={"Origin": WEB_ORIGIN})
+
+    assert response.status_code == 500
+    assert response.headers["access-control-allow-origin"] == WEB_ORIGIN
+    assert "x-request-id" in response.headers["access-control-expose-headers"].lower()
+    assert_envelope(response.json())
+
+
+def test_preflight_allows_the_headers_the_web_app_sends(client: TestClient) -> None:
+    response = client.options(
+        "/api/v1/documents",
+        headers={
+            "Origin": WEB_ORIGIN,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,idempotency-key",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == WEB_ORIGIN
+
+
+def test_unknown_origin_gets_no_cors_permission(client: TestClient) -> None:
+    response = client.get("/api/v1/health", headers={"Origin": "https://evil.example"})
+
+    assert "access-control-allow-origin" not in response.headers

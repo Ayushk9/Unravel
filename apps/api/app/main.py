@@ -6,22 +6,57 @@ Run from apps/api:
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
+from app.core.auth import TokenVerifier
 from app.core.config import Settings, get_settings
-from app.core.errors import register_error_handlers
-from app.core.request_id import RequestIdMiddleware
+from app.core.errors import UnhandledErrorMiddleware, register_error_handlers
+from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
+from app.db.session import create_engine, create_session_factory
 
 API_PREFIX = "/api/v1"
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    # On shutdown, close pooled database connections cleanly.
+    await app.state.engine.dispose()
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app. Tests pass their own settings; production reads the environment."""
-    app = FastAPI(title="Unravel API", version="0.1.0")
-    app.state.settings = settings or get_settings()
+    settings = settings or get_settings()
 
+    app = FastAPI(title="Unravel API", version="0.1.0", lifespan=lifespan)
+    app.state.settings = settings
+    # Neither of these opens a network connection until first used.
+    app.state.engine = create_engine(settings.database_url)
+    app.state.session_factory = create_session_factory(app.state.engine)
+    app.state.token_verifier = TokenVerifier(settings.supabase_url)
+
+    # Middleware wraps the app in layers, and the LAST one added is the
+    # OUTERMOST. Reading from the outside in, a request passes through:
+    #   RequestIdMiddleware      -> every response, including errors, has an id
+    #   CORSMiddleware           -> answers browser preflight requests
+    #   UnhandledErrorMiddleware -> its 500 response travels back out through CORS
+    #   the routes
+    app.add_middleware(UnhandledErrorMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+        # Headers the browser lets the web app's JavaScript read.
+        expose_headers=[REQUEST_ID_HEADER, "Retry-After"],
+    )
     app.add_middleware(RequestIdMiddleware)
+
     register_error_handlers(app)
     app.include_router(api_router, prefix=API_PREFIX)
     return app

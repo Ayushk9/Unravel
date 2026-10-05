@@ -13,6 +13,11 @@ themselves. Four handlers cover every way a request can fail:
 
 All four call build_error_response(), so FastAPI's default {"detail": ...}
 body has no path to a client.
+
+Unexpected exceptions are normally caught one step earlier, by
+UnhandledErrorMiddleware at the bottom of this file. It does the same job
+as the fourth handler but from inside the CORS layer, so that a browser is
+allowed to read the 500 response (see its docstring).
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.ids import new_id
 from app.core.request_id import REQUEST_ID_HEADER
@@ -156,7 +162,8 @@ async def handle_validation_error(request: Request, exc: RequestValidationError)
     )
 
 
-async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+def unexpected_error_response(request: Request, exc: Exception) -> JSONResponse:
+    """Log an unexpected exception and build the 500 response for it."""
     # The stack trace goes to the server log with the request id. The client
     # gets the id and a generic message, never the trace.
     logger.error(
@@ -172,6 +179,47 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
         code="internal_error",
         message="Something went wrong on our side.",
     )
+
+
+async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    return unexpected_error_response(request, exc)
+
+
+class UnhandledErrorMiddleware:
+    """Turn an unexpected exception into the 500 envelope, inside CORS.
+
+    FastAPI's own catch-all handler runs outside every middleware, including
+    the CORS one. A 500 built there has no CORS headers, so a browser refuses
+    to let the web app read it and the user sees a bare network failure with
+    no request_id. Catching the exception here, inside the CORS layer, means
+    the response passes back out through it and gets those headers.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        response_started = False
+
+        async def tracking_send(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, tracking_send)
+        except Exception as exc:  # noqa: BLE001 - catching everything is this middleware's purpose
+            if response_started:
+                # Part of a response has already been sent; a second one
+                # cannot be started. Let the server close the connection.
+                raise
+            response = unexpected_error_response(Request(scope), exc)
+            await response(scope, receive, send)
 
 
 def register_error_handlers(app: FastAPI) -> None:
