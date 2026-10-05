@@ -19,7 +19,8 @@ API_DIR = Path(__file__).resolve().parents[2]
 
 class Settings(BaseSettings):
     database_url: str
-    supabase_jwt_secret: str
+    # Project URL. Token verification derives the public-key (JWKS) address from it.
+    supabase_url: str
     gemini_api_key: str
     # A fixed set, not a free string: a typo such as "development" must fail
     # at startup rather than silently behave like production (or like dev).

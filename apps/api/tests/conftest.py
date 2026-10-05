@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://test:test@localhost:5432/unravel_test"
-os.environ["SUPABASE_JWT_SECRET"] = "test-jwt-secret-that-is-long-enough-for-hs256"
+os.environ["SUPABASE_URL"] = "https://test-project.supabase.co"
 os.environ["GEMINI_API_KEY"] = "test-gemini-key"
 os.environ["ENVIRONMENT"] = "test"
 
