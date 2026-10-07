@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Text, false, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Text, false, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,6 +46,9 @@ class Document(Base):
     mime_type: Mapped[str] = mapped_column(Text)
     page_count: Mapped[int] = mapped_column(Integer, default=0)
     storage_path: Mapped[str | None] = mapped_column(Text)
+    # SHA-256 of the file's bytes, as hex. Identifies the exact file uploaded.
+    sha256: Mapped[str | None] = mapped_column(Text)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # detected_type: Extracted[DocumentType], stored as five columns.
@@ -57,6 +60,9 @@ class Document(Base):
 
     parse_status: Mapped[str] = mapped_column(Text, default="queued")
     parse_error: Mapped[str | None] = mapped_column(Text)
+    # Engine A's notes about this parse (a dropped row, an unparseable amount).
+    # A list of strings; kept so a surprising result can be explained later.
+    warnings: Mapped[list[str] | None] = mapped_column(JSONB)
     # Soft delete (D-20). Null means the document is live.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

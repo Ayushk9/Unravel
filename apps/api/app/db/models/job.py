@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,9 +34,26 @@ class Job(Base):
     status: Mapped[str] = mapped_column(Text, default="queued")
     # {"step": "...", "percent": 45}, or null before work starts.
     progress: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # What the job must do, e.g. {"document_id": "...", "document_kind": "policy"}.
+    # Everything a worker needs is in this row, so a worker in another process,
+    # or on another machine, can run the job with no shared memory.
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+    # `error` is the readable sentence sent to clients (the wire type is a
+    # string). The machine-readable code and whether a retry could succeed are
+    # kept beside it for operators; they are not part of the wire Job.
     error: Mapped[str | None] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(Text)
+    retryable: Mapped[bool | None] = mapped_column(Boolean)
+
     idempotency_key: Mapped[str | None] = mapped_column(Text)
+    # SHA-256 of the request that created the job. A repeat of the same
+    # Idempotency-Key with a different hash is a different request (D-27).
+    request_hash: Mapped[str | None] = mapped_column(Text)
+
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
