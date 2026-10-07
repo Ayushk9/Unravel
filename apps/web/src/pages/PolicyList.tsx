@@ -4,6 +4,7 @@ import { Columns3 } from "lucide-react";
 import type { Policy, SubLimit, WaitingPeriod } from "@/api/types";
 import { usePolicies } from "@/api/endpoints/policies";
 import { EmptyState, ErrorState, Money, PolicyCard, Skeleton } from "@/components/primitives";
+import { insurerLabel, productLabel } from "@/lib/policyLabels";
 
 const subLimitCategoryLabel: Record<SubLimit["category"], string> = {
   room_rent: "Room rent",
@@ -48,8 +49,8 @@ function ComparisonTable({ policies }: { policies: Policy[] }) {
             </th>
             {policies.map((p) => (
               <th key={p.id} scope="col" className="px-3 py-2 font-serif font-semibold text-foreground">
-                {p.insurer.name}
-                <span className="block text-xs font-normal text-muted-foreground">{p.product_name}</span>
+                {insurerLabel(p)}
+                <span className="block text-xs font-normal text-muted-foreground">{productLabel(p)}</span>
               </th>
             ))}
           </tr>

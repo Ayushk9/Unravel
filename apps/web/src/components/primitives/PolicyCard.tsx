@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Building2 } from "lucide-react";
 import type { Policy } from "@/api/types";
 import { formatISTDate } from "@/lib/formatDate";
+import { insurerLabel, productLabel } from "@/lib/policyLabels";
 import { Money } from "./Money";
 import { ConfidenceBadge } from "./ConfidenceBadge";
 
@@ -26,13 +27,13 @@ export function PolicyCard({ policy, selectable, className }: PolicyCardProps) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <Building2 className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
-          <span className="font-serif text-base font-semibold text-foreground">{policy.insurer.name}</span>
+          <span className="font-serif text-base font-semibold text-foreground">{insurerLabel(policy)}</span>
         </div>
         <span className="rounded border border-rule bg-card px-1.5 py-0.5 text-xs text-muted-foreground">
           {policyTypeLabel[policy.policy_type]}
         </span>
       </div>
-      <p className="text-sm text-muted-foreground">{policy.product_name}</p>
+      <p className="text-sm text-muted-foreground">{productLabel(policy)}</p>
       <div className="mt-1 flex items-baseline justify-between gap-2">
         <span className="text-xs text-muted-foreground">Sum insured</span>
         <span className="flex items-center gap-1.5">
@@ -45,7 +46,7 @@ export function PolicyCard({ policy, selectable, className }: PolicyCardProps) {
           )}
         </span>
       </div>
-      <p className="font-tabular text-xs font-mono text-muted-foreground">Ends {formatISTDate(policy.end_date)}</p>
+      <p className="font-tabular text-xs font-mono text-muted-foreground">{policy.end_date ? `Ends ${formatISTDate(policy.end_date)}` : "End date not stated"}</p>
     </>
   );
 

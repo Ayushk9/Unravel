@@ -88,7 +88,7 @@ db.registerJobResolver("answer_question", (params): QuestionAnswerResult => {
       {
         id: "cite-general",
         kind: "policy_clause",
-        label: policy.product_name,
+        label: policy.product_name ?? "Your policy",
         provenance: roomRent?.cap_amount.provenance ?? null,
         external_url: null,
       },

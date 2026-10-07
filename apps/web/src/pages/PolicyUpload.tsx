@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { parseDocumentResultSchema } from "@/api/schemas";
-import { useUploadDocument } from "@/api/endpoints/documents";
+import { useDocumentFile, useUploadDocument } from "@/api/endpoints/documents";
 import { usePolicy, useCorrectPolicyField } from "@/api/endpoints/policies";
 import { useJobPolling } from "@/api/endpoints/jobs";
 import {
@@ -18,15 +18,6 @@ import {
 } from "@/components/primitives";
 import type { Provenance } from "@/api/types";
 
-/**
- * The mock's extraction is templated (see mocks/handlers/documents.ts) — it
- * doesn't read the real uploaded bytes, so the "source document" shown here
- * is always the Phase 1 kitchen-sink fixture PDF, regardless of what was
- * actually chosen. Provenance page/bbox data lines up with that fixture,
- * not with whatever the user picked. See DECISIONS.md.
- */
-const MOCK_SOURCE_PDF = "/kitchen-sink/sample-policy.pdf";
-
 export function PolicyUpload() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,6 +31,8 @@ export function PolicyUpload() {
   const jobQuery = useJobPolling(jobId, parseDocumentResultSchema);
   const policyId = jobQuery.data?.status === "succeeded" ? (jobQuery.data.result?.policy_id ?? null) : null;
   const policyQuery = usePolicy(policyId);
+  // The uploaded file itself (D-26), so each provenance chip opens the real page.
+  const sourceFile = useDocumentFile(policyQuery.data?.source_document_id ?? null);
   const correctField = useCorrectPolicyField(policyId ?? "");
 
   function handleFileSelected(file: File) {
@@ -362,7 +355,7 @@ export function PolicyUpload() {
       </div>
 
       <aside className="w-full shrink-0 lg:w-96">
-        <DocumentViewer fileUrl={MOCK_SOURCE_PDF} activeProvenance={activeProvenance} className="sticky top-4" />
+        <DocumentViewer fileUrl={sourceFile.data?.url ?? null} activeProvenance={activeProvenance} className="sticky top-4" />
       </aside>
     </div>
   );

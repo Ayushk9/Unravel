@@ -21,6 +21,10 @@ export const HYBRID_LIVE_ROUTES: HybridRoute[] = [
   { method: "POST", pattern: "/documents" },
   { method: "GET", pattern: "/jobs/:id" },
   { method: "GET", pattern: "/policies/:id" },
+  // A live policy points at a live document, so its file and its field
+  // corrections must go to the same backend.
+  { method: "GET", pattern: "/documents/:id/file" },
+  { method: "PATCH", pattern: "/policies/:id/coverage-profile/fields/:fieldPath" },
 ];
 
 function toPathRegex(pattern: string): RegExp {

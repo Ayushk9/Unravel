@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { DocumentType, DocumentTypeCorrectionRequest, JobAccepted, ParseDocumentResult, Policy } from "@/api/types";
+import type { DocumentFile, DocumentType, DocumentTypeCorrectionRequest, JobAccepted, ParseDocumentResult, Policy } from "@/api/types";
 import * as db from "../db";
 import { policyById, retailPolicy } from "../fixtures";
 import { errorResponse, genId, notFound, paginate, plainReadDelay, requireAuth } from "../utils";
@@ -182,6 +182,25 @@ export const documentsHandlers = [
     const document = db.getDocument(params.id as string);
     if (!document || document.deleted_at) return notFound("No document with that id belongs to your household.");
     return HttpResponse.json(document);
+  }),
+
+  /**
+   * D-26: a short-lived link to the document's file. The mock has no real
+   * uploads, so every document resolves to the kitchen-sink fixture PDF —
+   * the same file the viewer showed before this route existed.
+   */
+  http.get("*/api/v1/documents/:id/file", async ({ request, params }) => {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+    await plainReadDelay();
+
+    const document = db.getDocument(params.id as string);
+    if (!document || document.deleted_at) return notFound("No document with that id belongs to your household.");
+    const body: DocumentFile = {
+      url: "/kitchen-sink/sample-policy.pdf",
+      expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    };
+    return HttpResponse.json(body);
   }),
 
   /**

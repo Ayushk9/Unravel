@@ -75,12 +75,12 @@ export const memberSchema = z.object({
 
 export const policySchema = z.object({
   id: uuidSchema,
-  insurer: insurerSchema,
-  policy_number: z.string(),
-  product_name: z.string(),
+  insurer: insurerSchema.nullable(),
+  policy_number: z.string().nullable(),
+  product_name: z.string().nullable(),
   policy_type: z.enum(["individual", "family_floater", "group_employer", "top_up", "other"]).catch("other"),
-  start_date: isoDateSchema,
-  end_date: isoDateSchema,
+  start_date: isoDateSchema.nullable(),
+  end_date: isoDateSchema.nullable(),
   members: z.array(memberSchema),
   coverage_profile: coverageProfileSchema.nullable(),
   source_document_id: uuidSchema,
@@ -111,6 +111,11 @@ export const storedDocumentSchema = z.object({
   parse_error: z.string().nullable(),
   deleted_at: isoDateTimeSchema.nullable(),
   claim_id: uuidSchema.nullable(),
+});
+
+export const documentFileSchema = z.object({
+  url: z.string(),
+  expires_at: isoDateTimeSchema,
 });
 
 export const checkStatusSchema = z.enum(["satisfied", "at_risk", "failed", "unknown"]).catch("unknown");

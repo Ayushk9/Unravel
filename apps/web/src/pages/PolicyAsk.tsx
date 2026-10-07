@@ -6,6 +6,7 @@ import { questionAnswerResultSchema } from "@/api/schemas";
 import { usePolicy, useAskQuestion } from "@/api/endpoints/policies";
 import { useJobPolling } from "@/api/endpoints/jobs";
 import { AbstentionCard, CitationList, CitedProse, DocumentViewer, ErrorState, Skeleton } from "@/components/primitives";
+import { productLabel } from "@/lib/policyLabels";
 
 const SUGGESTED_QUESTIONS = ["Is my knee surgery covered?", "What happens if I choose a ₹12,000/day room?"];
 
@@ -42,7 +43,7 @@ export function PolicyAsk() {
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         <header>
           <h1 className="font-serif text-2xl font-semibold text-foreground">Ask about your policy</h1>
-          {policy.data && <p className="text-sm text-muted-foreground">{policy.data.product_name}</p>}
+          {policy.data && <p className="text-sm text-muted-foreground">{productLabel(policy.data)}</p>}
         </header>
 
         <form

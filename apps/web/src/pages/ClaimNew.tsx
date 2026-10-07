@@ -22,6 +22,7 @@ import {
   WizardSteps,
   type WizardStep,
 } from "@/components/primitives";
+import { insurerLabel, policyNumberLabel, productLabel } from "@/lib/policyLabels";
 
 /** Same mock limitation as /policies/upload and /policies/:id — see DECISIONS.md. */
 const MOCK_SOURCE_PDF = "/kitchen-sink/sample-policy.pdf";
@@ -183,9 +184,9 @@ function StepPolicyMember({
               <input type="radio" name="policy" checked={policyId === p.id} onChange={() => onSelectPolicy(p.id)} className="size-4 accent-stamp" />
               <div className="flex flex-col">
                 <span className="font-serif text-sm font-semibold text-foreground">
-                  {p.insurer.name} — {p.product_name}
+                  {insurerLabel(p)} — {productLabel(p)}
                 </span>
-                <span className="text-xs text-muted-foreground">Policy {p.policy_number}</span>
+                <span className="text-xs text-muted-foreground">Policy {policyNumberLabel(p)}</span>
               </div>
             </label>
           ))}
@@ -615,7 +616,7 @@ function StepSummary({ claim, onBack }: { claim: Claim; onBack: () => void }) {
       <dl className="flex flex-col gap-2 rounded border border-rule bg-card px-4 py-3 text-sm">
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">Policy</dt>
-          <dd className="text-right text-foreground">{policy.data ? `${policy.data.insurer.name} — ${policy.data.product_name}` : "—"}</dd>
+          <dd className="text-right text-foreground">{policy.data ? `${insurerLabel(policy.data)} — ${productLabel(policy.data)}` : "—"}</dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-muted-foreground">Member</dt>

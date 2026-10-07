@@ -23,6 +23,7 @@ import {
   Modal,
   Skeleton,
 } from "@/components/primitives";
+import { insurerLabel, productLabel } from "@/lib/policyLabels";
 
 /** Same mock limitation as /policies/upload and /claims/new — see DECISIONS.md. */
 const MOCK_SOURCE_PDF = "/kitchen-sink/sample-policy.pdf";
@@ -66,7 +67,7 @@ export function ClaimWorkspace() {
         <div>
           <h1 className="font-serif text-2xl font-semibold text-foreground">{claim.data.hospital_name}</h1>
           <p className="text-sm text-muted-foreground">
-            {policy.data ? `${policy.data.insurer.name} — ${policy.data.product_name}` : "—"}
+            {policy.data ? `${insurerLabel(policy.data)} — ${productLabel(policy.data)}` : "—"}
             {member ? ` · ${member.full_name}` : ""}
           </p>
         </div>

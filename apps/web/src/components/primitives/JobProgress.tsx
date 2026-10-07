@@ -9,6 +9,12 @@ const STAGES: { key: UploadStage; label: string }[] = [
 ];
 
 const STEP_LABEL: Record<string, string> = {
+  // Real backend, parse_document job (API_DECISIONS D-28).
+  uploading: "Uploading",
+  parsing_layout: "Reading the document",
+  extracting_fields: "Extracting coverage terms",
+  storing: "Saving",
+  // Mock handlers.
   classifying_pages: "Classifying pages",
   extracting_tables: "Extracting tables",
   structuring_coverage_profile: "Structuring coverage profile",

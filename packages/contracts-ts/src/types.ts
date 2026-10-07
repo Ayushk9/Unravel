@@ -79,12 +79,15 @@ export interface Member {
 
 export interface Policy {
   id: UUID;
-  insurer: Insurer;
-  policy_number: string;
-  product_name: string;
+  // API_DECISIONS D-25: these five are null when the uploaded document did
+  // not state them (a policy wording PDF often has no policy number or
+  // dates). Render a null as "not stated", never as a placeholder value.
+  insurer: Insurer | null;
+  policy_number: string | null;
+  product_name: string | null;
   policy_type: "individual" | "family_floater" | "group_employer" | "top_up" | "other";
-  start_date: ISODate;
-  end_date: ISODate;
+  start_date: ISODate | null;
+  end_date: ISODate | null;
   members: Member[];
   coverage_profile: CoverageProfile | null; // null while parsing
   source_document_id: UUID;
@@ -118,6 +121,13 @@ export interface StoredDocument {
   // DECISIONS.md. Null for documents uploaded outside a claim (e.g. a policy
   // schedule).
   claim_id: UUID | null;
+}
+
+// API_DECISIONS D-26: GET /documents/{id}/file. `url` is a short-lived link
+// to the stored file that needs no Authorization header.
+export interface DocumentFile {
+  url: string;
+  expires_at: ISODateTime;
 }
 
 // --- Engine B: eligibility ---

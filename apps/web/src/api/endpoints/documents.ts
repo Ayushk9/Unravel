@@ -2,7 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import type { DocumentType } from "@/api/types";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/api/queryKeys";
-import { collectionSchema, jobAcceptedSchema, storedDocumentSchema } from "@/api/schemas";
+import { collectionSchema, documentFileSchema, jobAcceptedSchema, storedDocumentSchema } from "@/api/schemas";
 
 const documentsPageSchema = collectionSchema(storedDocumentSchema);
 
@@ -24,6 +24,22 @@ export function useDocument(id: string | null) {
     queryKey: queryKeys.documents.detail(id ?? "none"),
     queryFn: () => apiFetch(`/documents/${id}`, { schema: storedDocumentSchema }),
     enabled: id !== null,
+  });
+}
+
+/**
+ * D-26: a short-lived signed URL for the stored file, for DocumentViewer.
+ * The link expires after five minutes, so it is treated as fresh for four
+ * and not refetched on window focus: a new URL would make the viewer reload
+ * the whole PDF and lose the reader's place.
+ */
+export function useDocumentFile(id: string | null) {
+  return useQuery({
+    queryKey: queryKeys.documents.file(id ?? "none"),
+    queryFn: () => apiFetch(`/documents/${id}/file`, { schema: documentFileSchema }),
+    enabled: id !== null,
+    staleTime: 4 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
 
