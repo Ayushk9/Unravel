@@ -13,6 +13,8 @@ import os
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://test:test@localhost:5432/unravel_test"
 os.environ["SUPABASE_URL"] = "https://test-project.supabase.co"
 os.environ["GEMINI_API_KEY"] = "test-gemini-key"
+os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "test-service-role-key"
+os.environ["CORS_ALLOWED_ORIGINS"] = "http://localhost:5173"
 os.environ["ENVIRONMENT"] = "test"
 
 from typing import Literal  # noqa: E402
@@ -78,3 +80,43 @@ def client(app: FastAPI) -> TestClient:
     # client: an unhandled exception becomes a 500 response instead of being
     # re-raised inside the test.
     return TestClient(app, raise_server_exceptions=False)
+
+
+# --- fixtures for tests that need a real database (see tests/db.py) ---
+
+from collections.abc import Iterator  # noqa: E402
+from uuid import UUID  # noqa: E402
+
+from tests import db as test_db  # noqa: E402
+
+
+@pytest.fixture(scope="session")
+def database() -> Iterator[test_db.Database]:
+    url = test_db.test_database_url()
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set; tests that need a real database are skipped")
+    created = test_db.create_database(url)
+    try:
+        yield created
+    finally:
+        test_db.drop_database(created)
+
+
+@pytest.fixture
+def db(database: test_db.Database) -> test_db.Database:
+    return database
+
+
+@pytest.fixture
+def household_id(db: test_db.Database) -> UUID:
+    return db.create_household()
+
+
+@pytest.fixture
+def api(db: test_db.Database, household_id: UUID) -> Iterator[test_db.ApiTester]:
+    tester = test_db.ApiTester(db, household_id)
+    yield tester
+    # The queue is shared by every household. Draining it here means no job
+    # from this test is still waiting when the next test starts.
+    tester.finish_jobs()
+    db.execute("DELETE FROM job WHERE household_id = :h AND status = 'queued'", h=household_id)

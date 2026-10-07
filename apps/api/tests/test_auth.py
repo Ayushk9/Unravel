@@ -65,6 +65,7 @@ def _build_app(environment: str, household_id: UUID | None = HOUSEHOLD_ID) -> Fa
         database_url="postgresql+asyncpg://test:test@localhost:5432/unravel_test",
         supabase_url=SUPABASE_URL,
         gemini_api_key="test",
+        supabase_service_role_key="test",
         environment=environment,
     )
     app = create_app(settings)
