@@ -10,7 +10,13 @@ from uuid import UUID
 import httpx
 import pytest
 
-from app.storage.base import StorageError, build_object_path, sanitise_filename
+from app.storage.base import (
+    TEMP_DIRECTORY_PREFIX,
+    StorageError,
+    build_object_path,
+    remove_stale_temporary_files,
+    sanitise_filename,
+)
 from app.storage.memory import InMemoryStorage
 from app.storage.supabase import SupabaseStorage
 
@@ -78,6 +84,22 @@ def test_temporary_file_is_deleted_when_the_block_raises() -> None:
         asyncio.run(scenario())
 
     assert seen and not seen[0].exists()
+
+
+def test_leftover_temporary_directories_are_removed_at_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """What a server killed with SIGKILL leaves behind is swept up on the next start."""
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    stale = tmp_path / f"{TEMP_DIRECTORY_PREFIX}abc123"
+    stale.mkdir()
+    (stale / "policy.pdf").write_bytes(b"%PDF-left-behind")
+    unrelated = tmp_path / "someone-elses-file"
+    unrelated.write_text("keep me")
+
+    removed = remove_stale_temporary_files()
+
+    assert removed == 1
+    assert not stale.exists()
+    assert unrelated.exists(), "only this app's own temporary directories are touched"
 
 
 def test_memory_storage_refuses_to_overwrite_and_tolerates_double_delete() -> None:

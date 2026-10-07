@@ -14,12 +14,17 @@ succeeded or raised.
 from __future__ import annotations
 
 import re
+import shutil
 import tempfile
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID
+
+# Every temporary directory this app creates starts with this, so leftovers
+# can be recognised and removed.
+TEMP_DIRECTORY_PREFIX = "unravel-parse-"
 
 _UNSAFE_FILENAME_CHARACTERS = re.compile(r"[^A-Za-z0-9._-]+")
 _MAX_FILENAME_LENGTH = 100
@@ -76,7 +81,25 @@ async def temporary_file(content: bytes, file_name: str) -> AsyncIterator[Path]:
     TemporaryDirectory removes the directory and everything in it on exit,
     including when the block raises.
     """
-    with tempfile.TemporaryDirectory(prefix="unravel-parse-") as directory:
+    with tempfile.TemporaryDirectory(prefix=TEMP_DIRECTORY_PREFIX) as directory:
         file_path = Path(directory) / sanitise_filename(file_name)
         file_path.write_bytes(content)
         yield file_path
+
+
+def remove_stale_temporary_files() -> int:
+    """Delete temporary parse directories left by a server that was killed.
+
+    `temporary_file` cleans up after itself on success and on any exception.
+    The one case it cannot handle is the process being killed outright
+    (kill -9, power loss): no code runs then. This is called at startup to
+    remove whatever such a death left behind. Returns how many were removed.
+
+    Like startup job recovery, this assumes a single worker: at startup no
+    parse of this process can be in progress, so every such directory is stale.
+    """
+    removed = 0
+    for directory in Path(tempfile.gettempdir()).glob(f"{TEMP_DIRECTORY_PREFIX}*"):
+        shutil.rmtree(directory, ignore_errors=True)
+        removed += 1
+    return removed

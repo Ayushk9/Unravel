@@ -21,6 +21,7 @@ from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.db.session import create_engine, create_session_factory
 from app.jobs.queue import delete_expired_jobs, recover_interrupted_jobs
 from app.jobs.runner import JobRunner
+from app.storage.base import remove_stale_temporary_files
 from app.storage.supabase import SupabaseStorage
 
 API_PREFIX = "/api/v1"
@@ -39,9 +40,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     interrupted = await recover_interrupted_jobs(session_factory)
     # 2. Finished jobs are kept for 24 hours, then removed.
     expired = await delete_expired_jobs(session_factory)
-    if interrupted or expired:
-        logger.warning("Startup: failed %s interrupted job(s), deleted %s expired job(s).", interrupted, expired)
-    # 3. Jobs that were still `queued` lost nothing. Start working on them.
+    # 3. A server killed mid-parse cannot delete its temporary copy of the file.
+    stale_files = remove_stale_temporary_files()
+    if interrupted or expired or stale_files:
+        logger.warning(
+            "Startup: failed %s interrupted job(s), deleted %s expired job(s), removed %s stale temporary file(s).",
+            interrupted,
+            expired,
+            stale_files,
+        )
+    # 4. Jobs that were still `queued` lost nothing. Start working on them.
     await runner.wake()
 
     yield
