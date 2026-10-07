@@ -222,6 +222,63 @@ Grounded Q&A responses are cached by a hash of (retrieved chunk ids + normalised
 *Ratified:* 2026-10-05. Supersedes the `401` listed for this route in `CONTRACTS.md` §2 row 1.
 *Revisit:* if the endpoint ever reports anything beyond liveness.
 
+### D-25 · Policy identity fields are nullable
+On `Policy`, the fields `insurer`, `policy_number`, `product_name`, `start_date` and `end_date` may be `null`. `policy_type` is never null; when unknown it is `"other"`. Clients must render a null as "not stated", not crash and not substitute a placeholder.
+
+*Why:* a policy is created from an uploaded document, and Engine A does not extract these fields. A policy wording PDF often does not contain a policy number or dates at all (they are on the separate schedule). Sending an invented value would be a fact without provenance.
+*Ratified:* 2026-10-07. Changes the previously non-null types in `packages/contracts-ts`.
+*Revisit:* when Engine A extracts these fields; they should then become `Extracted[T]` rather than bare values.
+
+### D-26 · Fetching a document's file: a short-lived signed URL
+`GET /api/v1/documents/{id}/file` returns:
+```json
+{ "url": "https://...signed...", "expires_at": "2026-10-07T10:05:00Z" }
+```
+The route requires the bearer token and applies the usual ownership rule (another household's document is `404`). The returned `url` needs no token and is valid for 5 minutes. Files live in a private storage bucket that only the backend can reach.
+
+*Why:* a PDF viewer (pdf.js on web, a native viewer on Android) loads a plain URL far more easily than a request that needs an `Authorization` header, and file bytes never pass through the API host. The short lifetime bounds the damage if a URL leaks.
+*Ratified:* 2026-10-07. New endpoint, `CONTRACTS.md` row 25.
+*Revisit:* if a URL readable without a token is judged unacceptable for medical documents, switch to streaming the bytes through the API.
+
+### D-27 · Reusing an Idempotency-Key with different content is a 409
+Extends D-13. Keys are scoped to the household. A repeat of a key:
+
+- with the **same** file (same SHA-256) returns the original `202` body unchanged and creates nothing;
+- with a **different** file returns `409` with `error.code = "idempotency_key_reused"`.
+
+A missing `Idempotency-Key` on an endpoint that requires it is `422` with a `field_errors` entry naming the header (ratifies `CONTRACTS.md` §4 item 7). Keys are remembered for as long as the job row exists, which is 24 h after the job finishes.
+
+*Why:* silently replaying the first response for a different file would tell the client its second file was accepted when it was discarded.
+*Ratified:* 2026-10-07.
+
+### D-28 · `Job.error` is a sentence; `progress.step` values for `parse_document`
+`Job.error` stays `string | null`: one sentence written for the user, never a stack trace and never the error envelope. The machine-readable code and whether a retry could succeed are stored server-side (`job.error_code`, `job.retryable`) and are not on the wire.
+
+`progress.step` for a `parse_document` job takes these values, in order: `uploading`, `parsing_layout`, `extracting_fields`, `storing`, then `done`. `progress.percent` is a fixed marker per step, not a measurement.
+
+*Why:* the wire type was already a string and both clients parse it as one. Step names are free-form strings by D-07, so adding names is not a breaking change.
+*Ratified:* 2026-10-07.
+*Revisit:* if a client needs to offer "try again" only for retryable failures, add `retryable` to the wire `Job`.
+
+### D-29 · Upload rules for `POST /documents`
+Extends D-18.
+
+- Accepted types: `application/pdf`, `image/png`, `image/jpeg`. The server checks the file's leading bytes; a file whose contents do not match its declared type is `422`.
+- PNG and JPEG uploads are accepted and stored, but cannot be parsed yet: their job fails with a message asking for a PDF.
+- `claim_id` must be empty. A non-empty value is `422` until claim tables exist and ownership of the claim can be checked. An upload with no `claim_id` is treated as a policy document.
+- A parse that runs longer than the server's limit (default 300 s) is stopped and its job fails. Note the web client stops polling after 180 s (D-07) and shows "still working"; a reload resumes polling.
+
+*Ratified:* 2026-10-07.
+
+### D-30 · Field correction: confirmed values only, and no guessing between rows
+Extends D-15. The body must have `user_confirmed: true` and a non-null `value` of the field's type (integer paise for money; a number for percentages, months and hours); otherwise `422`. Correctable paths are exactly: `sum_insured`, `co_pay_percent`, `intimation_deadline_hours`, `sub_limits.<category>.cap_amount`, `waiting_periods.<kind>.months`. Any other path is `422`.
+
+If a path matches more than one row (two sub-limits with the same category, or several waiting periods of the same kind), the response is `409` with `error.code = "ambiguous_field_path"` and nothing is changed.
+
+*Why:* the mock edits the first matching row. On a real policy that can silently change the wrong number.
+*Ratified:* 2026-10-07.
+*Revisit:* **soon.** Real policies routinely have several `procedure` sub-limits, which this makes uncorrectable. The path needs a way to address one row (an id or a position).
+
 ---
 
 ## 5. Pagination

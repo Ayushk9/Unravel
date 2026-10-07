@@ -51,7 +51,7 @@ Violating any one of these breaks a client. There are **two** clients of this AP
 
 | Path | Owner | Rule |
 | --- | --- | --- |
-| `apps/web/` | Frontend | **Backend work does not edit it.** It is the harness the backend must satisfy. |
+| `apps/web/` | Frontend | **Backend work does not edit it** without Ayush's explicit approval for that specific change, logged in `DECISIONS.md`. It is the harness the backend must satisfy. |
 | `packages/contracts-ts/` | Frontend | Hand-written TS types, authoritative until OpenAPI generation replaces them (D-21). |
 | `apps/api/` | Backend | FastAPI app, Alembic chain, tests. |
 | `contracts/` | Shared | Pydantic models imported by Engine A and the API. Fix in place; never rewrite. |
@@ -81,6 +81,11 @@ Stack is fixed: Python 3.12, FastAPI, SQLAlchemy 2.0 async, Alembic (one linear 
 - Engine A fills placeholder UUIDs. They are replaced by `remap_ids()` in `apps/api/app/services/extraction_mapper.py` before anything is stored. No placeholder may reach the database.
 - Login tokens are Supabase JWTs signed with ES256. `apps/api/app/core/auth.py` verifies them against the project's public keys (JWKS, derived from `SUPABASE_URL`); the API holds no signing secret. The stub token `mock-household-token` is accepted only when `ENVIRONMENT=dev`.
 - Protected routes depend on `get_current_household` and scope every query to `household.household_id`.
+- **Jobs.** The `job` table is the queue; no job state may live only in memory. Jobs are claimed with `FOR UPDATE SKIP LOCKED` (`apps/api/app/jobs/queue.py`). `BackgroundTasks` only wakes the runner; correctness never depends on it.
+- **Engine A runs in a spawned child process per job, never a thread** (`apps/api/app/jobs/worker_process.py`), so a hung parse can be terminated on timeout. The API process must not import Docling. Do not change Engine A's public signature.
+- A job must never stay `running`: every failure path ends in `failed` with a readable sentence in `job.error` and `document.parse_error`, never a stack trace. Startup fails jobs left `running`.
+- Uploaded files live in the private Supabase Storage bucket, reached only through `DocumentStorage` (`apps/api/app/storage/`). Never rely on local disk for persistence; a temporary file may exist only for the duration of one parse.
+- `SUPABASE_SERVICE_ROLE_KEY` is server-side only. It bypasses every access rule in the project.
 - Alembic lives in `apps/api/alembic`; run it from `apps/api`. After changing a model, `alembic check` must report no differences.
 - Secrets live in `apps/api/.env`, which is gitignored. Never commit `.env` or keys. `.env.example` is committed.
 - Two virtualenvs: the root `.venv` runs the API; `engines/document/.venv` runs Engine A's tests. The root `pyproject.toml` installs `contracts` with `pip install -e .`; keep that working.
@@ -103,7 +108,9 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 ### Backend commands
 
 - `cd apps/api && ../../.venv/bin/python -m uvicorn app.main:app --reload`: dev server on port 8000
-- `cd apps/api && ../../.venv/bin/python -m pytest`: API tests
+- `cd apps/api && ../../.venv/bin/python -m pytest`: API tests. Tests that need real SQL run in a temporary Postgres schema and are **skipped** unless `TEST_DATABASE_URL` is set (it may equal `DATABASE_URL`; `public` is never touched)
+- `cd apps/api && ../../.venv/bin/python scripts/create_bucket.py`: create the private storage bucket (once per project)
+- `cd apps/api && ../../.venv/bin/python scripts/print_policy_table.py <pdf>`: upload a PDF to a running server and print every extracted field
 - `cd apps/api && ../../.venv/bin/python scripts/seed.py`: seed the dev household (idempotent)
 - `cd engines/document && .venv/bin/python -m pytest`: Engine A tests
 

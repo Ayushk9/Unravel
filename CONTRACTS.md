@@ -65,15 +65,15 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | # | Method & path | Request | Response | Notable errors | Sync / Job | Paginated | Idempotency-Key |
 |---|---|---|---|---|---|---|---|
 | 1 | `GET /health` | — | `{ status: "ok" }` | — (public, D-24) | Sync | — | — |
-| 2 | `POST /documents` | multipart: `file`, `claim_id` | 202 `JobAccepted` (kind `parse_document`) | 401, 413 (>25MB), 422 (bad type / missing file) | **Job**, 4–8s | — | **Required** |
+| 2 | `POST /documents` | multipart: `file`, `claim_id` (must be empty for now, D-29) | 202 `JobAccepted` (kind `parse_document`) | 401, 409 (key reused with a different file, D-27), 413 (>25MB), 422 (bad type / missing file / missing key) | **Job**, 4–8s in the mock; a real parse takes 20 s to several minutes | — | **Required** |
 | 3 | `GET /documents` | `?cursor&limit&claim_id` | `Collection<StoredDocument>` | 401 | Sync | Cursor | — |
 | 4 | `GET /documents/{id}` | — | `StoredDocument` | 401, 404 | Sync | — | — |
 | 5 | `PATCH /documents/{id}` | `{ detected_type }` | `StoredDocument` | 401, 404, 422 | Sync | — | — |
 | 6 | `DELETE /documents/{id}` | — | 204 | 401, 404 | Sync (soft delete, D-20) | — | — |
-| 7 | `GET /policies` | — | `Policy[]` | 401 | Sync | No (full array) | — |
+| 7 | `GET /policies` | — | `Policy[]` (identity fields nullable, D-25) | 401 | Sync | No (full array) | — |
 | 8 | `POST /policies` | `{ source_document_id }` | `Policy` | 401, 409, 422 | Sync | — | — |
-| 9 | `GET /policies/{id}` | — | `Policy` (embeds `coverage_profile`) | 401, 404 | Sync | — | — |
-| 10 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }` | `Policy` | 401, 404, 409, 422 | Sync | — | — |
+| 9 | `GET /policies/{id}` | — | `Policy` (embeds `coverage_profile`; identity fields nullable, D-25) | 401, 404 | Sync | — | — |
+| 10 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }` | `Policy` | 401, 404, 409 (profile not ready, or path matches several rows, D-30), 422 | Sync | — | — |
 | 11 | `POST /policies/{id}/questions` | `{ question }` | 202 `JobAccepted` (kind `answer_question`) | 401, 404 | **Job**, 3–6s | — | — |
 | 12 | `GET /members` | — | `Member[]` | 401 | Sync | No (full array) | — |
 | 13 | `GET /claims` | — | `Claim[]` | 401 | Sync | No — see §4 gap | — |
@@ -88,8 +88,9 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 22 | `GET /ombudsman-awards` | `?cursor&limit` | `Collection<OmbudsmanAward>` | 401 | Sync | Cursor | — |
 | 23 | `GET /insurers/benchmarks` | — | `InsurerBenchmark[]` | 401 | Sync | No (full array) | — |
 | 24 | `GET /jobs/{job_id}` | — | `Job<TResult>` | 401, 404 | Sync (this is what gets polled) | — | — |
+| 25 | `GET /documents/{id}/file` | — | `{ url, expires_at }`: signed URL valid 5 min (D-26) | 401, 404 | Sync | — | — |
 
-24 endpoints. `#1` (`health`) is infra, not part of a vertical slice. `#3`'s
+25 endpoints. `#1` (`health`) is infra, not part of a vertical slice. `#3`'s
 `claim_id` filter and all of `#5` are Phase 4 additions, not in the ratified
 `API_DECISIONS.md` endpoint list — see §4.
 
@@ -247,7 +248,7 @@ assumption so Phase 2 could proceed; none should be read as settled.
    in §3 is this mock's invention. Needs review by whoever owns Slice 2 before real
    claims start flowing through it.
 
-7. **Missing-required-header status code.** D-13 says `Idempotency-Key` is
+7. **Resolved by D-27 (422).** Original note: missing-required-header status code. D-13 says `Idempotency-Key` is
    "required" on two endpoints but doesn't say what happens if it's absent. D-04's
    status table has no generic `400`; this mock uses `422` (validation failure) with
    a `field_errors` entry naming the header. Reasonable, not specified.

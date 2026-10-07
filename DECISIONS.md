@@ -656,3 +656,38 @@ document's real length is known, silently, with the same console log. Also
 didn't log "bbox is null" as a rejection anywhere — a missing bbox is an
 existing, expected, non-broken state (already designed for since Phase 1),
 not something to tell the extraction side is wrong every time it happens.
+
+---
+
+## Backend Phase 3 (document job pipeline)
+
+### `apps/web` was edited by backend work, once, with explicit approval
+
+`CLAUDE.md` says backend work does not edit `apps/web`. Ayush approved one
+narrow exception on 2026-10-07, because two things could not be done from
+the backend alone:
+
+1. Every page that shows the document viewer loaded one hardcoded mock PDF
+   (`/kitchen-sink/sample-policy.pdf`). Nothing asked the backend for the
+   uploaded file, so a provenance highlight could never be checked against
+   the real document.
+2. `Policy.insurer`, `policy_number`, `product_name`, `start_date` and
+   `end_date` became nullable (API_DECISIONS D-25), and several pages read
+   `policy.insurer.name` directly, which throws on null.
+
+What changed, and nothing else: the five fields became nullable in
+`packages/contracts-ts` types and zod schemas; a `useDocumentFile` hook was
+added; `PolicyUpload` and `PolicyDetail` pass the real file URL to
+`DocumentViewer`; null guards render "Not stated in this document"; the four
+new job step names got labels in `JobProgress`; one MSW handler serves the
+file route in mock mode. No layout, styling or behaviour was changed.
+
+**What would change if reversed:** restore the mock constant in the two
+pages and drop the hook; the null guards must stay for as long as D-25 holds.
+
+### Claim-context viewers still show the mock PDF
+
+`ClaimWorkspace`, `ClaimNew` and `PolicyAsk` still pass the mock PDF to
+`DocumentViewer`. They were left alone because claim uploads are not built
+on the backend yet (D-29) and Q&A is a later phase. They need the same
+one-line change when those arrive.
