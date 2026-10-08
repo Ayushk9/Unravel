@@ -157,7 +157,6 @@ class ApiTester:
             _env_file=None,
             database_url=database.url,
             supabase_url="https://test-project.supabase.co",
-            supabase_service_role_key="test",
             gemini_api_key="test",
             environment="test",
             parse_timeout_seconds=20,

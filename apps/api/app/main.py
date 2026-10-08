@@ -1,7 +1,10 @@
 """Application factory.
 
 Run from apps/api:
-    ../../.venv/bin/python -m uvicorn app.main:app --reload
+    ../../.venv/bin/python -m app
+
+That starts the server on HOST:PORT from settings (default 0.0.0.0:8000),
+see app/__main__.py.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from app.db.session import create_engine, create_session_factory
 from app.jobs.queue import delete_expired_jobs, recover_interrupted_jobs
 from app.jobs.runner import JobRunner
 from app.storage.base import remove_stale_temporary_files
-from app.storage.supabase import SupabaseStorage
+from app.storage.factory import create_storage
 
 API_PREFIX = "/api/v1"
 
@@ -69,9 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = create_engine(settings.database_url)
     app.state.session_factory = create_session_factory(app.state.engine)
     app.state.token_verifier = TokenVerifier(settings.supabase_url)
-    app.state.storage = SupabaseStorage(
-        settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket
-    )
+    app.state.storage = create_storage(settings)
     app.state.runner = JobRunner(
         session_factory=app.state.session_factory, storage=app.state.storage, settings=settings
     )
@@ -87,9 +88,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
-        # Headers the browser lets the web app's JavaScript read.
-        expose_headers=[REQUEST_ID_HEADER, "Retry-After"],
+        # Range lets the PDF viewer ask for part of a file.
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "Range"],
+        # Headers the browser lets the web app's JavaScript read. The last
+        # three are what the PDF viewer needs to load a file in pieces.
+        expose_headers=[REQUEST_ID_HEADER, "Retry-After", "Accept-Ranges", "Content-Range", "Content-Length"],
     )
     app.add_middleware(RequestIdMiddleware)
 

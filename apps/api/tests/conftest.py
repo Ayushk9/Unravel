@@ -13,7 +13,9 @@ import os
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://test:test@localhost:5432/unravel_test"
 os.environ["SUPABASE_URL"] = "https://test-project.supabase.co"
 os.environ["GEMINI_API_KEY"] = "test-gemini-key"
-os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "test-service-role-key"
+os.environ["STORAGE_BACKEND"] = "local"
+# A folder that is never created: tests that store files use their own storage.
+os.environ["LOCAL_STORAGE_DIR"] = "/nonexistent/unravel-test-storage"
 os.environ["CORS_ALLOWED_ORIGINS"] = "http://localhost:5173"
 os.environ["ENVIRONMENT"] = "test"
 

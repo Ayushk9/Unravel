@@ -26,3 +26,6 @@ engines/document/out/
 # Engine A — disk cache of LLM extraction responses, keyed by file content hash
 engines/document/.cache/
 engines/document/.pytest_cache/
+
+# Uploaded documents kept by the local storage backend (real policy files)
+apps/api/storage/

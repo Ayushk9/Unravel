@@ -1,9 +1,13 @@
 """Where uploaded files live: the interface, and helpers every backend shares.
 
-The rest of the application talks to `DocumentStorage` only. Production
-uses Supabase Storage (supabase.py); tests use an in-memory fake
-(memory.py). Nothing depends on the server's own disk for keeping files:
-free-tier hosts wipe their disk on every restart or redeploy.
+The rest of the application talks to `DocumentStorage` only. There are
+three implementations, chosen in factory.py:
+
+    local.py      a folder on this machine. The default: the demo runs on
+                  one Mac with no cloud deployment.
+    supabase.py   a private Supabase Storage bucket, for a hosted deployment
+                  where the server's own disk is wiped on every redeploy.
+    memory.py     a dictionary, for tests.
 
 A local temporary file exists only while one document is being parsed,
 because Engine A reads from a file path. `open_to_tempfile` is a context

@@ -1,4 +1,7 @@
-"""Create the private storage bucket for uploaded documents, if it is missing.
+"""Create the private Supabase Storage bucket, if it is missing.
+
+Only needed when STORAGE_BACKEND=supabase. The default backend keeps files
+in a local folder and needs no setup.
 
 Run once per Supabase project, from apps/api:
     ../../.venv/bin/python scripts/create_bucket.py
@@ -22,6 +25,8 @@ from app.storage.supabase import SupabaseStorage  # noqa: E402
 
 async def main() -> None:
     settings = get_settings()
+    if not settings.supabase_service_role_key:
+        raise SystemExit("SUPABASE_SERVICE_ROLE_KEY is not set. It is only needed when STORAGE_BACKEND=supabase.")
     storage = SupabaseStorage(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
     created = await storage.ensure_bucket()
     state = "created" if created else "already exists"

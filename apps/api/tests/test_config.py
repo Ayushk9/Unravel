@@ -7,7 +7,6 @@ def _settings(**overrides: str) -> Settings:
     values = dict(
         database_url="postgresql+asyncpg://u:p@localhost/x",
         supabase_url="https://x.supabase.co",
-        supabase_service_role_key="k",
         gemini_api_key="k",
         environment="prod",
         # Set explicitly: conftest.py puts a value in the environment for other tests.

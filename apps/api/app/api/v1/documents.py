@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -196,6 +196,7 @@ async def get_document(
 
 @router.get("/documents/{document_id}/file")
 async def get_document_file(
+    request: Request,
     document_id: UUID,
     household: Annotated[CurrentHousehold, Depends(get_current_household)],
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -216,5 +217,12 @@ async def get_document_file(
         raise ApiError(
             503, "storage_unavailable", "We couldn't fetch this file right now. Please try again.", retryable=True
         ) from exc
+    if url.startswith("/"):
+        # The local backend returns a link to this server's own file route.
+        # It is completed with the address the CLIENT used to reach us, so a
+        # browser on this Mac gets http://localhost:8000/... and a phone on
+        # the Wi-Fi gets http://<the Mac's IP>:8000/..., each one reachable
+        # from where it was asked.
+        url = str(request.base_url).rstrip("/") + url
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=SIGNED_URL_LIFETIME_SECONDS)
     return DocumentFile(url=url, expires_at=expires_at)
