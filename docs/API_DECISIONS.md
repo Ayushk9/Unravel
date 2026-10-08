@@ -234,7 +234,9 @@ On `Policy`, the fields `insurer`, `policy_number`, `product_name`, `start_date`
 ```json
 { "url": "https://...signed...", "expires_at": "2026-10-07T10:05:00Z" }
 ```
-The route requires the bearer token and applies the usual ownership rule (another household's document is `404`). The returned `url` needs no token and is valid for 5 minutes. Files live in a private storage bucket that only the backend can reach.
+The route requires the bearer token and applies the usual ownership rule (another household's document is `404`). The returned `url` needs no token and is valid for 5 minutes. Clients must treat `url` as opaque and load it as given.
+
+Where the URL points depends on the server's storage backend. With local-disk storage (the default, as the demo runs on one machine) it points back at this API, `GET /api/v1/local-files?path=…&expires=…&signature=…`, built on the host the client used to reach the API, and is protected by an HMAC signature. With Supabase storage it is a Supabase signed URL.
 
 *Why:* a PDF viewer (pdf.js on web, a native viewer on Android) loads a plain URL far more easily than a request that needs an `Authorization` header, and file bytes never pass through the API host. The short lifetime bounds the damage if a URL leaks.
 *Ratified:* 2026-10-07. New endpoint, `CONTRACTS.md` row 25.

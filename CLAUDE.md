@@ -84,8 +84,10 @@ Stack is fixed: Python 3.12, FastAPI, SQLAlchemy 2.0 async, Alembic (one linear 
 - **Jobs.** The `job` table is the queue; no job state may live only in memory. Jobs are claimed with `FOR UPDATE SKIP LOCKED` (`apps/api/app/jobs/queue.py`). `BackgroundTasks` only wakes the runner; correctness never depends on it.
 - **Engine A runs in a spawned child process per job, never a thread** (`apps/api/app/jobs/worker_process.py`), so a hung parse can be terminated on timeout. The API process must not import Docling. Do not change Engine A's public signature.
 - A job must never stay `running`: every failure path ends in `failed` with a readable sentence in `job.error` and `document.parse_error`, never a stack trace. Startup fails jobs left `running`.
-- Uploaded files live in the private Supabase Storage bucket, reached only through `DocumentStorage` (`apps/api/app/storage/`). Never rely on local disk for persistence; a temporary file may exist only for the duration of one parse.
-- `SUPABASE_SERVICE_ROLE_KEY` is server-side only. It bypasses every access rule in the project.
+- **Deployment is local.** The demo runs on Ayush's Mac; there is no cloud deployment. Do not design for one unless asked.
+- Uploaded files are reached only through `DocumentStorage` (`apps/api/app/storage/`). The default backend is a local folder, `apps/api/storage/` (gitignored: it holds real policy documents). `STORAGE_BACKEND=supabase` selects a private Supabase bucket instead. The parser always works on a temporary copy that exists only for the duration of one parse.
+- With local storage, a document's file link points at this server's own `GET /api/v1/local-files`, protected by an HMAC signature and a 5-minute expiry (`apps/api/app/storage/local.py`).
+- `SUPABASE_SERVICE_ROLE_KEY` is needed only for the Supabase backend. It is server-side only and bypasses every access rule in the project.
 - Alembic lives in `apps/api/alembic`; run it from `apps/api`. After changing a model, `alembic check` must report no differences.
 - Secrets live in `apps/api/.env`, which is gitignored. Never commit `.env` or keys. `.env.example` is committed.
 - Two virtualenvs: the root `.venv` runs the API; `engines/document/.venv` runs Engine A's tests. The root `pyproject.toml` installs `contracts` with `pip install -e .`; keep that working.
@@ -107,9 +109,9 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 
 ### Backend commands
 
-- `cd apps/api && ../../.venv/bin/python -m uvicorn app.main:app --reload`: dev server on port 8000
+- `cd apps/api && ../../.venv/bin/python -m app`: API server on `HOST:PORT` (default `0.0.0.0:8000`, reachable from a phone on the same Wi-Fi; see `apps/api/.env.example` for the Android and CORS notes)
 - `cd apps/api && ../../.venv/bin/python -m pytest`: API tests. Tests that need real SQL run in a temporary Postgres schema and are **skipped** unless `TEST_DATABASE_URL` is set (it may equal `DATABASE_URL`; `public` is never touched)
-- `cd apps/api && ../../.venv/bin/python scripts/create_bucket.py`: create the private storage bucket (once per project)
+- `cd apps/api && ../../.venv/bin/python scripts/create_bucket.py`: create the private Supabase bucket (only when `STORAGE_BACKEND=supabase`)
 - `cd apps/api && ../../.venv/bin/python scripts/print_policy_table.py <pdf>`: upload a PDF to a running server and print every extracted field
 - `cd apps/api && ../../.venv/bin/python scripts/seed.py`: seed the dev household (idempotent)
 - `cd engines/document && .venv/bin/python -m pytest`: Engine A tests
