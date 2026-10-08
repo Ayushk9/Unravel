@@ -281,6 +281,78 @@ If a path matches more than one row (two sub-limits with the same category, or s
 *Ratified:* 2026-10-07.
 *Revisit:* **soon.** Real policies routinely have several `procedure` sub-limits, which this makes uncorrectable. The path needs a way to address one row (an id or a position).
 
+### D-31 · The claim state machine
+Ratifies the graph that `CONTRACTS.md` §3 carried as a mock assumption:
+
+```
+intimated           -> documents_submitted, queried
+documents_submitted -> under_review, queried
+under_review        -> queried, approved, denied
+queried             -> documents_submitted, under_review
+approved            -> resolved
+denied              -> escalated, resolved
+escalated           -> resolved
+resolved            -> (none)
+```
+It is defined once, in `apps/api/app/claims/state_machine.py`. An illegal transition, including an unknown `to_state`, is `409` with `error.code = "illegal_transition"` and one `field_errors` entry per allowed target, each `{ "field": "to_state", "message": "<state>" }` (ratifies `CONTRACTS.md` §4 item 5). A closed claim returns an empty list.
+
+`POST /claims` writes the first event (`null -> intimated`) itself. `GET /claims` is a full array, not paginated (ratifies §4 item 3). `occurred_at` must carry a UTC offset and must not be in the future; it may be earlier than the previous event's, because people log letters late. Events are ordered by the server's sequence number, not by `occurred_at`.
+
+*Ratified:* 2026-10-08.
+*Revisit:* when Slice 2's owner reviews the lifecycle, in particular whether `escalated` needs splitting into "grievance filed with insurer" and "complaint filed with Ombudsman".
+
+### D-32 · Concurrent transitions: one wins, the other gets 409
+If two `POST /claims/{id}/events` requests race from the same state, exactly one event is written. The other request gets `409` with `error.code = "claim_changed"` and `retryable: true`; the client should reload the claim and let the user decide again. (If the second request is processed after the first has committed, it is judged against the new state and may instead get an ordinary `illegal_transition`.)
+
+*Why:* the event log has `UNIQUE(claim_id, seq)`; both requests compute the same next `seq` and the database accepts one. No lock is taken.
+*Ratified:* 2026-10-08.
+
+### D-33 · Deadlines carry their source and whether the rule is verified
+`Deadline` gains two fields, and `Claim` gains one:
+
+```json
+"deadlines": [{
+  "id": "...", "label": "...", "due_at": "2027-08-10T23:59:59+05:30", "days_remaining": 355,
+  "basis": "plain-language rule, with the date it was counted from", "urgency": "normal",
+  "source": { "document": "Insurance Ombudsman Rules, 2017", "section": "...", "url": null },
+  "verified": false
+}],
+"omitted_deadlines": [{ "id": "...", "label": "Claim intimation window", "reason": "..." }]
+```
+
+- `verified` is `false` until a person has checked the rule against its source. **Clients must mark an unverified deadline visibly.**
+- `source` may be `null`; within it, `section` and `url` may be `null`.
+- `omitted_deadlines` lists deadlines that apply but could not be computed (for example the policy's intimation window was not extracted), each with a reason. A missing input is never replaced by a guess.
+- `due_at` is the end of the due date in India (`23:59:59+05:30`). `days_remaining` is due date minus today's date in India; `0` means due today. Urgency: below 0 `expired`, 0–3 `critical`, 4–14 `soon`, otherwise `normal`.
+
+Rules live in `apps/api/app/rules/deadline_rules.yaml`, each with id, trigger, offset, description, source, `verified` and version. **As of ratification every rule is `verified: false`**; the values are a best understanding awaiting checking (see §8). No regulatory number appears in application code.
+
+*Ratified:* 2026-10-08. Additive.
+
+### D-34 · Documents on a claim, and how they are classified
+Extends D-29. `POST /documents` accepts a `claim_id` owned by the caller; an unknown one is `422` on field `claim_id`. Such a document is **classified, not parsed**: one inexpensive model call on its first page yields `detected_type` (the contract's `DocumentType`, `unknown` when unrecognised) and a confidence. PDF, PNG and JPEG are all accepted for classification. The job's `result.policy_id` is `null`, and `progress.step` runs `uploading`, `classifying`, `storing`, `done`.
+
+- `GET /documents?cursor&limit&claim_id` is keyset-paginated, oldest first; `cursor` is the `next_cursor` of the previous page; `limit` is 1–100, default 20 (ratifies §4 item 11).
+- `PATCH /documents/{id}` with `{ "detected_type": ... }` records the user's label and sets `user_confirmed: true` (ratifies §4 item 10). The classifier's own answer and confidence are kept server-side for evaluation; `confidence` in the response is unchanged.
+- `DELETE /documents/{id}` is a soft delete returning `204`.
+
+*Note:* the classifier's confidence is reported by the model, unlike coverage fields, whose confidence is computed from how well a value matched the page.
+*Ratified:* 2026-10-08.
+
+### D-35 · Completeness reports explain the checklist and say whether it is verified
+`CompletenessReport` gains:
+
+```json
+"required_details": [{ "type": "discharge_summary", "description": "...", "where_to_get": "...",
+                       "source": { "document": "...", "section": null, "url": null } }],
+"verified": false
+```
+`required_details` has one entry per item of `required`, in the same order. `missing = required − present`, where a document's type is the user's label if they set one, otherwise the classifier's. A document classified with low confidence still counts as present; `advisory_note` asks the user to check it. Documents typed `unknown`, still being read, or deleted do not count. A claim whose type has no checklist returns empty lists and says so.
+
+The checklist lives in `apps/api/app/rules/required_documents.yaml` and is **`verified: false`** as of ratification. Clients must show that.
+
+*Ratified:* 2026-10-08. Additive.
+
 ---
 
 ## 5. Pagination
@@ -340,5 +412,7 @@ These need verification against primary sources before they appear in any demo, 
 | Ombudsman filing window from date of repudiation | **Unverified** | Feature 6 deadline rule — this one is load-bearing |
 | Days of insurer silence before escalation is permitted | **Unverified** | Feature 6 deadline rule |
 | Claim intimation deadline (varies by insurer) | **Do not hardcode** | Must come from the extracted policy, per-policy |
+
+**Update 2026-10-08:** the two deadline items above now have working values in `apps/api/app/rules/deadline_rules.yaml` (Ombudsman filing window: 1 year from denial; escalation after insurer silence: 30 days). They are a best understanding, marked `verified: false`, and are shown to users as unverified. They remain open until checked.
 
 Rule: no regulatory number is hardcoded in application logic. Each lives in a versioned reference-data file with a source URL and a checked-on date, so the report can cite it and a stale value can be corrected in one place.

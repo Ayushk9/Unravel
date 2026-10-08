@@ -65,7 +65,7 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | # | Method & path | Request | Response | Notable errors | Sync / Job | Paginated | Idempotency-Key |
 |---|---|---|---|---|---|---|---|
 | 1 | `GET /health` | — | `{ status: "ok" }` | — (public, D-24) | Sync | — | — |
-| 2 | `POST /documents` | multipart: `file`, `claim_id` (must be empty for now, D-29) | 202 `JobAccepted` (kind `parse_document`) | 401, 409 (key reused with a different file, D-27), 413 (>25MB), 422 (bad type / missing file / missing key) | **Job**, 4–8s in the mock; a real parse takes 20 s to several minutes | — | **Required** |
+| 2 | `POST /documents` | multipart: `file`, `claim_id` (empty for a policy; a claim id for a claim document, which is classified rather than parsed, D-34) | 202 `JobAccepted` (kind `parse_document`) | 401, 409 (key reused with a different file, D-27), 413 (>25MB), 422 (bad type / missing file / missing key) | **Job**, 4–8s in the mock; a real parse takes 20 s to several minutes | — | **Required** |
 | 3 | `GET /documents` | `?cursor&limit&claim_id` | `Collection<StoredDocument>` | 401 | Sync | Cursor | — |
 | 4 | `GET /documents/{id}` | — | `StoredDocument` | 401, 404 | Sync | — | — |
 | 5 | `PATCH /documents/{id}` | `{ detected_type }` | `StoredDocument` | 401, 404, 422 | Sync | — | — |
@@ -76,12 +76,12 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 10 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }` | `Policy` | 401, 404, 409 (profile not ready, or path matches several rows, D-30), 422 | Sync | — | — |
 | 11 | `POST /policies/{id}/questions` | `{ question }` | 202 `JobAccepted` (kind `answer_question`) | 401, 404 | **Job**, 3–6s | — | — |
 | 12 | `GET /members` | — | `Member[]` | 401 | Sync | No (full array) | — |
-| 13 | `GET /claims` | — | `Claim[]` | 401 | Sync | No — see §4 gap | — |
+| 13 | `GET /claims` | — | `Claim[]` (with `omitted_deadlines`, D-33) | 401 | Sync | No (full array, D-31) | — |
 | 14 | `POST /claims` | `ClaimCreateRequest` | 201 `Claim` | 401, 422 | Sync | — | — |
 | 15 | `GET /claims/{id}` | — | `Claim` | 401, 404 | Sync | — | — |
-| 16 | `POST /claims/{id}/events` | `{ to_state, occurred_at, note }` | `Claim` (recomputed) | 401, 404, **409** (illegal transition — allowed targets in `field_errors`, see §3) | Sync | — | — |
+| 16 | `POST /claims/{id}/events` | `{ to_state, occurred_at, note }` | `Claim` (recomputed) | 401, 404, **409** `illegal_transition` (allowed targets in `field_errors`, D-31) or `claim_changed` (lost a race, D-32), 422 (future or zone-less `occurred_at`) | Sync | — | — |
 | 17 | `POST /claims/{id}/eligibility` | — | `EligibilityAssessment` | 401, 404 | Sync | — | — |
-| 18 | `POST /claims/{id}/completeness` | — | `CompletenessReport` | 401, 404 | Sync | — | — |
+| 18 | `POST /claims/{id}/completeness` | — | `CompletenessReport` (with `required_details`, `verified`, D-35) | 401, 404 | Sync | — | — |
 | 19 | `POST /claims/{id}/bill-validation` | — | `BillValidationReport` | 401, 404, **409** (bill not parsed yet) | Sync | — | — |
 | 20 | `POST /claims/{id}/grievance-drafts` | `{ rung }` | 202 `JobAccepted` (kind `generate_grievance_draft`) | 401, 404 | **Job**, 20–30s | — | **Required** |
 | 21 | `GET /alerts` | — | `Alert[]` | 401 | Sync | No (full array) | — |
@@ -221,7 +221,7 @@ assumption so Phase 2 could proceed; none should be read as settled.
    change to a "frozen in week one" table (`API_DECISIONS.md` §7) and needs sign-off,
    not just frontend-side assumption.
 
-3. **`GET /claims` pagination is unstated.** `API_DECISIONS.md` §5's pagination table
+3. **Resolved by D-31 (full array).** Original note: `GET /claims` pagination is unstated. `API_DECISIONS.md` §5's pagination table
    lists documents/claim-events/ombudsman-awards as paginated and
    policies/members/alerts/benchmarks as full arrays — claims appear in neither list.
    Implemented as a full array, by the same "a household has a bounded number of
@@ -236,14 +236,14 @@ assumption so Phase 2 could proceed; none should be read as settled.
    exists for this already-parsed document" call that a real upload flow may never
    actually need to invoke. Flagged, not resolved.
 
-5. **The 409 "allowed transition targets" shape is inferred, not specified.**
+5. **Resolved by D-31.** Original note: the 409 "allowed transition targets" shape is inferred, not specified.
    D-04's note says a bad claim transition's `field_errors` "lists the allowed target
    states," but not the shape. This mock uses one `field_errors` entry per allowed
    state (`{ field: "to_state", message: "<state>" }`) — see §3. A single entry with
    a comma-joined message would also satisfy a literal reading; worth ratifying one
    way so the frontend's parsing code doesn't guess.
 
-6. **The claim state machine's transition graph isn't specified anywhere** — only
+6. **Resolved by D-31.** Original note: the claim state machine's transition graph isn't specified anywhere — only
    the mechanism (append-only log, 409 on illegal transitions) is ratified. The graph
    in §3 is this mock's invention. Needs review by whoever owns Slice 2 before real
    claims start flowing through it.
@@ -264,15 +264,15 @@ assumption so Phase 2 could proceed; none should be read as settled.
    clickable superscripts; nothing in `API_DECISIONS.md` specifies this, and
    Feature 7 (grievance drafting, Phase 5) will need the same mechanism. See §3.
 
-10. **`PATCH /documents/{id}` for type correction is a new endpoint, not a ratified
-    one** (added in Phase 4 — endpoint `#5`, §3). The claim wizard and the claim
+10. **Resolved by D-34.** Original note: `PATCH /documents/{id}` for type correction is a new endpoint, not a ratified
+    one (added in Phase 4 — endpoint `#5`, §3). The claim wizard and the claim
     workspace's Documents tab both need to let the user correct a misclassified
     document type, and nothing in `API_DECISIONS.md`'s slice-1 endpoint list covers
     it. Modelled deliberately on D-15's targeted-PATCH shape rather than inventing
     something new. Needs sign-off the same way item 2 above does.
 
-11. **`GET /documents?claim_id=...` is an additive filter on an existing paginated
-    endpoint, not a new one** (added in Phase 4, §3) — lower-risk than item 10
+11. **Resolved by D-34.** Original note: `GET /documents?claim_id=...` is an additive filter on an existing paginated
+    endpoint, not a new one (added in Phase 4, §3) — lower-risk than item 10
     since it doesn't change the response shape, but still worth a ratified line so
     Slice 1's implementer knows the frontend expects it.
 

@@ -66,7 +66,7 @@ These are not style preferences. Breaking one makes the product dishonest, which
 3. Abstention ("insufficient information") is a normal state, styled as information, not as an error. Always name the missing fact and the document that resolves it.
 4. Generated grievance paragraphs with `verified: false` render visibly flagged. Never silently.
 5. Copy never implies a guaranteed outcome and never gives legal advice. Say "assessment", "estimate", "based on your documents".
-6. Never invent regulatory figures, deadlines, or IRDAI/Ombudsman numbers. Use a placeholder and log it under "Needs verification" in `DECISIONS.md`.
+6. Never present a regulatory figure, deadline, or IRDAI/Ombudsman number as fact unless it has been checked against the primary source. An unchecked value may exist only in a rule file under `apps/api/app/rules/`, marked `verified: false`, shown to users as unverified, and listed under "Needs verification" in `DECISIONS.md`. Never invent a source URL: leave it null. Only Ayush flips `verified` to true.
 
 ## Backend conventions
 
@@ -81,6 +81,7 @@ Stack is fixed: Python 3.12, FastAPI, SQLAlchemy 2.0 async, Alembic (one linear 
 - Engine A fills placeholder UUIDs. They are replaced by `remap_ids()` in `apps/api/app/services/extraction_mapper.py` before anything is stored. No placeholder may reach the database.
 - Login tokens are Supabase JWTs signed with ES256. `apps/api/app/core/auth.py` verifies them against the project's public keys (JWKS, derived from `SUPABASE_URL`); the API holds no signing secret. The stub token `mock-household-token` is accepted only when `ENVIRONMENT=dev`.
 - Protected routes depend on `get_current_household` and scope every query to `household.household_id`.
+- **Claims.** A claim has no status column: its state is the latest row of `claim_event`, read through the `claim_current_state` view. `claim_event` is append-only and the database enforces it with triggers (`apps/api/app/db/claim_event_ddl.py`); never add code that updates or deletes an event. Transitions are defined only in `apps/api/app/claims/state_machine.py`. Deadlines are never stored: they are computed on read by pure functions that take `today` as a parameter, from rules in `apps/api/app/rules/deadline_rules.yaml`. No regulatory number may appear in Python code.
 - **Jobs.** The `job` table is the queue; no job state may live only in memory. Jobs are claimed with `FOR UPDATE SKIP LOCKED` (`apps/api/app/jobs/queue.py`). `BackgroundTasks` only wakes the runner; correctness never depends on it.
 - **Engine A runs in a spawned child process per job, never a thread** (`apps/api/app/jobs/worker_process.py`), so a hung parse can be terminated on timeout. The API process must not import Docling. Do not change Engine A's public signature.
 - A job must never stay `running`: every failure path ends in `failed` with a readable sentence in `job.error` and `document.parse_error`, never a stack trace. Startup fails jobs left `running`.
@@ -113,6 +114,7 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 - `cd apps/api && ../../.venv/bin/python -m pytest`: API tests. Tests that need real SQL run in a temporary Postgres schema and are **skipped** unless `TEST_DATABASE_URL` is set (it may equal `DATABASE_URL`; `public` is never touched)
 - `cd apps/api && ../../.venv/bin/python scripts/create_bucket.py`: create the private Supabase bucket (only when `STORAGE_BACKEND=supabase`)
 - `cd apps/api && ../../.venv/bin/python scripts/print_policy_table.py <pdf>`: upload a PDF to a running server and print every extracted field
+- `cd apps/api && ../../.venv/bin/python scripts/print_rules.py`: table of every deadline and required-document rule with its source and verified flag
 - `cd apps/api && ../../.venv/bin/python scripts/seed.py`: seed the dev household (idempotent)
 - `cd engines/document && .venv/bin/python -m pytest`: Engine A tests
 

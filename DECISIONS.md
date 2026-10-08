@@ -691,3 +691,48 @@ pages and drop the hook; the null guards must stay for as long as D-25 holds.
 `DocumentViewer`. They were left alone because claim uploads are not built
 on the backend yet (D-29) and Q&A is a later phase. They need the same
 one-line change when those arrive.
+
+---
+
+## Backend Phase 4 (claims, timeline, missing documents)
+
+### Second approved `apps/web` edit: unverified markers
+
+Approved by Ayush on 2026-10-08, same narrow terms as the Phase 3 edit. The
+contract gained `Deadline.verified`, `Deadline.source`,
+`Claim.omitted_deadlines`, `CompletenessReport.verified` and
+`CompletenessReport.required_details` (API_DECISIONS D-33, D-35), and the
+product rule is that an unverified rule must look unverified.
+
+What changed, and nothing else: those five fields in `packages/contracts-ts`
+types and zod; the mock handlers and fixtures now send them; `DeadlineCard`
+shows an "Unverified rule" badge, the source, and a sentence saying the date
+is an estimate; `CompletenessPanel` shows an "Unverified checklist" note;
+the claim timeline lists deadlines that could not be worked out, with the
+reason; `JobProgress` labels the `classifying` step.
+
+`required_details` (description and where to get each document) is sent by
+the API but not yet shown anywhere in the web app.
+
+### Needs verification against primary source
+
+Every value below is in a rule file with `verified: false` and is shown to
+users as unverified. None may be presented as fact in a demo, the report or
+the panel presentation until checked. To verify one: correct the value and
+source in the file, fill in `url`, set `verified: true`, raise `version`.
+
+`apps/api/app/rules/deadline_rules.yaml`
+
+| Rule | Working value | To check |
+| --- | --- | --- |
+| `insurer_decision` | 30 days from the last necessary document | Regulation number; whether the 2024 IRDAI regulations and master circular replace it, and their shorter cashless limits |
+| `escalation_eligibility` | 30 days after a grievance reaches the insurer | Insurance Ombudsman Rules, 2017, Rule 14; whether "one month" means 30 days or a calendar month |
+| `ombudsman_filing` | 1 year from the insurer's rejection | Insurance Ombudsman Rules, 2017, Rule 14; what the year is counted from when the insurer never replies |
+| `claim_intimation` | The policy's own extracted hours, counted from admission | Whether the window runs from admission for planned cases, or before it |
+
+`apps/api/app/rules/required_documents.yaml`: the whole file (which
+documents each claim type needs). Requirements vary by insurer.
+
+Modelling assumptions that are not regulatory figures but should be reviewed:
+the state `escalated` is treated as "a written grievance has reached the
+insurer"; and a claim-intimation window that was met produces no card.

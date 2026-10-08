@@ -23,12 +23,12 @@ def _source(document: str, section: str | None, url: str | None) -> str:
 def main() -> None:
     deadlines = load_deadline_rules()
     print(f"app/rules/deadline_rules.yaml (file version {deadlines.version})\n")
-    print(f"{'id':<24} {'value':<34} {'verified':<9} source")
+    print(f"{'id':<24} {'value':<60} {'verified':<9} source")
     print("-" * 150)
     for rule in deadlines.rules:
         trigger = "admission date" if rule.trigger.admission else f"latest '{rule.trigger.event}' event"
         offset = f"{rule.offset.value} {rule.offset.unit}" if rule.offset.value else f"policy's {rule.offset.policy_field}"
-        print(f"{rule.id:<24} {offset + ' from ' + trigger:<34} {str(rule.verified).lower():<9} {_source(**rule.source.model_dump())}")
+        print(f"{rule.id:<24} {offset + ' from ' + trigger:<60} {str(rule.verified).lower():<9} {_source(**rule.source.model_dump())}")
     print(
         f"\n{'urgency thresholds':<24} critical <= {deadlines.urgency.critical_within_days} days, "
         f"soon <= {deadlines.urgency.soon_within_days} days   (a product choice, not a regulation)"
