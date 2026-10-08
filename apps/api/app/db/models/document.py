@@ -38,9 +38,13 @@ class Document(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=new_id)
     household_id: Mapped[UUID] = mapped_column(ForeignKey("household.id", ondelete="CASCADE"), index=True)
-    # No foreign key yet: the claim table arrives in a later migration, which
-    # will add the constraint. Null for uploads made outside a claim.
-    claim_id: Mapped[UUID | None] = mapped_column(index=True)
+    # The claim this document was uploaded for. Null for uploads made
+    # outside a claim (a policy document).
+    # use_alter: document -> claim -> policy -> document is a cycle of foreign
+    # keys, so this one is added with ALTER TABLE after all three tables exist.
+    claim_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("claim.id", use_alter=True, name="fk_document_claim_id_claim"), index=True
+    )
 
     file_name: Mapped[str] = mapped_column(Text)
     mime_type: Mapped[str] = mapped_column(Text)
