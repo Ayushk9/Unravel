@@ -1,0 +1,62 @@
+# Documents a claim usually needs (Feature 4: missing-document detection).
+#
+# NOT VERIFIED. Requirements differ between insurers and products; this is a
+# best understanding of the common set, written down so it can be checked.
+# The API sends `verified` with every completeness report.
+#
+# To verify: check an authoritative checklist, correct the lists and each
+# entry's `source` (fill in `url`), set `verified: true`, raise `version`.
+#
+# `checklists` is keyed by claim_type, then admission_type. Each value is a
+# list of document types, in the order they are shown. A type must be one of
+# the DocumentType values in the contract.
+
+version: 1
+verified: false   # TODO(Ayush): verify the whole file against a primary source
+
+documents:
+  discharge_summary:
+    description: The hospital's summary of the stay, with diagnosis, treatment given and dates of admission and discharge.
+    where_to_get: The hospital gives it to you at discharge. The medical records department can issue a copy.
+    source:
+      document: Insurer claim form checklist (varies by insurer)
+      section: null   # TODO(Ayush)
+      url: null       # TODO(Ayush)
+  itemised_bill:
+    description: The final hospital bill listing every charge line by line, not just the total.
+    where_to_get: The hospital billing desk. Ask for the detailed or break-up bill.
+    source:
+      document: Insurer claim form checklist (varies by insurer)
+      section: null
+      url: null
+  payment_receipt:
+    description: Proof that the bill was paid, such as the hospital's payment receipt.
+    where_to_get: The hospital billing desk issues it when you pay.
+    source:
+      document: Insurer claim form checklist (varies by insurer)
+      section: null
+      url: null
+  investigation_report:
+    description: Reports of tests done for this illness, such as blood tests, scans and X-rays.
+    where_to_get: The hospital or the diagnostic lab that ran the tests.
+    source:
+      document: Insurer claim form checklist (varies by insurer)
+      section: null
+      url: null
+  id_proof:
+    description: A government photo identity document of the patient.
+    where_to_get: You already hold this, for example an Aadhaar card, PAN card or passport.
+    source:
+      document: Insurer claim form checklist (varies by insurer)
+      section: null
+      url: null
+
+checklists:
+  reimbursement:
+    planned: [discharge_summary, itemised_bill, payment_receipt, investigation_report, id_proof]
+    emergency: [discharge_summary, itemised_bill, payment_receipt, investigation_report, id_proof]
+  cashless:
+    # TODO(Ayush): cashless claims are mostly handled between hospital and
+    # insurer; confirm what the policyholder is actually asked for.
+    planned: [id_proof, investigation_report, discharge_summary]
+    emergency: [id_proof, discharge_summary]

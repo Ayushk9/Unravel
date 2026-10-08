@@ -22,5 +22,13 @@ python-multipart==0.0.32
 # HTTP client for the Supabase Storage API (also used by the test client)
 httpx==0.28.1
 
+# Rule files (app/rules/*.yaml)
+PyYAML==6.0.3
+
+# Claim-document classification: first-page text, and the Gemini call.
+# Both are also Engine A dependencies, so they are already in this venv.
+pypdfium2==5.13.0
+google-genai==2.20.0
+
 # Tests
 pytest==9.1.1

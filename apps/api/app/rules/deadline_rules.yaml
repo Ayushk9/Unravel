@@ -1,0 +1,89 @@
+# Deadline rules for claims (Feature 6).
+#
+# NOTHING IN THIS FILE HAS BEEN VERIFIED AGAINST A PRIMARY SOURCE.
+# Every rule is `verified: false`. The values are a best understanding,
+# written down so they can be checked, not facts to rely on. The API sends
+# `verified` with every deadline and the app marks unverified ones.
+#
+# To verify a rule: read the source, correct `offset` and `source` if needed
+# (fill in `url`), set `verified: true`, and raise `version` by one.
+#
+# Application code never contains a regulatory number. It reads them here.
+#
+# Fields of a rule
+#   id           stable identifier, also used in the deadline's id
+#   label        short title shown on the deadline card
+#   trigger      what starts the clock:
+#                  {admission: true}        the claim's admission date
+#                  {event: <state>}         the latest event entering that state
+#   active_in    claim states in which the deadline is shown
+#   offset       how long after the trigger:
+#                  {value: N, unit: days|months|years}
+#                  {policy_field: intimation_deadline_hours}   read from the policy
+#   description  one plain sentence for the user
+#   source       where the rule comes from: document, section, url
+#   verified     has a person checked this against the source?
+#   version      raise when the rule's meaning or value changes
+
+version: 1
+
+# How many days before the due date a deadline changes urgency.
+# A product choice, not a regulatory figure. Due today counts as critical.
+urgency:
+  critical_within_days: 3
+  soon_within_days: 14
+
+rules:
+  - id: claim_intimation
+    label: Claim intimation window
+    trigger: {admission: true}
+    active_in: [intimated, documents_submitted, under_review, queried, approved, denied, escalated, resolved]
+    # Not a fixed number: each policy states its own window, and it is read
+    # from that policy's extracted coverage profile. Never hardcoded.
+    offset: {policy_field: intimation_deadline_hours}
+    description: Your policy asks you to tell the insurer about a hospitalisation within a set time of admission.
+    source:
+      document: Your policy document
+      section: Claim intimation clause (the page is linked from the policy's coverage profile)
+      url: null
+    verified: false   # TODO(Ayush): confirm the window counts from admission for both planned and emergency cases
+    version: 1
+
+  - id: insurer_decision
+    label: Insurer should decide by
+    trigger: {event: documents_submitted}
+    active_in: [documents_submitted, under_review]
+    offset: {value: 30, unit: days}   # TODO(Ayush): verify. Newer IRDAI circulars may set shorter limits, especially for cashless.
+    description: An insurer is expected to settle or reject a claim within 30 days of receiving the last necessary document.
+    source:
+      document: IRDAI (Protection of Policyholders' Interests) Regulations, 2017
+      section: Claims procedure for health insurance policies (regulation number to be confirmed; may be superseded by the 2024 regulations and master circular)
+      url: null   # TODO(Ayush): add the official URL
+    verified: false
+    version: 1
+
+  - id: escalation_eligibility
+    label: You may approach the Ombudsman from
+    trigger: {event: escalated}
+    active_in: [escalated]
+    offset: {value: 30, unit: days}   # TODO(Ayush): verify. The rule says "one month"; check whether that is 30 days or a calendar month.
+    description: If the insurer has not replied within one month of receiving your written grievance, you may take the complaint to the Insurance Ombudsman.
+    source:
+      document: Insurance Ombudsman Rules, 2017
+      section: Rule 14 (manner in which complaint is to be made); sub-rule to be confirmed
+      url: null   # TODO(Ayush): add the official URL
+    verified: false
+    version: 1
+
+  - id: ombudsman_filing
+    label: Ombudsman filing window
+    trigger: {event: denied}
+    active_in: [denied, escalated]
+    offset: {value: 1, unit: years}   # TODO(Ayush): verify. Listed as unverified and load-bearing in API_DECISIONS section 8.
+    description: A complaint to the Insurance Ombudsman must be made within one year of the insurer's rejection.
+    source:
+      document: Insurance Ombudsman Rules, 2017
+      section: Rule 14 (time limit for making a complaint); sub-rule to be confirmed
+      url: null   # TODO(Ayush): add the official URL
+    verified: false
+    version: 1
