@@ -15,6 +15,13 @@ export const isoDateTimeSchema = z
 
 export const confidenceSchema = z.enum(["high", "medium", "low", "unknown"]).catch("unknown");
 
+// Where a deadline rule or a document requirement comes from (D-33, D-35).
+export const ruleSourceSchema = z.object({
+  document: z.string(),
+  section: z.string().nullable(),
+  url: z.string().nullable(),
+});
+
 export const provenanceSchema = z.object({
   document_id: uuidSchema,
   page: z.number().int().positive(),
@@ -173,6 +180,15 @@ export const completenessReportSchema = z.object({
   present: z.array(documentTypeSchema),
   missing: z.array(documentTypeSchema),
   advisory_note: z.string(),
+  required_details: z.array(
+    z.object({
+      type: documentTypeSchema,
+      description: z.string(),
+      where_to_get: z.string(),
+      source: ruleSourceSchema,
+    }),
+  ),
+  verified: z.boolean(),
 });
 
 export const claimStateSchema = z
@@ -206,6 +222,14 @@ export const deadlineSchema = z.object({
   days_remaining: z.number().int(),
   basis: z.string(),
   urgency: z.enum(["normal", "soon", "critical", "expired", "unknown"]).catch("unknown"),
+  source: ruleSourceSchema.nullable(),
+  verified: z.boolean(),
+});
+
+export const omittedDeadlineSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  reason: z.string(),
 });
 
 export const claimSchema = z.object({
@@ -222,6 +246,7 @@ export const claimSchema = z.object({
   current_state: claimStateSchema,
   events: z.array(claimEventSchema),
   deadlines: z.array(deadlineSchema),
+  omitted_deadlines: z.array(omittedDeadlineSchema),
 });
 
 export const citationSchema = z.object({

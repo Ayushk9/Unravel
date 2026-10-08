@@ -23,6 +23,8 @@ export function computeDeadlines(claim: Claim): Deadline[] {
       days_remaining: remaining,
       basis: `${PLACEHOLDER_OMBUDSMAN_FILING_WINDOW_DAYS} days from the denial on ${formatDMY(deniedEvent.occurred_at.slice(0, 10))} — placeholder figure, needs verification (see DECISIONS.md)`,
       urgency: urgencyForDaysRemaining(remaining),
+      source: null,
+      verified: false,
     });
   }
 
@@ -36,6 +38,8 @@ export function computeDeadlines(claim: Claim): Deadline[] {
       days_remaining: daysRemaining(expiredDueAt),
       basis: "Forced into the expired state from the dev toolbar.",
       urgency: "expired",
+      source: null,
+      verified: false,
     });
   }
 

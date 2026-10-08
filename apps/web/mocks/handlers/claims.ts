@@ -66,7 +66,9 @@ db.registerJobResolver("generate_grievance_draft", (params): GrievanceDraft => {
 });
 
 function withComputedDeadlines(claim: Claim): Claim {
-  return { ...claim, deadlines: computeDeadlines(claim) };
+  // omitted_deadlines is set here, not read from the stored claim, so claims
+  // persisted to sessionStorage before the field existed still validate.
+  return { ...claim, deadlines: computeDeadlines(claim), omitted_deadlines: [] };
 }
 
 const REQUIRED_DOCUMENTS: Record<string, DocumentType[]> = {
@@ -116,6 +118,7 @@ export const claimsHandlers = [
       current_state: "intimated",
       events: [{ id: genId("event"), claim_id: claimId, from_state: null, to_state: "intimated", occurred_at: now, note: "Claim intimated via app", source: "user" }],
       deadlines: [],
+      omitted_deadlines: [],
     };
     db.addClaim(claim);
     return HttpResponse.json(withComputedDeadlines(claim), { status: 201 });
@@ -211,6 +214,13 @@ export const claimsHandlers = [
         missing.length === 0
           ? "All the documents your claim type usually needs are present."
           : `Missing ${missing.length} document${missing.length === 1 ? "" : "s"} before this claim looks complete.`,
+      required_details: required.map((type) => ({
+        type,
+        description: "Usually needed for this type of claim.",
+        where_to_get: "Ask the hospital or your insurer.",
+        source: { document: "Mock checklist", section: null, url: null },
+      })),
+      verified: false,
     };
     return HttpResponse.json(report);
   }),

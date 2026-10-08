@@ -1,4 +1,4 @@
-import { AlarmClock, AlertCircle, CalendarX, Clock, HelpCircle } from "lucide-react";
+import { AlarmClock, AlertCircle, CalendarX, Clock, HelpCircle, ShieldQuestion } from "lucide-react";
 import type { Deadline } from "@/api/types";
 import { formatISTDate } from "@/lib/formatDate";
 
@@ -47,6 +47,13 @@ export function DeadlineCard({ deadline, className }: DeadlineCardProps) {
       <div className="flex items-center gap-2">
         <Icon className="size-4 shrink-0" aria-hidden="true" />
         <span className="text-xs font-semibold tracking-wide uppercase">{urgencyLabel[deadline.urgency]}</span>
+        {/* D-33: a rule nobody has checked against its source is marked, with an icon and words, not colour alone. */}
+        {!deadline.verified && (
+          <span className="ml-auto inline-flex items-center gap-1 rounded border border-caution-border bg-caution-bg px-1.5 py-0.5 text-xs font-semibold text-caution">
+            <ShieldQuestion className="size-3.5 shrink-0" aria-hidden="true" />
+            Unverified rule
+          </span>
+        )}
       </div>
       <p className="mt-1.5 font-serif text-base font-semibold text-foreground">{deadline.label}</p>
       <p className="font-tabular mt-0.5 font-mono text-sm">
@@ -55,6 +62,17 @@ export function DeadlineCard({ deadline, className }: DeadlineCardProps) {
           : `${formatISTDate(deadline.due_at)} · ${deadline.days_remaining} day${deadline.days_remaining === 1 ? "" : "s"} remaining`}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">{deadline.basis}</p>
+      {deadline.source && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Source: {deadline.source.document}
+          {deadline.source.section ? `, ${deadline.source.section}` : ""}
+        </p>
+      )}
+      {!deadline.verified && (
+        <p className="mt-1 text-xs font-medium text-caution">
+          This date is an estimate. The rule behind it has not been checked against the official source yet, so confirm it before you rely on it.
+        </p>
+      )}
     </div>
   );
 }

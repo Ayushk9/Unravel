@@ -12,6 +12,7 @@ const STEP_LABEL: Record<string, string> = {
   // Real backend, parse_document job (API_DECISIONS D-28).
   uploading: "Uploading",
   parsing_layout: "Reading the document",
+  classifying: "Working out what this document is",
   extracting_fields: "Extracting coverage terms",
   storing: "Saving",
   // Mock handlers.

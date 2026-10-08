@@ -97,6 +97,8 @@ const sampleDeadlines: Deadline[] = [
     days_remaining: 204,
     basis: "Policy end date, 14 Mar 2024 + 3 years",
     urgency: "normal",
+    source: null,
+    verified: true,
   },
   {
     id: "d-soon",
@@ -105,6 +107,8 @@ const sampleDeadlines: Deadline[] = [
     days_remaining: 11,
     basis: "48-month PED waiting period from policy start, 2 Sep 2022",
     urgency: "soon",
+    source: null,
+    verified: true,
   },
   {
     id: "d-critical",
@@ -113,6 +117,8 @@ const sampleDeadlines: Deadline[] = [
     days_remaining: 5,
     basis: "Filing window from date of repudiation, 28 Jun 2026 — see DECISIONS.md, unverified figure",
     urgency: "critical",
+    source: null,
+    verified: false,
   },
   {
     id: "d-expired",
@@ -121,6 +127,8 @@ const sampleDeadlines: Deadline[] = [
     days_remaining: -140,
     basis: "48 hours from planned admission, 31 Mar 2026",
     urgency: "expired",
+    source: null,
+    verified: true,
   },
 ];
 
@@ -300,6 +308,7 @@ const sampleClaim: Claim = {
     },
   ],
   deadlines: [sampleDeadlines[2]!],
+  omitted_deadlines: [],
 };
 
 const sampleDocumentParsed: StoredDocument = {
@@ -329,6 +338,8 @@ const sampleCompletenessReport: CompletenessReport = {
   present: ["discharge_summary", "itemised_bill"],
   missing: ["payment_receipt", "id_proof"],
   advisory_note: "Missing 2 documents before this claim looks complete.",
+  required_details: [],
+  verified: false,
 };
 
 const sampleEligibilityChecks: EligibilityCheck[] = [

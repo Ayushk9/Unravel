@@ -140,6 +140,7 @@ export const deniedClaim: Claim = {
   current_state: "denied",
   events: deniedEvents,
   deadlines: [],
+  omitted_deadlines: [],
 };
 
 export const underReviewClaim: Claim = {
@@ -156,6 +157,7 @@ export const underReviewClaim: Claim = {
   current_state: "under_review",
   events: underReviewEvents,
   deadlines: [],
+  omitted_deadlines: [],
 };
 
 export const settledClaim: Claim = {
@@ -172,6 +174,7 @@ export const settledClaim: Claim = {
   current_state: "resolved",
   events: settledEvents,
   deadlines: [],
+  omitted_deadlines: [],
 };
 
 export const claims: Claim[] = [deniedClaim, underReviewClaim, settledClaim];

@@ -118,6 +118,21 @@ function TimelineTab({ claim }: { claim: Claim }) {
         </section>
       )}
 
+      {/* D-33: a deadline that could not be worked out is named, with the reason, rather than guessed or hidden. */}
+      {claim.omitted_deadlines.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-serif text-base font-semibold text-foreground">Deadlines we couldn't work out</h2>
+          <ul className="flex flex-col gap-2">
+            {claim.omitted_deadlines.map((omitted) => (
+              <li key={omitted.id} className="rounded border border-neutral-border bg-neutral-bg px-4 py-3 text-sm">
+                <span className="font-semibold text-foreground">{omitted.label}</span>
+                <span className="block text-xs text-muted-foreground">{omitted.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="font-serif text-lg font-semibold text-foreground">Event log</h2>

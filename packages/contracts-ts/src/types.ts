@@ -188,6 +188,17 @@ export interface CompletenessReport {
   present: DocumentType[];
   missing: DocumentType[];
   advisory_note: string;
+  // D-35: one entry per required type, in the same order as `required`.
+  required_details: RequiredDocumentDetail[];
+  // D-35: false until the checklist has been checked against an official source.
+  verified: boolean;
+}
+
+export interface RequiredDocumentDetail {
+  type: DocumentType;
+  description: string;
+  where_to_get: string;
+  source: RuleSource;
 }
 
 // --- Engine D: claim lifecycle ---
@@ -214,13 +225,31 @@ export interface ClaimEvent {
   source: "user" | "insurer_letter" | "system" | "unknown";
 }
 
+// Where a rule comes from, so it can be checked (API_DECISIONS D-33).
+export interface RuleSource {
+  document: string;
+  section: string | null;
+  url: string | null;
+}
+
 export interface Deadline {
   id: string;
   label: string; // "Ombudsman filing window"
   due_at: ISODateTime;
   days_remaining: number;
-  basis: string; // which rule + which event derived it
+  basis: string; // the rule in plain language, with the date it was counted from
   urgency: "normal" | "soon" | "critical" | "expired" | "unknown";
+  source: RuleSource | null;
+  // D-33: false until a person has checked the rule against its source.
+  // An unverified deadline must be shown as unverified, never as settled fact.
+  verified: boolean;
+}
+
+// D-33: a deadline that could not be worked out, and why. Never guessed instead.
+export interface OmittedDeadline {
+  id: string;
+  label: string;
+  reason: string;
 }
 
 export interface Claim {
@@ -237,6 +266,7 @@ export interface Claim {
   current_state: ClaimState; // projection over the event log
   events: ClaimEvent[];
   deadlines: Deadline[];
+  omitted_deadlines: OmittedDeadline[];
 }
 
 // --- Engine C: grounded generation ---

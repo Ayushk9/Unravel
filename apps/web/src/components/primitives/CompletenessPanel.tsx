@@ -31,6 +31,12 @@ export function CompletenessPanel({ report, className }: CompletenessPanelProps)
           );
         })}
       </ul>
+      {/* D-35: the checklist itself may not have been checked against an official source. */}
+      {!report.verified && (
+        <p className="text-xs font-medium text-caution">
+          Unverified checklist: this list has not been checked against an official source yet. Your insurer may ask for other documents.
+        </p>
+      )}
     </div>
   );
 }
