@@ -1,8 +1,11 @@
-"""Document endpoints: upload, read, and a link to the stored file.
+"""Document endpoints.
 
-POST /documents              CONTRACTS.md row 2   (D-07 job, D-13 idempotency, D-18 upload rules)
-GET  /documents/{id}         CONTRACTS.md row 4
-GET  /documents/{id}/file    D-26
+POST   /documents              CONTRACTS.md row 2   (D-07 job, D-13 idempotency, D-18 upload rules)
+GET    /documents              CONTRACTS.md row 3   (cursor pagination, optional claim_id filter)
+GET    /documents/{id}         CONTRACTS.md row 4
+PATCH  /documents/{id}         CONTRACTS.md row 5   (correct the detected type)
+DELETE /documents/{id}         CONTRACTS.md row 6   (soft delete, D-20)
+GET    /documents/{id}/file    D-26
 """
 
 from __future__ import annotations
@@ -11,8 +14,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, Request, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, Query, Request, Response, UploadFile
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,15 +23,17 @@ from app.api.deps import get_runner, get_storage
 from app.core.auth import CurrentHousehold, get_current_household
 from app.core.errors import ApiError
 from app.core.ids import new_id
+from app.db.models import Claim as ClaimRow
 from app.db.models import Document as DocumentRow
 from app.db.models import Job as JobRow
 from app.db.session import get_session
 from app.jobs.parse_document import UPLOADING
 from app.jobs.runner import JobRunner
-from app.schemas.documents import DocumentFile, StoredDocument
+from app.schemas.common import Collection
+from app.schemas.documents import DocumentFile, DocumentTypeCorrectionRequest, StoredDocument
 from app.schemas.errors import FieldError
 from app.schemas.jobs import JobAccepted
-from app.services.extracted_columns import columns_to_extracted
+from app.services.extracted_columns import apply_correction, columns_to_extracted
 from app.services.file_validation import read_upload, sha256_hex, validate_file
 from app.storage.base import DocumentStorage, StorageError, build_object_path
 
@@ -87,15 +92,8 @@ async def upload_document(
             "Idempotency-Key is required on this endpoint.",
             field_errors=[FieldError(field="Idempotency-Key", message="This header is required.")],
         )
-    if claim_id:
-        # Claim tables do not exist yet, so a claim id could not be checked
-        # for ownership. Until they do, only policy uploads are accepted.
-        raise ApiError(
-            422,
-            "validation_error",
-            "Uploading documents to a claim isn't available yet.",
-            field_errors=[FieldError(field="claim_id", message="Must be empty for now.")],
-        )
+    # An upload with a claim_id is a claim document; one without is a policy.
+    owned_claim_id = await _owned_claim_id(session, household.household_id, claim_id) if claim_id else None
 
     content = await read_upload(file)
     content_type = validate_file(content, file.content_type)
@@ -122,8 +120,12 @@ async def upload_document(
         kind="parse_document",
         status="queued",
         progress={"step": UPLOADING[0], "percent": UPLOADING[1]},
-        # No claim_id means a policy upload: the only kind accepted for now.
-        payload={"document_id": str(document_id), "document_kind": "policy"},
+        # "policy" runs the full Engine A parse. "claim_document" only needs
+        # a label, which is far cheaper (app/jobs/classify_document.py).
+        payload={
+            "document_id": str(document_id),
+            "document_kind": "claim_document" if owned_claim_id else "policy",
+        },
         idempotency_key=idempotency_key,
         request_hash=request_hash,
     )
@@ -131,6 +133,7 @@ async def upload_document(
         DocumentRow(
             id=document_id,
             household_id=household.household_id,
+            claim_id=owned_claim_id,
             file_name=file_name,
             mime_type=content_type,
             storage_path=storage_path,
@@ -160,6 +163,24 @@ async def upload_document(
     return _accepted(job)
 
 
+async def _owned_claim_id(session: AsyncSession, household_id: UUID, claim_id: str) -> UUID:
+    """The claim id from an upload form, checked to belong to the caller's household."""
+    unknown = ApiError(
+        422,
+        "validation_error",
+        "That claim doesn't belong to your household.",
+        field_errors=[FieldError(field="claim_id", message="Unknown claim.")],
+    )
+    try:
+        parsed = UUID(claim_id)
+    except ValueError:
+        raise unknown from None
+    found = await session.scalar(select(ClaimRow.id).where(ClaimRow.id == parsed, ClaimRow.household_id == household_id))
+    if found is None:
+        raise unknown
+    return found
+
+
 async def _find_document(session: AsyncSession, household_id: UUID, document_id: UUID) -> DocumentRow:
     row = await session.scalar(
         select(DocumentRow).where(
@@ -173,25 +194,95 @@ async def _find_document(session: AsyncSession, household_id: UUID, document_id:
     return row
 
 
-@router.get("/documents/{document_id}")
-async def get_document(
-    document_id: UUID,
-    household: Annotated[CurrentHousehold, Depends(get_current_household)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> StoredDocument:
-    row = await _find_document(session, household.household_id, document_id)
+def _to_wire(row: DocumentRow) -> StoredDocument:
     return StoredDocument(
         id=row.id,
         file_name=row.file_name,
         mime_type=row.mime_type,
         page_count=row.page_count,
         uploaded_at=row.uploaded_at,
+        # The current type: the user's correction if there is one, otherwise
+        # what the classifier said. The classifier's answer is kept in a
+        # separate column either way.
         detected_type=columns_to_extracted(row, "detected_type"),
         parse_status=row.parse_status,
         parse_error=row.parse_error,
         deleted_at=row.deleted_at,
         claim_id=row.claim_id,
     )
+
+
+@router.get("/documents")
+async def list_documents(
+    household: Annotated[CurrentHousehold, Depends(get_current_household)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    cursor: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    claim_id: UUID | None = None,
+) -> Collection[StoredDocument]:
+    """This household's documents, oldest first, one page at a time.
+
+    Keyset pagination: the cursor is the id of the last item already seen,
+    and the next page is "ids greater than that". Ids are UUIDv7, so id
+    order is upload order. Unlike OFFSET, a page cannot skip or repeat rows
+    when a new document is uploaded while the client is paging.
+    """
+    filters = [DocumentRow.household_id == household.household_id, DocumentRow.deleted_at.is_(None)]
+    if claim_id is not None:
+        # Filtering by a claim in another household matches nothing, because
+        # the household filter above still applies.
+        filters.append(DocumentRow.claim_id == claim_id)
+
+    total = await session.scalar(select(func.count()).select_from(DocumentRow).where(*filters))
+    page_filters = [*filters, DocumentRow.id > cursor] if cursor is not None else filters
+    # One extra row tells us whether another page exists, without a second query.
+    rows = list(await session.scalars(select(DocumentRow).where(*page_filters).order_by(DocumentRow.id).limit(limit + 1)))
+    page = rows[:limit]
+    next_cursor = str(page[-1].id) if len(rows) > limit else None
+    return Collection[StoredDocument](items=[_to_wire(row) for row in page], next_cursor=next_cursor, total=total)
+
+
+@router.get("/documents/{document_id}")
+async def get_document(
+    document_id: UUID,
+    household: Annotated[CurrentHousehold, Depends(get_current_household)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> StoredDocument:
+    return _to_wire(await _find_document(session, household.household_id, document_id))
+
+
+@router.patch("/documents/{document_id}")
+async def correct_document_type(
+    document_id: UUID,
+    body: DocumentTypeCorrectionRequest,
+    household: Annotated[CurrentHousehold, Depends(get_current_household)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> StoredDocument:
+    """Record the user's own label for a document.
+
+    The classifier's answer stays in `detected_type_original_value` and its
+    confidence is left as it was. Comparing the two afterwards shows how
+    often the classifier was right, which is evaluation data for the report.
+    """
+    row = await _find_document(session, household.household_id, document_id)
+    apply_correction(row, "detected_type", body.detected_type)
+    await session.commit()
+    return _to_wire(row)
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+async def delete_document(
+    document_id: UUID,
+    household: Annotated[CurrentHousehold, Depends(get_current_household)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Soft delete (D-20): the row is marked deleted and disappears from every
+    read, but is kept so an accidental tap can be undone by an operator.
+    The stored file is kept with it."""
+    row = await _find_document(session, household.household_id, document_id)
+    row.deleted_at = func.now()
+    await session.commit()
+    return Response(status_code=204)
 
 
 @router.get("/documents/{document_id}/file")

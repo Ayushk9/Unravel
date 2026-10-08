@@ -105,8 +105,8 @@ def test_file_over_25_mb_is_413(upload_client: TestClient, storage: InMemoryStor
     assert storage.objects == {}
 
 
-def test_claim_uploads_are_refused_for_now(upload_client: TestClient, storage: InMemoryStorage) -> None:
-    response = _post(upload_client, PDF, "application/pdf", claim_id="01920000-0000-7000-8000-000000000099")
+def test_a_malformed_claim_id_is_422(upload_client: TestClient, storage: InMemoryStorage) -> None:
+    response = _post(upload_client, PDF, "application/pdf", claim_id="not-a-claim-id")
 
     _assert_422(response, "claim_id")
     assert storage.objects == {}

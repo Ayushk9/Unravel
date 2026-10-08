@@ -29,3 +29,6 @@ engines/document/.pytest_cache/
 
 # Uploaded documents kept by the local storage backend (real policy files)
 apps/api/storage/
+
+# Cache of claim-document classification results, keyed by file content hash
+apps/api/.cache/

@@ -45,6 +45,8 @@ import asyncio
 import logging
 
 from app.core.config import Settings
+from app.classification.classifier import run_classification
+from app.jobs.classify_document import run_classify_document
 from app.jobs.parse_document import JobFailure, run_parse_document
 from app.jobs.queue import ClaimedJob, SessionFactory, claim_next_job, mark_failed
 from app.jobs.worker_process import ChildTarget, run_extraction
@@ -62,11 +64,13 @@ class JobRunner:
         settings: Settings,
         # Tests replace this with a small stand-in so they never start Docling.
         extraction_target: ChildTarget = run_extraction,
+        classification_target: ChildTarget = run_classification,
     ) -> None:
         self._session_factory = session_factory
         self._storage = storage
         self._settings = settings
         self._extraction_target = extraction_target
+        self._classification_target = classification_target
         self._drain_tasks: set[asyncio.Task[None]] = set()
         self._wake_requested = False
 
@@ -117,13 +121,24 @@ class JobRunner:
         try:
             if job.kind != "parse_document":
                 raise JobFailure("unsupported_job", "This kind of task isn't available yet.", retryable=False)
-            await run_parse_document(
-                job,
-                session_factory=self._session_factory,
-                storage=self._storage,
-                settings=self._settings,
-                extraction_target=self._extraction_target,
-            )
+            if job.payload.get("document_kind") == "claim_document":
+                # A document uploaded to a claim only needs a label.
+                await run_classify_document(
+                    job,
+                    session_factory=self._session_factory,
+                    storage=self._storage,
+                    settings=self._settings,
+                    classification_target=self._classification_target,
+                )
+            else:
+                # A policy: the full Engine A parse.
+                await run_parse_document(
+                    job,
+                    session_factory=self._session_factory,
+                    storage=self._storage,
+                    settings=self._settings,
+                    extraction_target=self._extraction_target,
+                )
         except JobFailure as failure:
             logger.warning("Job failed. job_id=%s code=%s detail=%s", job.id, failure.code, failure.detail)
             await mark_failed(

@@ -114,3 +114,45 @@ def crash(connection: Connection, file_path: str, document_kind: str, api_key: s
     """Die at once without answering, as a process killed for using too much memory would."""
     os._exit(3)
 
+
+# --- stand-ins for the claim-document classifier (app/classification/classifier.py) ---
+
+_NAME_HINTS = (
+    ("discharge", "discharge_summary"),
+    ("bill", "itemised_bill"),
+    ("receipt", "payment_receipt"),
+    ("report", "investigation_report"),
+    ("denial", "denial_letter"),
+    ("aadhaar", "id_proof"),
+)
+
+
+def classify_by_file_name(connection: Connection, file_path: str, mime_type: str, api_key: str, timeout: float) -> None:
+    """Label a file from its name, so a test controls the answer by naming the upload.
+
+    A name containing "blurry" is answered with low confidence.
+    """
+    name = Path(file_path).name.lower()
+    detected_type = next((label for hint, label in _NAME_HINTS if hint in name), "unknown")
+    connection.send(
+        {
+            "ok": True,
+            "detected_type": detected_type,
+            "confidence": "low" if "blurry" in name else "high",
+            "page_count": 3,
+            "snippet": f"first words of {name}",
+            "cached": False,
+        }
+    )
+    connection.close()
+
+
+def classify_fails(connection: Connection, file_path: str, mime_type: str, api_key: str, timeout: float) -> None:
+    connection.send({"ok": False, "error_type": "ServerError", "detail": "503 from the model API, key=secret"})
+    connection.close()
+
+
+def classify_returns_an_invented_type(connection: Connection, file_path: str, mime_type: str, api_key: str, timeout: float) -> None:
+    connection.send({"ok": True, "detected_type": "claim_form", "confidence": "high", "page_count": 1, "snippet": None})
+    connection.close()
+

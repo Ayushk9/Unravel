@@ -36,6 +36,12 @@ class StoredDocument(ApiModel):
     claim_id: UUID | None
 
 
+class DocumentTypeCorrectionRequest(ApiModel):
+    """Body of PATCH /documents/{id}: the user's own label for a document."""
+
+    detected_type: DocumentType
+
+
 class DocumentFile(ApiModel):
     """A short-lived link to the document's file (D-26)."""
 

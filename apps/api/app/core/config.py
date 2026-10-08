@@ -50,6 +50,8 @@ class Settings(BaseSettings):
 
     # A parse still running after this many seconds is terminated.
     parse_timeout_seconds: float = Field(default=300, gt=0)
+    # Labelling a claim document is one quick model call; it should never take long.
+    classify_timeout_seconds: float = Field(default=60, gt=0)
     # Docling is memory-heavy: two parses at once can exhaust a small host.
     max_concurrent_parses: int = Field(default=1, ge=1)
 

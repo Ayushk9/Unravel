@@ -37,11 +37,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.core.auth import CurrentHousehold, get_current_household
 from app.core.config import API_DIR, Settings
 from app.core.ids import new_id
+from app.db import claim_event_ddl
 from app.db.base import Base
-from app.db.models import Household
+from app.db.models import Document, Household, Member
 from app.jobs.runner import JobRunner
 from app.jobs.worker_process import ChildTarget
 from app.main import create_app
+from app.services.policy_writer import store_extraction
 from app.storage.memory import InMemoryStorage
 from tests import fake_workers
 
@@ -78,6 +80,36 @@ class Database:
         run(insert())
         return household_id
 
+    def create_member(self, household_id: UUID, full_name: str = "Ananya Rao") -> UUID:
+        member_id = new_id()
+
+        async def insert() -> None:
+            async with self.session_factory() as session, session.begin():
+                session.add(Member(id=member_id, household_id=household_id, full_name=full_name, relationship="self"))
+
+        run(insert())
+        return member_id
+
+    def create_policy(self, household_id: UUID) -> UUID:
+        """A parsed policy written straight to the database (no upload, no child process)."""
+        document_id = new_id()
+
+        async def insert() -> UUID:
+            async with self.session_factory() as session, session.begin():
+                document = Document(
+                    id=document_id,
+                    household_id=household_id,
+                    file_name="policy.pdf",
+                    mime_type="application/pdf",
+                    storage_path=f"{household_id}/{document_id}/policy.pdf",
+                    parse_status="parsed",
+                )
+                session.add(document)
+                await session.flush()
+                return await store_extraction(session, document, fake_workers.build_policy_result())
+
+        return run(insert())
+
     def execute(self, sql: str, **parameters: Any) -> list[Any]:
         async def go() -> list[Any]:
             async with self.session_factory() as session, session.begin():
@@ -110,6 +142,10 @@ def create_database(url: str) -> Database:
             if current != schema:
                 raise RuntimeError(f"refusing to run: connections use schema {current!r}, not the test schema")
             await connection.run_sync(Base.metadata.create_all)
+            # create_all knows tables only. The append-only triggers and the
+            # current-state view are created from the same SQL the migration uses.
+            for statement in claim_event_ddl.CREATE_STATEMENTS:
+                await connection.execute(text(statement))
         return engine
 
     engine = run(setup())
@@ -174,13 +210,19 @@ class ApiTester:
         self.app.dependency_overrides[get_current_household] = current_household
         self._transport = httpx.ASGITransport(app=self.app, raise_app_exceptions=False)
 
-    def use_worker(self, extraction_target: ChildTarget, **settings_overrides: Any) -> None:
+    def use_worker(
+        self,
+        extraction_target: ChildTarget,
+        classification_target: ChildTarget = fake_workers.classify_by_file_name,
+        **settings_overrides: Any,
+    ) -> None:
         settings = self.settings.model_copy(update=settings_overrides)
         self.app.state.runner = JobRunner(
             session_factory=self.database.session_factory,
             storage=self.storage,
             settings=settings,
             extraction_target=extraction_target,
+            classification_target=classification_target,
         )
 
     def hold_jobs(self) -> None:
@@ -196,6 +238,10 @@ class ApiTester:
         finally:
             self.household_id = original
 
+    def client(self) -> httpx.AsyncClient:
+        """A raw async client, for tests that must send two requests at the same moment."""
+        return httpx.AsyncClient(transport=self._transport, base_url="http://test")
+
     def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         async def go() -> httpx.Response:
             async with httpx.AsyncClient(transport=self._transport, base_url="http://test") as client:
@@ -205,6 +251,12 @@ class ApiTester:
 
     def get(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("GET", path, **kwargs)
+
+    def post(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("POST", path, **kwargs)
+
+    def delete(self, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("DELETE", path, **kwargs)
 
     def patch(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("PATCH", path, **kwargs)
