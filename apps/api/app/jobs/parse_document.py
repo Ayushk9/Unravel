@@ -87,7 +87,7 @@ async def run_parse_document(
         async with storage.open_to_tempfile(storage_path) as file_path:
             outcome = await run_in_child_process(
                 extraction_target,
-                (str(file_path), document_kind, settings.gemini_api_key, settings.parse_timeout_seconds),
+                (str(file_path), document_kind, settings.gemini_api_key, settings.gemini_model, settings.parse_timeout_seconds),
                 settings.parse_timeout_seconds,
             )
     except StorageError as exc:

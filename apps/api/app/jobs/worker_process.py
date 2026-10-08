@@ -194,7 +194,12 @@ def _stop(process: BaseProcess) -> None:
 
 
 def run_extraction(
-    connection: Connection, file_path: str, document_kind: str, gemini_api_key: str, timeout_seconds: float
+    connection: Connection,
+    file_path: str,
+    document_kind: str,
+    gemini_api_key: str,
+    gemini_model: str,
+    timeout_seconds: float,
 ) -> None:
     """Child entry point: run Engine A on one file and send back the result.
 
@@ -211,8 +216,12 @@ def run_extraction(
         signal.alarm(int(timeout_seconds) + _SELF_DESTRUCT_MARGIN_SECONDS)
 
     try:
-        # Engine A reads its API key from the environment.
+        # Engine A reads its API key and model name from the environment, and
+        # reads the model name once, when it is imported. Both are therefore
+        # set before the import below. This configures Engine A through its
+        # own documented settings; its code is not changed.
         os.environ["GEMINI_API_KEY"] = gemini_api_key
+        os.environ["GEMINI_MODEL"] = gemini_model
 
         # Imported here, not at the top of the file, so that only the child
         # process ever loads Docling and PyTorch.

@@ -10,7 +10,7 @@ from app.jobs.worker_process import ChildCrashed, ChildResult, ChildTimedOut, ru
 from contracts.models import ExtractionResult
 from tests import fake_workers
 
-ARGS = (__file__, "policy", "test-key", 30.0)  # any existing file path will do
+ARGS = (__file__, "policy", "test-key", "test-model", 30.0)  # any existing file path will do
 
 
 def _is_alive(pid: int) -> bool:

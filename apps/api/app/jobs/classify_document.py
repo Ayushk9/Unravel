@@ -59,7 +59,7 @@ async def run_classify_document(
             # and the PDF and Gemini libraries stay out of the API process.
             outcome = await run_in_child_process(
                 classification_target,
-                (str(file_path), mime_type, settings.gemini_api_key, settings.classify_timeout_seconds),
+                (str(file_path), mime_type, settings.gemini_api_key, settings.gemini_model, settings.classify_timeout_seconds),
                 settings.classify_timeout_seconds,
             )
     except StorageError as exc:

@@ -88,29 +88,29 @@ def build_policy_result() -> ExtractionResult:
     )
 
 
-def succeed(connection: Connection, file_path: str, document_kind: str, api_key: str, timeout: float) -> None:
+def succeed(connection: Connection, file_path: str, document_kind: str, api_key: str, model: str, timeout: float) -> None:
     # Proves the temporary file really was there for the child to read.
     assert Path(file_path).exists(), "the temporary file should exist while the child runs"
     connection.send({"ok": True, "result_json": build_policy_result().model_dump_json()})
     connection.close()
 
 
-def report_failure(connection: Connection, file_path: str, document_kind: str, api_key: str, timeout: float) -> None:
+def report_failure(connection: Connection, file_path: str, document_kind: str, api_key: str, model: str, timeout: float) -> None:
     connection.send({"ok": False, "error_type": "ExtractionError", "detail": "Docling failed: secret internal path /tmp/x"})
     connection.close()
 
 
-def return_garbage(connection: Connection, file_path: str, document_kind: str, api_key: str, timeout: float) -> None:
+def return_garbage(connection: Connection, file_path: str, document_kind: str, api_key: str, model: str, timeout: float) -> None:
     connection.send({"ok": True, "result_json": '{"not": "an extraction result"}'})
     connection.close()
 
 
-def hang(connection: Connection, file_path: str, document_kind: str, api_key: str, timeout: float) -> None:
+def hang(connection: Connection, file_path: str, document_kind: str, api_key: str, model: str, timeout: float) -> None:
     """A parse that never finishes."""
     time.sleep(600)
 
 
-def crash(connection: Connection, file_path: str, document_kind: str, api_key: str, timeout: float) -> None:
+def crash(connection: Connection, file_path: str, document_kind: str, api_key: str, model: str, timeout: float) -> None:
     """Die at once without answering, as a process killed for using too much memory would."""
     os._exit(3)
 
@@ -127,7 +127,7 @@ _NAME_HINTS = (
 )
 
 
-def classify_by_file_name(connection: Connection, file_path: str, mime_type: str, api_key: str, timeout: float) -> None:
+def classify_by_file_name(connection: Connection, file_path: str, mime_type: str, api_key: str, model: str, timeout: float) -> None:
     """Label a file from its name, so a test controls the answer by naming the upload.
 
     A name containing "blurry" is answered with low confidence.
@@ -147,12 +147,12 @@ def classify_by_file_name(connection: Connection, file_path: str, mime_type: str
     connection.close()
 
 
-def classify_fails(connection: Connection, file_path: str, mime_type: str, api_key: str, timeout: float) -> None:
+def classify_fails(connection: Connection, file_path: str, mime_type: str, api_key: str, model: str, timeout: float) -> None:
     connection.send({"ok": False, "error_type": "ServerError", "detail": "503 from the model API, key=secret"})
     connection.close()
 
 
-def classify_returns_an_invented_type(connection: Connection, file_path: str, mime_type: str, api_key: str, timeout: float) -> None:
+def classify_returns_an_invented_type(connection: Connection, file_path: str, mime_type: str, api_key: str, model: str, timeout: float) -> None:
     connection.send({"ok": True, "detected_type": "claim_form", "confidence": "high", "page_count": 1, "snippet": None})
     connection.close()
 

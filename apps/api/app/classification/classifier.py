@@ -27,7 +27,6 @@ no API call. Changing the prompt or the label list must bump PROMPT_VERSION.
 
 from __future__ import annotations
 
-import os
 import signal
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -38,7 +37,6 @@ from pydantic import BaseModel
 from app.classification.pdf_text import read_first_pages, render_first_page_png
 
 PROMPT_VERSION = "v1"
-DEFAULT_MODEL = "gemini-2.5-flash"
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "classification"
 
 # Below this, a PDF is treated as having no usable text layer.
@@ -92,7 +90,12 @@ Rules:
 
 
 def run_classification(
-    connection: Connection, file_path: str, mime_type: str, gemini_api_key: str, timeout_seconds: float
+    connection: Connection,
+    file_path: str,
+    mime_type: str,
+    gemini_api_key: str,
+    gemini_model: str,
+    timeout_seconds: float,
 ) -> None:
     """Child entry point: classify one file and send back a small dict."""
     # Same self-destruct timer as the parse worker: if the server that
@@ -100,14 +103,14 @@ def run_classification(
     if hasattr(signal, "SIGALRM"):
         signal.alarm(int(timeout_seconds) + _SELF_DESTRUCT_MARGIN_SECONDS)
     try:
-        connection.send({"ok": True, **classify(Path(file_path), mime_type, gemini_api_key)})
+        connection.send({"ok": True, **classify(Path(file_path), mime_type, gemini_api_key, gemini_model)})
     except Exception as exc:  # noqa: BLE001 - every failure must be reported to the parent, not lost
         connection.send({"ok": False, "error_type": type(exc).__name__, "detail": str(exc)})
     finally:
         connection.close()
 
 
-def classify(file_path: Path, mime_type: str, gemini_api_key: str) -> dict[str, object]:
+def classify(file_path: Path, mime_type: str, gemini_api_key: str, gemini_model: str) -> dict[str, object]:
     # Engine A's cache: one JSON file per key, standard library only.
     from engines.document.cache import DiskCache, build_cache_key
 
@@ -119,7 +122,8 @@ def classify(file_path: Path, mime_type: str, gemini_api_key: str) -> dict[str, 
     snippet = " ".join(text.split())[:SNIPPET_CHARACTERS] if has_text else None
 
     cache = DiskCache(CACHE_DIR)
-    cache_key = build_cache_key(file_path, "claim_document", PROMPT_VERSION)
+    # The model is part of the key: a different model may answer differently.
+    cache_key = build_cache_key(file_path, "claim_document", f"{PROMPT_VERSION}:{gemini_model}")
     cached = cache.get(cache_key)
     if cached is not None:
         result = Classification.model_validate(cached)
@@ -143,7 +147,7 @@ def classify(file_path: Path, mime_type: str, gemini_api_key: str) -> dict[str, 
         http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=3)),
     )
     response = client.models.generate_content(
-        model=os.environ.get("GEMINI_MODEL", DEFAULT_MODEL),
+        model=gemini_model,
         contents=contents,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",

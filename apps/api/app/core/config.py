@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # from it, and the Storage API lives under it.
     supabase_url: str
     gemini_api_key: str
+    # Which Gemini model reads documents: Engine A's policy extraction and the
+    # claim-document classifier. Google retires model names over time; when
+    # one is retired the API answers 404 and this is the setting to change.
+    gemini_model: str = "gemini-3.8-flash"
     # A fixed set, not a free string: a typo such as "development" must fail
     # at startup rather than silently behave like production (or like dev).
     environment: Literal["dev", "test", "prod"]

@@ -78,11 +78,11 @@ def test_a_cached_answer_is_returned_without_calling_the_model(discharge_pdf: Pa
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     monkeypatch.setattr(classifier, "CACHE_DIR", cache_dir)
-    key = build_cache_key(discharge_pdf, "claim_document", classifier.PROMPT_VERSION)
+    key = build_cache_key(discharge_pdf, "claim_document", f"{classifier.PROMPT_VERSION}:test-model")
     (cache_dir / f"{key}.json").write_text(json.dumps({"detected_type": "discharge_summary", "confidence": "high"}))
 
     # An empty API key: any attempt to reach the model would fail.
-    result = classify(discharge_pdf, "application/pdf", gemini_api_key="")
+    result = classify(discharge_pdf, "application/pdf", gemini_api_key="", gemini_model="test-model")
 
     assert result == {
         "detected_type": "discharge_summary",
