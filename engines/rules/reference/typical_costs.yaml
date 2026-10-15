@@ -1,0 +1,40 @@
+# Reference figures used by the gap alerts (Feature 8).
+#
+# NOTHING HERE IS VERIFIED. Every entry is `verified: false`: a rough working
+# figure written down so it can be checked, not a fact. Any alert that uses
+# an entry says it is an estimate and carries verified: false.
+#
+# To verify an entry: replace the figure with one from a citable source,
+# fill in `source` (and `url`), set `verified: true`, raise `version`.
+#
+# Amounts are integer paise (Rs 1 = 100 paise).
+
+version: 1
+
+# Minimum sum insured worth having, by how many people the household has.
+# A household with more members than the last row uses the last row.
+low_sum_insured:
+  - members_up_to: 1
+    minimum_paise: 50000000      # Rs 5,00,000   TODO(Ayush): verify
+  - members_up_to: 2
+    minimum_paise: 75000000      # Rs 7,50,000   TODO(Ayush): verify
+  - members_up_to: 4
+    minimum_paise: 100000000     # Rs 10,00,000  TODO(Ayush): verify
+  - members_up_to: 99
+    minimum_paise: 150000000     # Rs 15,00,000  TODO(Ayush): verify
+low_sum_insured_source:
+  document: Working figure based on common guidance for family floater cover in Indian cities
+  section: null
+  url: null
+  verified: false
+
+# Typical private single-room rent per day, by kind of city. Used only when the
+# household's city is known, which it never is yet, so currently unused.
+typical_room_rent_per_day:
+  metro: 600000                  # Rs 6,000      TODO(Ayush): verify
+  tier_2: 350000                 # Rs 3,500      TODO(Ayush): verify
+typical_room_rent_source:
+  document: Working figure for private single rooms in Indian hospitals
+  section: null
+  url: null
+  verified: false
