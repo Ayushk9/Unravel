@@ -62,9 +62,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.engine.dispose()
 
 
+def _configure_logging() -> None:
+    """Print this application's own log messages (loggers named "unravel.*").
+
+    uvicorn sets up its own loggers only. Without this, Python prints just
+    WARNING and above from ours, and informational lines such as "Parsed
+    document" or "Alert skipped ... reason=..." would never be seen.
+    """
+    app_logger = logging.getLogger("unravel")
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        app_logger.addHandler(handler)
+        app_logger.setLevel(logging.INFO)
+        # Our handler prints the message; do not also pass it to the root logger.
+        app_logger.propagate = False
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app. Tests pass their own settings; production reads the environment."""
     settings = settings or get_settings()
+    _configure_logging()
 
     app = FastAPI(title="Unravel API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings

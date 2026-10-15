@@ -1,0 +1,306 @@
+"""Seed one demo policy and four demo claims, one for each eligibility band.
+
+For the web app and the Android developer: open each claim's Eligibility
+tab and see a different verdict, each with its arithmetic and its clause.
+
+Run from apps/api, after `alembic upgrade head` and `scripts/seed.py`:
+    ../../.venv/bin/python scripts/seed_demo_claims.py
+
+Safe to run again: the policy is found by its policy number and each claim
+by its fixed id, and nothing that already exists is written twice.
+
+Writes to the database in DATABASE_URL. Claims cannot be deleted afterwards:
+the claim event log is append-only (the database refuses).
+
+The demo policy has a small generated PDF schedule, stored with the local
+storage backend, so every provenance link opens a real page and highlights
+the line the value came from. All names are fictional.
+
+    Claim                     Band                       Why
+    Vikram, emergency         likely_eligible            every check satisfied
+    Ananya, planned           at_risk                    room rent Rs 8,000/day over a Rs 5,000/day cap
+    Lakshmi, planned          likely_ineligible          the panel scenario: PED, admitted 2 Apr 2026,
+                                                         48-month period from 14 Mar 2024 ends 14 Mar 2028
+    Ishaan, emergency         insufficient_information   whether the illness is pre-existing is not answered
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+from dataclasses import dataclass
+from datetime import date, datetime
+from pathlib import Path
+from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from sqlalchemy import select  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
+
+from app.core.config import get_settings  # noqa: E402
+from app.db.models import Claim, ClaimEvent, Document, Member, Policy, policy_member  # noqa: E402
+from app.db.session import create_engine, create_session_factory  # noqa: E402
+from app.services.policy_writer import store_extraction  # noqa: E402
+from app.storage.base import build_object_path  # noqa: E402
+from app.storage.factory import create_storage  # noqa: E402
+from contracts.models import CoverageProfile, Extracted, ExtractionResult, Provenance, SubLimit, WaitingPeriod  # noqa: E402
+
+INDIA = ZoneInfo("Asia/Kolkata")
+HOUSEHOLD_ID = UUID("01920000-0000-7000-8000-000000000001")  # from scripts/seed.py
+INSURER_ID = UUID("01920000-0000-7000-8000-000000000021")  # Kavach Health Assurance (fictional), from scripts/seed.py
+MEMBER = {
+    "Ananya": UUID("01920000-0000-7000-8000-000000000011"),
+    "Vikram": UUID("01920000-0000-7000-8000-000000000012"),
+    "Ishaan": UUID("01920000-0000-7000-8000-000000000013"),
+    "Lakshmi": UUID("01920000-0000-7000-8000-000000000014"),
+}
+POLICY_NUMBER = "KHA/FAM/2024/DEMO-0001"
+DOCUMENT_ID = UUID("01920000-0000-7000-8000-0000000000e1")
+FILE_NAME = "demo-policy-schedule.pdf"
+
+# --- a small schedule PDF, with the position of every line recorded ---
+
+PAGE_WIDTH, PAGE_HEIGHT, FONT_SIZE, LEFT = 612, 792, 12, 72
+# Each page: the lines printed on it, top to bottom.
+PAGES = [
+    [
+        "KAVACH FAMILY HEALTH PLAN - POLICY SCHEDULE (DEMO, FICTIONAL INSURER)",
+        f"Policy number: {POLICY_NUMBER}",
+        "Policy period: 14 Mar 2024 to 13 Mar 2027",
+        "Insured persons: Ananya Rao, Vikram Rao, Ishaan Rao, Lakshmi Rao",
+        "Sum insured (family floater): Rs 5,00,000",
+        "Co-payment: Nil",
+    ],
+    [
+        "SECTION 3: SUB-LIMITS AND WAITING PERIODS",
+        "Room rent: up to Rs 5,000 per day",
+        "Initial waiting period: 1 month from the policy start date",
+        "Pre-existing diseases: covered after 48 months of continuous coverage",
+        "Cataract: covered after 24 months of continuous coverage",
+    ],
+    [
+        "SECTION 4: EXCLUSIONS AND CLAIMS",
+        "Cosmetic or aesthetic treatment is excluded",
+        "Dental treatment is excluded unless needed because of an accident",
+        "Claim intimation: within 24 hours of admission",
+    ],
+]
+
+
+@dataclass(frozen=True)
+class Line:
+    page: int
+    text: str
+    bbox: tuple[float, float, float, float]  # normalised, top-left origin (D-23)
+
+
+def _layout() -> list[Line]:
+    lines = []
+    for page_index, texts in enumerate(PAGES, start=1):
+        for row, text in enumerate(texts):
+            baseline = 720 - row * 30
+            width = min(len(text) * FONT_SIZE * 0.52, PAGE_WIDTH - LEFT - 20)
+            bbox = (
+                LEFT / PAGE_WIDTH,
+                (PAGE_HEIGHT - baseline - FONT_SIZE) / PAGE_HEIGHT,
+                (LEFT + width) / PAGE_WIDTH,
+                (PAGE_HEIGHT - baseline + 4) / PAGE_HEIGHT,
+            )
+            lines.append(Line(page=page_index, text=text, bbox=tuple(round(v, 4) for v in bbox)))
+    return lines
+
+
+def _pdf() -> bytes:
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>"]
+    page_ids = [4 + 2 * i for i in range(len(PAGES))]
+    objects.append(f"<< /Type /Pages /Kids [{' '.join(f'{p} 0 R' for p in page_ids)}] /Count {len(PAGES)} >>".encode())
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    for page_id, texts in zip(page_ids, PAGES):
+        commands = " ".join(f"BT /F1 {FONT_SIZE} Tf {LEFT} {720 - row * 30} Td ({text}) Tj ET" for row, text in enumerate(texts))
+        stream = commands.encode("latin-1")
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_WIDTH} {PAGE_HEIGHT}] /Contents {page_id + 1} 0 R "
+            "/Resources << /Font << /F1 3 0 R >> >> >>".encode()
+        )
+        objects.append(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream")
+    body, offsets = b"%PDF-1.4\n", []
+    for number, content in enumerate(objects, start=1):
+        offsets.append(len(body))
+        body += f"{number} 0 obj\n".encode() + content + b"\nendobj\n"
+    xref = len(body)
+    body += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    body += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets)
+    body += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return body
+
+
+def _extraction() -> ExtractionResult:
+    """What Engine A would return for the schedule, written by hand, provenance included."""
+    placeholder = uuid4()
+    lines = {line.text: line for line in _layout()}
+
+    def field(value: object, text: str) -> Extracted:
+        line = lines[text]
+        return Extracted(value=value, confidence="high", provenance=Provenance(document_id=placeholder, page=line.page, bbox=line.bbox, snippet=line.text))
+
+    def period(kind: str, months: int, text: str, applies_to: str | None = None) -> WaitingPeriod:
+        return WaitingPeriod(kind=kind, months=field(float(months), text), applies_to=applies_to, starts_on=None, expires_on=None)
+
+    profile = CoverageProfile(
+        policy_id=uuid4(),
+        sum_insured=field(50_000_000, "Sum insured (family floater): Rs 5,00,000"),
+        co_pay_percent=field(0.0, "Co-payment: Nil"),
+        sub_limits=[
+            SubLimit(category="room_rent", label="Room rent", cap_amount=field(500_000, "Room rent: up to Rs 5,000 per day"), cap_basis="per_day", percent_value=None)
+        ],
+        waiting_periods=[
+            period("initial", 1, "Initial waiting period: 1 month from the policy start date"),
+            period("pre_existing", 48, "Pre-existing diseases: covered after 48 months of continuous coverage"),
+            period("disease_specific", 24, "Cataract: covered after 24 months of continuous coverage", applies_to="cataract"),
+        ],
+        exclusions=[
+            field("Cosmetic or aesthetic treatment", "Cosmetic or aesthetic treatment is excluded"),
+            field("Dental treatment, unless needed because of an accident", "Dental treatment is excluded unless needed because of an accident"),
+        ],
+        intimation_deadline_hours=field(24.0, "Claim intimation: within 24 hours of admission"),
+        extraction_completeness=1.0,
+    )
+    return ExtractionResult(page_count=len(PAGES), coverage_profile=profile, line_items=[], chunks=[], warnings=[])
+
+
+# --- the four claims ---
+
+
+def ist(day: date, hour: int = 10) -> datetime:
+    return datetime(day.year, day.month, day.day, hour, 0, tzinfo=INDIA)
+
+
+@dataclass(frozen=True)
+class DemoClaim:
+    id: UUID
+    band: str
+    member: str
+    admission_type: str
+    hospital: str
+    admitted_on: date
+    discharged_on: date | None
+    claimed_amount: int
+    facts: dict
+    events: tuple[tuple[str, datetime, str], ...]
+
+
+NONE_APPLY = {"matched_waiting_periods": [], "matched_exclusions": []}
+
+CLAIMS = (
+    DemoClaim(
+        UUID("01920000-0000-7000-8000-0000000000f1"), "likely_eligible", "Vikram", "emergency", "Navjeevan Multispeciality Hospital, Pune",
+        date(2026, 8, 10), date(2026, 8, 13), 12_000_000,
+        {"diagnosis": "Acute appendicitis", "condition_is_pre_existing": False, "first_diagnosed_on": date(2026, 8, 10), "planned_room_rent_per_day": 450_000, **NONE_APPLY},
+        (("intimated", ist(date(2026, 8, 10), 11), "Called the insurer helpline on admission"),
+         ("documents_submitted", ist(date(2026, 8, 16)), "Discharge summary, bill and receipts sent")),
+    ),
+    DemoClaim(
+        UUID("01920000-0000-7000-8000-0000000000f2"), "at_risk", "Ananya", "planned", "Shubhankar Hospital, Pune",
+        date(2026, 9, 1), date(2026, 9, 3), 9_500_000,
+        {"diagnosis": "Planned knee arthroscopy", "condition_is_pre_existing": False, "first_diagnosed_on": date(2026, 7, 20), "planned_room_rent_per_day": 800_000, **NONE_APPLY},
+        (("intimated", ist(date(2026, 8, 28)), "Pre-authorisation request sent before admission"),),
+    ),
+    DemoClaim(
+        UUID("01920000-0000-7000-8000-0000000000f3"), "likely_ineligible", "Lakshmi", "planned", "Navjeevan Multispeciality Hospital, Pune",
+        date(2026, 4, 2), date(2026, 4, 6), 18_500_000,
+        {"diagnosis": "Complications of type 2 diabetes", "condition_is_pre_existing": True, "first_diagnosed_on": date(2023, 11, 5), "planned_room_rent_per_day": 400_000, **NONE_APPLY},
+        (("intimated", ist(date(2026, 3, 31)), "Planned admission notified in advance"),
+         ("documents_submitted", ist(date(2026, 4, 8)), "Claim file submitted"),
+         ("under_review", ist(date(2026, 4, 10)), "Insurer acknowledged"),
+         ("denied", ist(date(2026, 5, 2), 15), "Denied as a pre-existing disease within the waiting period")),
+    ),
+    DemoClaim(
+        UUID("01920000-0000-7000-8000-0000000000f4"), "insufficient_information", "Ishaan", "emergency", "Shubhankar Hospital, Pune",
+        date(2026, 10, 1), date(2026, 10, 3), 6_000_000,
+        {"diagnosis": "Severe asthma attack", "condition_is_pre_existing": None, "first_diagnosed_on": None, "planned_room_rent_per_day": 350_000,
+         "matched_waiting_periods": None, "matched_exclusions": []},
+        (("intimated", ist(date(2026, 10, 1), 22), "Told the insurer the same night"),),
+    ),
+)
+
+
+async def seed_policy(session: AsyncSession, settings) -> UUID:
+    existing = await session.scalar(select(Policy.id).where(Policy.policy_number == POLICY_NUMBER))
+    if existing is not None:
+        return existing
+
+    storage = create_storage(settings)
+    storage_path = build_object_path(HOUSEHOLD_ID, DOCUMENT_ID, FILE_NAME)
+    content = _pdf()
+    try:
+        await storage.save(storage_path, content, "application/pdf")
+    except Exception:  # noqa: BLE001 - already there from an earlier, interrupted run
+        pass
+
+    document = await session.get(Document, DOCUMENT_ID)
+    if document is None:
+        document = Document(
+            id=DOCUMENT_ID, household_id=HOUSEHOLD_ID, file_name=FILE_NAME, mime_type="application/pdf",
+            storage_path=storage_path, size_bytes=len(content), parse_status="parsed",
+        )
+        session.add(document)
+        await session.flush()
+    policy_id = await store_extraction(session, document, _extraction())
+    assert policy_id is not None
+    policy = await session.get(Policy, policy_id)
+    policy.insurer_id = INSURER_ID
+    policy.policy_number = POLICY_NUMBER
+    policy.product_name = "Kavach Family Health Plan (demo)"
+    policy.policy_type = "family_floater"
+    policy.start_date = date(2024, 3, 14)
+    policy.end_date = date(2027, 3, 13)
+    for member_id in MEMBER.values():
+        await session.execute(policy_member.insert().values(policy_id=policy_id, member_id=member_id))
+    return policy_id
+
+
+async def seed_claims(session: AsyncSession, policy_id: UUID) -> list[str]:
+    created = []
+    for demo in CLAIMS:
+        if await session.get(Claim, demo.id) is not None:
+            continue
+        session.add(
+            Claim(
+                id=demo.id, household_id=HOUSEHOLD_ID, policy_id=policy_id, member_id=MEMBER[demo.member],
+                claim_type="reimbursement", admission_type=demo.admission_type, hospital_name=demo.hospital,
+                admitted_on=demo.admitted_on, discharged_on=demo.discharged_on, claimed_amount=demo.claimed_amount,
+                **demo.facts,
+            )
+        )
+        await session.flush()
+        previous = None
+        for seq, (state, occurred_at, note) in enumerate(demo.events, start=1):
+            session.add(ClaimEvent(id=uuid4(), claim_id=demo.id, seq=seq, from_state=previous, to_state=state,
+                                   occurred_at=occurred_at, note=note, source="user"))
+            previous = state
+        created.append(f"{demo.member} -> {demo.band}")
+    return created
+
+
+async def main() -> None:
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+    async with create_session_factory(engine)() as session, session.begin():
+        missing = [name for name, member_id in MEMBER.items() if await session.get(Member, member_id) is None]
+        if missing:
+            raise SystemExit(f"Run scripts/seed.py first: members missing: {missing}")
+        policy_id = await seed_policy(session, settings)
+        created = await seed_claims(session, policy_id)
+    await engine.dispose()
+    print(f"Demo policy {policy_id} ({POLICY_NUMBER}).")
+    print("Created claims:" if created else "All four demo claims already existed; nothing written.")
+    for line in created:
+        print(f"  {line}")
+    for demo in CLAIMS:
+        print(f"  claim {demo.id}  expected band: {demo.band}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
