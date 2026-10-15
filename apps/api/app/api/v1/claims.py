@@ -30,7 +30,8 @@ from app.db.models import Claim as ClaimRow
 from app.db.models import Document
 from app.db.session import get_session
 from app.rules.loader import load_required_documents
-from app.schemas.claims import Claim, ClaimCreateRequest, ClaimEventRequest, CompletenessReport
+from app.claims.facts import save_facts
+from app.schemas.claims import Claim, ClaimCreateRequest, ClaimEventRequest, ClaimFacts, CompletenessReport
 
 router = APIRouter()
 
@@ -91,6 +92,24 @@ async def append_claim_event(
     now = _now()
     row = await _owned_claim(session, household, claim_id)
     await append_event(session, row, household.auth_user_id, body, now)
+    return await _wire_claim(session, row, now)
+
+
+@router.put("/claims/{claim_id}/facts")
+async def put_claim_facts(
+    claim_id: UUID,
+    body: ClaimFacts,
+    household: Annotated[CurrentHousehold, Depends(get_current_household)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Claim:
+    """Replace what the user has told us about the illness and the stay (D-37).
+
+    A full replacement: send every field, null for "not answered".
+    Returns the claim, so the client sees the stored facts.
+    """
+    now = _now()
+    row = await _owned_claim(session, household, claim_id)
+    await save_facts(session, row, body, india_date(now))
     return await _wire_claim(session, row, now)
 
 

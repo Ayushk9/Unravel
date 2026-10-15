@@ -22,8 +22,11 @@ python-multipart==0.0.32
 # HTTP client for the Supabase Storage API (also used by the test client)
 httpx==0.28.1
 
-# Rule files (app/rules/*.yaml)
+# Rule files (app/rules/*.yaml, engines/rules/reference/*.yaml)
 PyYAML==6.0.3
+
+# Calendar-month arithmetic in Engine B (engines/rules/dates.py)
+python-dateutil==2.9.0.post0
 
 # Claim-document classification: first-page text, and the Gemini call.
 # Both are also Engine A dependencies, so they are already in this venv.
