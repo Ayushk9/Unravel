@@ -746,7 +746,7 @@ insurer"; and a claim-intimation window that was met produces no card.
 `engines/rules/reference/typical_costs.yaml`, every entry `verified: false`:
 minimum sum insured by household size (Rs 5,00,000 / 7,50,000 / 10,00,000 /
 15,00,000 for up to 1 / 2 / 4 / more people) and typical room rent per day
-(Rs 6,000 metro, Rs 3,500 tier 2; unused until a household city exists).
+(Rs 6,000 metro, Rs 3,500 tier 2; used once a household picks a city tier, D-40).
 Alerts using them say "estimate" and carry `verified: false`.
 
 Rule conventions to confirm against policy wordings: an admission ON the
@@ -756,13 +756,21 @@ admission date is stored.
 
 ### Assumptions that change verdicts
 
-- Waiting periods are counted from `policy.start_date`, the current policy,
-  not the first inception of continuously renewed cover. Every explanation
-  says so. A `first_inception_date` fact would remove the assumption.
-- Uploaded policies have no start or end date (D-25) and nothing can set
-  them, so their waiting-period checks are `unknown` and the claim is
-  "insufficient information". Only the seeded demo policy has dates.
-- The room-rent-below-market alert never fires: no household city is stored.
+- Waiting periods are counted from `policy.first_inception_date` when the
+  user has given it (D-39), otherwise from `policy.start_date`, and then the
+  explanation states the assumption that first inception may be earlier.
+- Policy dates are entered with `PATCH /policies/{id}` (D-39). Until a user
+  enters them, an uploaded policy's waiting-period checks are `unknown`.
+- The room-rent-below-market alert runs once the household picks a city tier
+  (D-40). The tier is the user's choice; no city-to-tier list is kept, because
+  any such list would be one more unchecked fact.
+- Ambiguous (decided conservatively): `first_inception_date` may be set when
+  `start_date` is null; the clock then uses it. It may not be after
+  `start_date` or in the future. If reversed (require a start date first),
+  only `app/services/policy_dates.py` changes.
+- No web form exists yet for policy dates or the city tier; the endpoints
+  are usable from Android and curl. Building forms needs an approved
+  `apps/web` edit.
 
 ### The panel scenario's wording
 

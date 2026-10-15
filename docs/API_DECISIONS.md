@@ -405,6 +405,25 @@ Alerts are computed on every `GET /alerts` for the household's policies; nothing
 
 *Ratified:* 2026-10-15. Additive.
 
+### D-39 · Policy dates are entered by the user, including the start of continuous cover
+New: `PATCH /api/v1/policies/{id}` with any of `start_date`, `end_date`, `first_inception_date` (`YYYY-MM-DD`). Only the keys sent change; a key sent as `null` clears that date; an empty body is `422`. Returns the `Policy`. `Policy` gains `first_inception_date: date | null`.
+
+- Checked as a whole after the change: `end_date` must be after `start_date`; `first_inception_date` must be on or before `start_date` and not in the future. Any violation is `422` naming the field, and nothing is changed.
+- These are plain dates, not `Extracted[T]`: the user typed them; nothing was read from a page, so there is no provenance to show and none is invented. When Engine A extracts them (D-25's revisit), extracted values become `Extracted[T]`.
+- **Waiting periods are counted from `first_inception_date` when it is set, otherwise from `start_date`.** This applies to the eligibility checks, to `waiting_periods[].starts_on / expires_on`, and to the waiting-period alert. In a check's `values` the date appears as `first_inception_date` or `policy_start`, naming which one was used, and the explanation says so ("Your continuous cover started ..." vs "Your policy started ..." plus the stated assumption).
+
+*Why:* uploaded policies had no way to get dates (D-25), so every waiting-period check on them was `unknown`. And a renewed policy's waiting periods run from the first policy, not the current one.
+*Ratified:* 2026-10-15. Additive.
+*Revisit:* when Engine A extracts the dates from a policy schedule.
+
+### D-40 · The household chooses its kind of city
+New: `GET /api/v1/household` returns `{ "id", "name", "city_tier" }`; `PATCH /api/v1/household` takes `{ "city_tier": "metro" | "tier_2" | "other" | null }` (the key is required; `null` clears it) and returns the `Household`. Any other value or any other key is `422`. There is no household id in the path (D-10).
+
+`city_tier` is the household's own choice; the server keeps no list of which cities are metros. The `room_rent_below_market` alert now runs when it is set: it fires (severity `info`) when the policy's room-rent cap per day is below the typical rate for that tier in `engines/rules/reference/typical_costs.yaml`. Those figures are **`verified: false`**, so the alert says "estimate" and carries `verified: false`; its `provenance` is the room-rent clause. `other`, no tier, or no single per-day cap means the alert is skipped and the reason logged.
+
+*Why:* a tier, not a city name: the reference data has figures per tier, and a free-text city would need a mapping nobody has checked.
+*Ratified:* 2026-10-15. Additive.
+
 ---
 
 ## 5. Pagination

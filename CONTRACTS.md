@@ -70,7 +70,7 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 4 | `GET /documents/{id}` | — | `StoredDocument` | 401, 404 | Sync | — | — |
 | 5 | `PATCH /documents/{id}` | `{ detected_type }` | `StoredDocument` | 401, 404, 422 | Sync | — | — |
 | 6 | `DELETE /documents/{id}` | — | 204 | 401, 404 | Sync (soft delete, D-20) | — | — |
-| 7 | `GET /policies` | — | `Policy[]` (identity fields nullable, D-25) | 401 | Sync | No (full array) | — |
+| 7 | `GET /policies` | — | `Policy[]` (identity fields nullable, D-25; `first_inception_date`, D-39) | 401 | Sync | No (full array) | — |
 | 8 | `POST /policies` | `{ source_document_id }` | `Policy` | 401, 409, 422 | Sync | — | — |
 | 9 | `GET /policies/{id}` | — | `Policy` (embeds `coverage_profile`; identity fields nullable, D-25) | 401, 404 | Sync | — | — |
 | 10 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }` | `Policy` | 401, 404, 409 (profile not ready, or path matches several rows, D-30), 422 | Sync | — | — |
@@ -90,8 +90,11 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 24 | `GET /jobs/{job_id}` | — | `Job<TResult>` | 401, 404 | Sync (this is what gets polled) | — | — |
 | 25 | `GET /documents/{id}/file` | — | `{ url, expires_at }`: signed URL valid 5 min (D-26) | 401, 404 | Sync | — | — |
 | 26 | `PUT /claims/{id}/facts` | `ClaimFacts` (D-37) | `Claim` | 401, 404, 422 | Sync | — | — |
+| 27 | `PATCH /policies/{id}` | `{ start_date?, end_date?, first_inception_date? }`: only keys sent change; `null` clears (D-39) | `Policy` | 401, 404, 422 (dates contradict, inception in the future, empty body) | Sync | — | — |
+| 28 | `GET /household` | — | `Household { id, name, city_tier }` (D-40) | 401 | Sync | — | — |
+| 29 | `PATCH /household` | `{ city_tier: "metro" \| "tier_2" \| "other" \| null }` (D-40) | `Household` | 401, 422 | Sync | — | — |
 
-26 endpoints. `#1` (`health`) is infra, not part of a vertical slice. `#3`'s
+29 endpoints. `#1` (`health`) is infra, not part of a vertical slice. `#3`'s
 `claim_id` filter and all of `#5` are Phase 4 additions, not in the ratified
 `API_DECISIONS.md` endpoint list — see §4.
 
