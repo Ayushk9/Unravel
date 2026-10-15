@@ -353,6 +353,58 @@ The checklist lives in `apps/api/app/rules/required_documents.yaml` and is **`ve
 
 *Ratified:* 2026-10-08. Additive.
 
+### D-36 · Eligibility checks show their working
+`EligibilityCheck` gains three fields and `EligibilityAssessment` one; all additive:
+
+```json
+{
+  "id": "ped_waiting_period", "title": "...", "status": "failed",
+  "explanation": "Your policy started 14 Mar 2024; the 48-month waiting period ends on 14 Mar 2028. ...",
+  "governing_clause": { "document_id": "...", "page": 2, "bbox": [...], "snippet": "..." },
+  "missing_fact": null, "resolving_document": null,
+  "confidence": "high",
+  "values": { "policy_start": "2024-03-14", "waiting_months": 48, "waiting_period_ends": "2028-03-14",
+              "admitted_on": "2026-04-02", "elapsed_months": 24, "elapsed_days": 19, "remaining_months": 23, "remaining_days": 12 },
+  "missing_facts": [{ "fact": "...", "where_to_get": "...", "resolving_document": "investigation_report" | null }]
+}
+```
+- `confidence` is the lowest confidence among the check's inputs (a user-confirmed input counts as `high`). It is a three-level label, **never a probability**.
+- `values` holds the dates (`YYYY-MM-DD`), month and day counts and paise amounts the sentence was rendered from.
+- `missing_facts` may list several facts, some resolved by a document outside `DocumentType` (`resolving_document: null`). `missing_fact` and `resolving_document` carry the first entry for older clients.
+- `ombudsman_precedent` is `[]` and the new `ombudsman_precedent_note` says why ("Precedent corpus not yet loaded ...").
+- Status values stay `satisfied | at_risk | failed | unknown`.
+
+**Band**, in strict precedence: `insufficient_information` if a critical check is unknown; else `likely_ineligible` if a check failed with high confidence; else `at_risk` if a check failed with lower confidence or is at risk; else `likely_eligible`. Critical checks: coverage profile, initial, pre-existing and condition-specific waiting periods, exclusions. A non-critical unknown is listed but does not prevent `likely_eligible`. Checks are ordered missing-facts-first for insufficient information, otherwise worst first.
+
+Waiting periods: end = start + N calendar months, clamped to a shorter month's last day; an admission **on** the end date is outside the period; counted from `policy.start_date`, which is stated in every explanation as an assumption (first inception may be earlier). The rules are listed in `docs/RULES.md`, generated from `engines/rules/registry.py`.
+
+*Ratified:* 2026-10-15. Additive.
+
+### D-37 · Claim facts the rules read
+New: `PUT /api/v1/claims/{id}/facts`, a full replacement, returns the `Claim`. `Claim` gains `facts`:
+
+```json
+"facts": {
+  "diagnosis": "Complications of type 2 diabetes",   // display only; no rule reads it
+  "condition_is_pre_existing": true,                 // strict boolean or null
+  "first_diagnosed_on": "2023-11-05",                // not in the future
+  "matched_waiting_periods": [2],                    // positions in coverage_profile.waiting_periods
+  "matched_exclusions": [],                          // positions in coverage_profile.exclusions
+  "planned_room_rent_per_day": 450000                // integer paise
+}
+```
+`null` means not answered; the rule that needs it returns `unknown`. `[]` means none apply. A `matched_waiting_periods` entry must point at a `disease_specific` period; positions must exist and not repeat; otherwise `422`. Whether an illness falls under a listed condition or exclusion is decided only by this selection, never by keyword matching or a model. The time the insurer was told comes from the existing `intimated` event.
+
+*Ratified:* 2026-10-15. Additive.
+*Revisit:* if positions prove fragile, give waiting periods and exclusions stable ids.
+
+### D-38 · Alerts say whether they rest on verified figures
+`Alert` gains `verified: boolean` and `provenance: Provenance | null`. `verified` is `false` when the alert relies on a reference figure nobody has checked (these alerts also say "estimate" in their text). `provenance` points at the policy field the alert is based on, and is `null` when the alert is about something not being found. `Alert.id` is a deterministic string such as `alert-low_sum_insured-<policy_id>`, not a UUID.
+
+Alerts are computed on every `GET /alerts` for the household's policies; nothing is stored or scheduled. An alert whose input is missing (policy dates, sum insured, the household's city, which is never stored yet) is skipped and the reason logged; `GET /alerts` stays a bare array.
+
+*Ratified:* 2026-10-15. Additive.
+
 ---
 
 ## 5. Pagination

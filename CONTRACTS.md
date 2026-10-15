@@ -80,17 +80,18 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 14 | `POST /claims` | `ClaimCreateRequest` | 201 `Claim` | 401, 422 | Sync | — | — |
 | 15 | `GET /claims/{id}` | — | `Claim` | 401, 404 | Sync | — | — |
 | 16 | `POST /claims/{id}/events` | `{ to_state, occurred_at, note }` | `Claim` (recomputed) | 401, 404, **409** `illegal_transition` (allowed targets in `field_errors`, D-31) or `claim_changed` (lost a race, D-32), 422 (future or zone-less `occurred_at`) | Sync | — | — |
-| 17 | `POST /claims/{id}/eligibility` | — | `EligibilityAssessment` | 401, 404 | Sync | — | — |
+| 17 | `POST /claims/{id}/eligibility` | — | `EligibilityAssessment` (with `confidence`, `values`, `missing_facts`, `ombudsman_precedent_note`, D-36) | 401, 404 | Sync | — | — |
 | 18 | `POST /claims/{id}/completeness` | — | `CompletenessReport` (with `required_details`, `verified`, D-35) | 401, 404 | Sync | — | — |
 | 19 | `POST /claims/{id}/bill-validation` | — | `BillValidationReport` | 401, 404, **409** (bill not parsed yet) | Sync | — | — |
 | 20 | `POST /claims/{id}/grievance-drafts` | `{ rung }` | 202 `JobAccepted` (kind `generate_grievance_draft`) | 401, 404 | **Job**, 20–30s | — | **Required** |
-| 21 | `GET /alerts` | — | `Alert[]` | 401 | Sync | No (full array) | — |
+| 21 | `GET /alerts` | — | `Alert[]` (with `verified`, `provenance`, D-38; computed on read) | 401 | Sync | No (full array) | — |
 | 22 | `GET /ombudsman-awards` | `?cursor&limit` | `Collection<OmbudsmanAward>` | 401 | Sync | Cursor | — |
 | 23 | `GET /insurers/benchmarks` | — | `InsurerBenchmark[]` | 401 | Sync | No (full array) | — |
 | 24 | `GET /jobs/{job_id}` | — | `Job<TResult>` | 401, 404 | Sync (this is what gets polled) | — | — |
 | 25 | `GET /documents/{id}/file` | — | `{ url, expires_at }`: signed URL valid 5 min (D-26) | 401, 404 | Sync | — | — |
+| 26 | `PUT /claims/{id}/facts` | `ClaimFacts` (D-37) | `Claim` | 401, 404, 422 | Sync | — | — |
 
-25 endpoints. `#1` (`health`) is infra, not part of a vertical slice. `#3`'s
+26 endpoints. `#1` (`health`) is infra, not part of a vertical slice. `#3`'s
 `claim_id` filter and all of `#5` are Phase 4 additions, not in the ratified
 `API_DECISIONS.md` endpoint list — see §4.
 

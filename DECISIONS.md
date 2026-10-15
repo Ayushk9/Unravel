@@ -736,3 +736,37 @@ documents each claim type needs). Requirements vary by insurer.
 Modelling assumptions that are not regulatory figures but should be reviewed:
 the state `escalated` is treated as "a written grievance has reached the
 insurer"; and a claim-intimation window that was met produces no card.
+
+---
+
+## Backend Phase 5 (Engine B: eligibility and gap alerts)
+
+### Needs verification against primary source
+
+`engines/rules/reference/typical_costs.yaml`, every entry `verified: false`:
+minimum sum insured by household size (Rs 5,00,000 / 7,50,000 / 10,00,000 /
+15,00,000 for up to 1 / 2 / 4 / more people) and typical room rent per day
+(Rs 6,000 metro, Rs 3,500 tier 2; unused until a household city exists).
+Alerts using them say "estimate" and carry `verified: false`.
+
+Rule conventions to confirm against policy wordings: an admission ON the
+waiting-period end date counts as outside the period; a 24-hour intimation
+window is counted to the end of the next calendar day because only the
+admission date is stored.
+
+### Assumptions that change verdicts
+
+- Waiting periods are counted from `policy.start_date`, the current policy,
+  not the first inception of continuously renewed cover. Every explanation
+  says so. A `first_inception_date` fact would remove the assumption.
+- Uploaded policies have no start or end date (D-25) and nothing can set
+  them, so their waiting-period checks are `unknown` and the claim is
+  "insufficient information". Only the seeded demo policy has dates.
+- The room-rent-below-market alert never fires: no household city is stored.
+
+### The panel scenario's wording
+
+The mock said an admission on 2 Apr 2026 "falls 23 months inside" a 48-month
+waiting period that started on 14 Mar 2024. That mixes up elapsed and
+remaining time: the admission is 24 months and 19 days INTO the period, and
+23 months and 12 days REMAIN before it ends on 14 Mar 2028. Engine B says both.
