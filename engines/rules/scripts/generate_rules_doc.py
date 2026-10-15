@@ -54,7 +54,8 @@ def render() -> str:
         "### Conventions every check follows",
         "",
         f"- **Waiting-period end:** start + N calendar months, clamped to the last day of a shorter month (31 Jan + 1 month = 28 Feb). {BOUNDARY_NOTE}",
-        f"- **Start of the clock:** {ASSUMPTION_START_DATE}",
+        "- **Start of the clock:** the policy's `first_inception_date` (the start of continuous cover) if the user gave it; "
+        f"otherwise its `start_date`, and the explanation then says: \"{ASSUMPTION_START_DATE}\"",
         "- **Confidence:** the lowest confidence among the check's inputs. An extracted field counts at its own confidence, or `high` if the user confirmed it. Facts the user entered and policy dates count as `high`. One low-confidence, unconfirmed input stops a check being `high`.",
         "- **Money:** integer paise. A cap stated as a share of the sum insured is `sum_insured x round(percent x 100) // 10000`, rounded down.",
         "- **Disease-specific waiting periods and exclusions** apply only when the user selects them from the policy's own list. Nothing is matched by keyword or by an LLM.",

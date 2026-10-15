@@ -64,8 +64,8 @@ def claim(**overrides) -> ClaimFacts:
     return ClaimFacts(**values)
 
 
-def policy(start: date | None = date(2024, 3, 14), end: date | None = date(2027, 3, 13)) -> PolicyFacts:
-    return PolicyFacts(policy_id=POLICY_ID, start_date=start, end_date=end)
+def policy(start: date | None = date(2024, 3, 14), end: date | None = date(2027, 3, 13), inception: date | None = None) -> PolicyFacts:
+    return PolicyFacts(policy_id=POLICY_ID, start_date=start, end_date=end, first_inception_date=inception)
 
 
 def eligibility_input(profile_value: CoverageProfile | None = None, claim_value: ClaimFacts | None = None, policy_value: PolicyFacts | None = None) -> EligibilityInput:
@@ -76,5 +76,5 @@ def eligibility_input(profile_value: CoverageProfile | None = None, claim_value:
     )
 
 
-def alert_input(profile_value: CoverageProfile | None, policy_value: PolicyFacts | None = None, members: int = 4) -> AlertInput:
-    return AlertInput(policy=policy_value or policy(), coverage_profile=profile_value, household_member_count=members)
+def alert_input(profile_value: CoverageProfile | None, policy_value: PolicyFacts | None = None, members: int = 4, city_tier: str | None = None) -> AlertInput:
+    return AlertInput(policy=policy_value or policy(), coverage_profile=profile_value, household_member_count=members, household_city_tier=city_tier)

@@ -36,9 +36,11 @@ class PolicyFacts(_Model):
     """What the engine knows about a policy beyond its coverage profile."""
 
     policy_id: UUID
-    # Treated as the start of continuous cover (see dates.ASSUMPTION_START_DATE).
     start_date: date | None
     end_date: date | None
+    # The start of continuous cover, if the user gave it. Waiting periods are
+    # counted from it, or from start_date when it is None (dates.waiting_clock).
+    first_inception_date: date | None = None
 
 
 class ClaimFacts(_Model):
@@ -91,6 +93,7 @@ class Assessment(_Model):
     precedent_note: str
 
 
+CityTier = Literal["metro", "tier_2", "other"]
 AlertKind = Literal["room_rent_below_market", "waiting_period_expiring", "renewal_due", "no_maternity_cover", "low_sum_insured"]
 
 
@@ -98,8 +101,9 @@ class AlertInput(_Model):
     policy: PolicyFacts
     coverage_profile: CoverageProfile | None
     household_member_count: int
-    # Not stored anywhere yet; the room-rent alert is skipped while it is None.
-    household_city: str | None = None
+    # The kind of city the household lives in, as the user chose it. None: not told,
+    # and the room-rent alert is skipped.
+    household_city_tier: CityTier | None = None
 
 
 class AlertResult(_Model):

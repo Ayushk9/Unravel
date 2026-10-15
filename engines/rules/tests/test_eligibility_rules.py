@@ -252,3 +252,65 @@ def test_coverage_profile_rule() -> None:
     assert coverage_profile_present(eligibility_input()).status == "satisfied"
     data = eligibility_input().model_copy(update={"coverage_profile": None})
     assert coverage_profile_present(data).status == "unknown"
+
+
+# --- the waiting clock: first inception of continuous cover, when the user gave it ---
+
+
+def test_first_inception_date_starts_the_clock_and_is_named_in_the_explanation() -> None:
+    # Same panel claim, but cover has run without a break since 14 Mar 2022: 48 months end 14 Mar 2026, before the admission.
+    data = eligibility_input(
+        profile(waiting_periods=PED),
+        claim(admitted_on=date(2026, 4, 2), condition_is_pre_existing=True, first_diagnosed_on=date(2021, 11, 5)),
+        policy(inception=date(2022, 3, 14)),
+    )
+
+    result = ped_waiting_period(data)
+
+    assert result.status == "satisfied"
+    assert result.values["first_inception_date"] == date(2022, 3, 14) and "policy_start" not in result.values
+    assert result.values["waiting_period_ends"] == date(2026, 3, 14)
+    assert "Your continuous cover started 14 Mar 2022" in result.explanation
+    assert "the date you gave as the start of your cover" in result.explanation
+    assert "could be earlier" not in result.explanation, "the start-date caveat is only for the fallback"
+
+
+def test_without_a_first_inception_date_the_policy_start_is_used_and_said_to_be_an_assumption() -> None:
+    result = initial_waiting_period(eligibility_input(profile(waiting_periods=[waiting("initial", 1)]), claim(admitted_on=date(2024, 4, 1))))
+
+    assert result.values["policy_start"] == START
+    assert "Counted from the policy start date we hold" in result.explanation
+
+
+def test_first_inception_date_alone_is_enough_to_decide() -> None:
+    data = eligibility_input(profile(waiting_periods=[waiting("initial", 1)]), claim(admitted_on=date(2024, 4, 15)), policy(start=None, inception=date(2024, 3, 14)))
+
+    assert initial_waiting_period(data).status == "satisfied"
+
+
+def test_no_start_and_no_inception_is_unknown_and_says_either_will_do() -> None:
+    data = eligibility_input(profile(waiting_periods=[waiting("initial", 1)]), claim(), policy(start=None))
+
+    result = initial_waiting_period(data)
+
+    assert result.status == "unknown"
+    assert result.missing_facts[0].fact == "Policy start date" and "first policy's start date" in result.missing_facts[0].where_to_get
+
+
+def test_diagnosed_before_inception_but_answered_not_pre_existing_is_at_risk() -> None:
+    data = eligibility_input(
+        profile(waiting_periods=PED),
+        claim(condition_is_pre_existing=False, first_diagnosed_on=date(2022, 1, 1)),
+        policy(inception=date(2022, 3, 14)),
+    )
+
+    result = ped_waiting_period(data)
+
+    assert result.status == "at_risk" and result.values["first_inception_date"] == date(2022, 3, 14)
+    # Diagnosed after inception (but before this policy's start) is not a contradiction.
+    later = eligibility_input(
+        profile(waiting_periods=PED),
+        claim(condition_is_pre_existing=False, first_diagnosed_on=date(2023, 1, 1)),
+        policy(inception=date(2022, 3, 14)),
+    )
+    assert ped_waiting_period(later).status == "satisfied"

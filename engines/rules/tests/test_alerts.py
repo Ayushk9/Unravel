@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from engines.rules import compute_alerts, load_reference
-from engines.rules.tests.builders import alert_input, policy, profile, waiting
+from engines.rules.tests.builders import alert_input, policy, profile, room_rent, waiting
 
 TODAY = date(2026, 10, 15)
 REFERENCE = load_reference()
@@ -64,7 +64,7 @@ def test_inputs_that_are_missing_skip_alerts_with_a_reason_and_never_guess() -> 
 
     reasons = {s.kind: s.reason for s in outcome.skipped}
     assert set(reasons) == {"waiting_period_expiring", "renewal_due", "low_sum_insured", "room_rent_below_market"}
-    assert "city" in reasons["room_rent_below_market"]
+    assert "city" in reasons["room_rent_below_market"], "no city tier given"
     assert kinds(outcome) == ["no_maternity_cover"]
 
 
@@ -84,3 +84,50 @@ def test_alert_ids_are_stable() -> None:
     data = alert_input(profile())
 
     assert [a.id for a in compute_alerts(data, REFERENCE, TODAY).alerts] == [a.id for a in compute_alerts(data, REFERENCE, TODAY).alerts]
+
+
+def test_waiting_period_alert_counts_from_first_inception_when_given() -> None:
+    # Inception 14 Nov 2023 + 36 months = 14 Nov 2026, 30 days from today. From the 2024 start it would be 2027.
+    data = alert_input(profile(waiting_periods=[waiting("pre_existing", 36), waiting("maternity", 9)], sum_insured=200_000_000), policy(inception=date(2023, 11, 14)))
+
+    (alert,) = [a for a in compute_alerts(data, REFERENCE, TODAY).alerts if a.kind == "waiting_period_expiring"]
+
+    assert alert.triggers_on == date(2026, 11, 14)
+    assert "start of your cover" in alert.explanation
+
+
+@pytest.mark.parametrize(
+    ("tier", "limit", "fires"),
+    [
+        ("metro", room_rent(500_000), True),  # Rs 5,000 cap < Rs 6,000 metro estimate
+        ("tier_2", room_rent(500_000), False),  # Rs 5,000 >= Rs 3,500
+        ("metro", room_rent(600_000), False),  # equal is not below
+        ("metro", room_rent(None, basis="percent_of_sum_insured", percent=1.0), True),  # 1% of Rs 5,00,000 = Rs 5,000
+    ],
+)
+def test_room_rent_below_market_is_an_unverified_estimate(tier: str, limit, fires: bool) -> None:
+    outcome = compute_alerts(alert_input(profile(sub_limits=[limit]), city_tier=tier), REFERENCE, TODAY)
+
+    matching = [a for a in outcome.alerts if a.kind == "room_rent_below_market"]
+    assert bool(matching) is fires
+    if fires:
+        alert = matching[0]
+        assert alert.verified is False and "estimate" in alert.explanation and alert.reference_source
+        assert alert.provenance is not None, "points at the room rent clause"
+        assert "Rs" not in alert.title and "metro city" in alert.title
+
+
+@pytest.mark.parametrize(
+    ("tier", "limits", "reason"),
+    [
+        (None, [room_rent()], "kind of city"),
+        ("other", [room_rent()], "no typical room rate"),
+        ("metro", [], "no room rent limit"),
+        ("metro", [room_rent(), room_rent(300_000)], "more than one"),
+    ],
+)
+def test_room_rent_alert_skips_with_a_reason(tier, limits, reason: str) -> None:
+    outcome = compute_alerts(alert_input(profile(sub_limits=limits), city_tier=tier), REFERENCE, TODAY)
+
+    skipped = {s.kind: s.reason for s in outcome.skipped}
+    assert reason in skipped["room_rent_below_market"]

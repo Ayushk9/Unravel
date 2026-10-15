@@ -24,8 +24,8 @@ from contracts.models import CoverageProfile, Extracted, WaitingPeriod
 
 from engines.rules.confidence import USER_FACT, lowest, of_extracted
 from engines.rules.dates import (
-    ASSUMPTION_START_DATE,
     BOUNDARY_NOTE,
+    WaitingClock,
     add_days,
     add_months,
     format_date,
@@ -33,16 +33,21 @@ from engines.rules.dates import (
     hours_to_whole_days,
     india_date,
     months_and_days,
+    waiting_clock,
     whole_months,
 )
 from engines.rules.models import CheckResult, ClaimFacts, Confidence, EligibilityInput, MissingFact, PolicyFacts, Status, Value
-from engines.rules.money import format_rupees, percent_cap
+from engines.rules.money import format_rupees
+from engines.rules.room_rent import NoCap, room_rent_cap
 
 # --- facts that may be missing, and where each one comes from ---
 
 POLICY_START = MissingFact(
     fact="Policy start date",
-    where_to_get="Printed on your policy schedule or policy certificate.",
+    where_to_get=(
+        "Printed on your policy schedule or policy certificate; enter it on the policy page. "
+        "If your cover has been renewed without a break, you can give the first policy's start date instead."
+    ),
     resolving_document="policy_schedule",
 )
 ADMISSION_DATE = MissingFact(
@@ -127,18 +132,19 @@ def _waiting_period(profile: CoverageProfile, kind: str) -> WaitingPeriod | None
     return matches[0] if len(matches) == 1 else None
 
 
-def _served_or_not(start: date, months: int, admitted: date) -> tuple[bool, date, dict[str, Value], str]:
+def _served_or_not(clock: WaitingClock, months: int, admitted: date) -> tuple[bool, date, dict[str, Value], str]:
     """The arithmetic every waiting-period rule shares.
 
     Returns: served?, end date, values, and the sentence describing the
-    arithmetic. Callers add BOUNDARY_NOTE and ASSUMPTION_START_DATE once.
+    arithmetic. Callers add BOUNDARY_NOTE and the clock's note once (_notes).
     """
+    start = clock.start
     end = add_months(start, months)
     served = admitted >= end
-    values: dict[str, Value] = {"policy_start": start, "waiting_months": months, "waiting_period_ends": end, "admitted_on": admitted}
+    values: dict[str, Value] = {clock.value_key: start, "waiting_months": months, "waiting_period_ends": end, "admitted_on": admitted}
     if served:
         sentence = (
-            f"Your policy started {format_date(start)}; the {months}-month waiting period ended on {format_date(end)}. "
+            f"{clock.started}; the {months}-month waiting period ended on {format_date(end)}. "
             f"Your admission on {format_date(admitted)} is on or after that date, so the period has been served."
         )
     else:
@@ -152,12 +158,12 @@ def _served_or_not(start: date, months: int, admitted: date) -> tuple[bool, date
         }
         if admitted < start:
             sentence = (
-                f"Your policy started {format_date(start)}; the {months}-month waiting period ends on {format_date(end)}. "
-                f"Your admission on {format_date(admitted)} is before the policy started."
+                f"{clock.started}; the {months}-month waiting period ends on {format_date(end)}. "
+                f"Your admission on {format_date(admitted)} is before that start."
             )
         else:
             sentence = (
-                f"Your policy started {format_date(start)}; the {months}-month waiting period ends on {format_date(end)}. "
+                f"{clock.started}; the {months}-month waiting period ends on {format_date(end)}. "
                 f"Your admission on {format_date(admitted)} is before that date: "
                 f"{format_span(elapsed_months, elapsed_days)} into the waiting period, "
                 f"with {format_span(left_months, left_days)} still to run."
@@ -165,12 +171,17 @@ def _served_or_not(start: date, months: int, admitted: date) -> tuple[bool, date
     return served, end, values, sentence
 
 
-_NOTES = f"{BOUNDARY_NOTE} {ASSUMPTION_START_DATE}"
+def _clock(policy: PolicyFacts) -> WaitingClock | None:
+    return waiting_clock(policy.start_date, policy.first_inception_date)
+
+
+def _notes(clock: WaitingClock) -> str:
+    return f"{BOUNDARY_NOTE} {clock.note}"
 
 
 def _dates_missing(policy: PolicyFacts, claim: ClaimFacts) -> tuple[MissingFact, ...]:
     missing = []
-    if policy.start_date is None:
+    if _clock(policy) is None:
         missing.append(POLICY_START)
     if claim.admitted_on is None:
         missing.append(ADMISSION_DATE)
@@ -221,13 +232,14 @@ def initial_waiting_period(data: EligibilityInput) -> CheckResult:
             missing=tuple(missing),
         )
 
-    assert period is not None and policy.start_date is not None and claim.admitted_on is not None and months is not None
-    served, _end, values, sentence = _served_or_not(policy.start_date, months, claim.admitted_on)
+    clock = _clock(policy)
+    assert period is not None and clock is not None and claim.admitted_on is not None and months is not None
+    served, _end, values, sentence = _served_or_not(clock, months, claim.admitted_on)
     return _result(
         **rule,
         status="satisfied" if served else "failed",
         confidence=of_extracted(period.months),
-        explanation=f"{sentence} {_NOTES}",
+        explanation=f"{sentence} {_notes(clock)}",
         values=values,
         clause=period.months,
     )
@@ -258,19 +270,20 @@ def ped_waiting_period(data: EligibilityInput) -> CheckResult:
     diagnosed = claim.first_diagnosed_on
     values: dict[str, Value] = {"condition_is_pre_existing": claim.condition_is_pre_existing, "first_diagnosed_on": diagnosed}
 
+    clock = _clock(policy)
     if claim.condition_is_pre_existing is False:
-        if policy.start_date is not None and diagnosed < policy.start_date:
+        if clock is not None and diagnosed < clock.start:
             # The user's answer and the dates disagree. Said plainly, not decided.
             return _result(
                 **rule,
                 status="at_risk",
                 confidence=USER_FACT,
                 explanation=(
-                    f"You said this illness is not pre-existing, but it was first diagnosed on {format_date(diagnosed)}, "
-                    f"before your policy started on {format_date(policy.start_date)}. An insurer is likely to treat it as "
-                    f"pre-existing, so this waiting period may apply. {ASSUMPTION_START_DATE}"
+                    f"You said this illness is not pre-existing, but it was first diagnosed on {format_date(diagnosed)}. "
+                    f"{clock.started}, after that. An insurer is likely to treat it as "
+                    f"pre-existing, so this waiting period may apply. {clock.note}"
                 ),
-                values=values | {"policy_start": policy.start_date},
+                values=values | {clock.value_key: clock.start},
                 clause=period.months if period else None,
             )
         return _result(
@@ -300,13 +313,13 @@ def ped_waiting_period(data: EligibilityInput) -> CheckResult:
             missing=tuple(missing),
         )
 
-    assert period is not None and policy.start_date is not None and claim.admitted_on is not None and months is not None
-    served, _end, period_values, sentence = _served_or_not(policy.start_date, months, claim.admitted_on)
+    assert period is not None and clock is not None and claim.admitted_on is not None and months is not None
+    served, _end, period_values, sentence = _served_or_not(clock, months, claim.admitted_on)
     return _result(
         **rule,
         status="satisfied" if served else "failed",
         confidence=lowest(of_extracted(period.months), USER_FACT),
-        explanation=f"You said this illness is pre-existing (first diagnosed {format_date(diagnosed)}). {sentence} {_NOTES}",
+        explanation=f"You said this illness is pre-existing (first diagnosed {format_date(diagnosed)}). {sentence} {_notes(clock)}",
         values=values | period_values,
         clause=period.months,
     )
@@ -359,18 +372,19 @@ def disease_specific_waiting_period(data: EligibilityInput) -> CheckResult:
             missing=tuple(missing),
         )
 
-    assert policy.start_date is not None and claim.admitted_on is not None
+    clock = _clock(policy)
+    assert clock is not None and claim.admitted_on is not None
     confidence = lowest(*(of_extracted(p.months) for p in periods))
     sentences, values = [], {}
     not_served = None
     for period in periods:
-        served, _end, period_values, sentence = _served_or_not(policy.start_date, whole_months(period.months.value) or 0, claim.admitted_on)
+        served, _end, period_values, sentence = _served_or_not(clock, whole_months(period.months.value) or 0, claim.admitted_on)
         condition = period.applies_to or "this condition"
         sentences.append(f"For {condition}: {sentence}")
         values |= {f"{condition}: {key}": value for key, value in period_values.items()}
         if not served and not_served is None:
             not_served = period
-    explanation = " ".join(sentences) + f" {_NOTES}"
+    explanation = " ".join(sentences) + f" {_notes(clock)}"
     return _result(
         **rule,
         status="failed" if not_served else "satisfied",
@@ -426,39 +440,19 @@ def permanent_exclusions(data: EligibilityInput) -> CheckResult:
 
 def room_rent_sub_limit(data: EligibilityInput) -> CheckResult:
     rule = {"rule_id": "room_rent_sub_limit", "title": "Room rent limit", "critical": False}
-    profile, claim = data.coverage_profile, data.claim
-    caps = [limit for limit in profile.sub_limits if limit.category == "room_rent"] if profile else []
+    claim = data.claim
+    found = room_rent_cap(data.coverage_profile)
 
     if claim.planned_room_rent_per_day is None:
         return _result(**rule, status="unknown", confidence=USER_FACT,
                        explanation="We don't know the room rent you will pay, so it can't be compared with your policy's limit.",
-                       clause=caps[0].cap_amount if len(caps) == 1 else None, missing=(ROOM_RENT,))
-    if len(caps) != 1:
-        reason = "no room rent limit was found" if not caps else "more than one room rent limit was found"
+                       clause=found.clause, missing=(ROOM_RENT,))
+    if isinstance(found, NoCap):
         return _result(**rule, status="unknown", confidence="low",
-                       explanation=f"In your policy's extracted terms {reason}, so the room rent can't be checked.",
-                       missing=(policy_term("room rent limit"),))
+                       explanation=f"In your policy's extracted terms {found.reason}, so the room rent can't be checked.",
+                       clause=found.clause, missing=(policy_term("room rent limit per day"),))
 
-    limit = caps[0]
-    rent = claim.planned_room_rent_per_day
-    if limit.cap_basis == "per_day" and limit.cap_amount.value is not None:
-        cap = limit.cap_amount.value
-        confidence = of_extracted(limit.cap_amount)
-        how = f"Your policy caps room rent at {format_rupees(cap)} per day."
-        clause = limit.cap_amount
-    elif limit.cap_basis == "percent_of_sum_insured" and limit.percent_value is not None and profile and profile.sum_insured.value is not None:
-        cap = percent_cap(profile.sum_insured.value, limit.percent_value)
-        confidence = lowest(of_extracted(limit.cap_amount), of_extracted(profile.sum_insured))
-        how = (
-            f"Your policy caps room rent per day at {limit.percent_value:g} in every 100 of the sum insured: "
-            f"{format_rupees(profile.sum_insured.value)} x {limit.percent_value:g} / 100 = {format_rupees(cap)} per day."
-        )
-        clause = limit.cap_amount
-    else:
-        return _result(**rule, status="unknown", confidence="low",
-                       explanation="Your policy's room rent limit is not stated per day or as a share of the sum insured, so it can't be compared.",
-                       clause=limit.cap_amount, missing=(policy_term("room rent limit per day"),))
-
+    rent, cap, how, clause, confidence = claim.planned_room_rent_per_day, found.per_day, found.how, found.clause, found.confidence
     values: dict[str, Value] = {"room_rent_per_day": rent, "room_rent_cap_per_day": cap}
     if rent <= cap:
         return _result(**rule, status="satisfied", confidence=confidence, values=values, clause=clause,

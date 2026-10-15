@@ -15,12 +15,13 @@ BOUNDARY
 
 START OF THE CLOCK
     Waiting periods really run from the first inception of continuously
-    renewed cover. Only the current policy's start date is stored, so it is
-    used, and every explanation says so.
+    renewed cover. If the user has given that date, it is used. Otherwise
+    the current policy's start date is used, and every explanation says so.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -33,6 +34,41 @@ ASSUMPTION_START_DATE = (
     "Counted from the policy start date we hold. If your cover has been renewed without a break, "
     "waiting periods usually run from the first policy's start, which could be earlier."
 )
+
+
+@dataclass(frozen=True)
+class WaitingClock:
+    """The date waiting periods are counted from, and how to talk about it."""
+
+    start: date
+    # True when the user gave the first inception date of continuous cover.
+    from_first_inception: bool
+
+    @property
+    def value_key(self) -> str:
+        """The name the date goes under in a check's `values`, so it says which date it is."""
+        return "first_inception_date" if self.from_first_inception else "policy_start"
+
+    @property
+    def started(self) -> str:
+        """Start of a sentence: 'Your policy started 14 Mar 2024'."""
+        subject = "Your continuous cover started" if self.from_first_inception else "Your policy started"
+        return f"{subject} {format_date(self.start)}"
+
+    @property
+    def note(self) -> str:
+        if self.from_first_inception:
+            return f"Counted from {format_date(self.start)}, the date you gave as the start of your cover with no break since."
+        return ASSUMPTION_START_DATE
+
+
+def waiting_clock(start_date: date | None, first_inception_date: date | None) -> WaitingClock | None:
+    """First inception if the user gave it, else the policy start date, else None (not known)."""
+    if first_inception_date is not None:
+        return WaitingClock(first_inception_date, True)
+    if start_date is not None:
+        return WaitingClock(start_date, False)
+    return None
 
 
 def add_months(start: date, months: int) -> date:

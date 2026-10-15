@@ -41,20 +41,20 @@ ELIGIBILITY_RULES: tuple[EligibilityRule, ...] = (
     ),
     EligibilityRule(
         "initial_waiting_period", "Initial waiting period", True,
-        ("waiting_periods[initial].months",), ("policy.start_date", "claim.admitted_on"),
+        ("waiting_periods[initial].months",), ("policy.first_inception_date or policy.start_date", "claim.admitted_on"),
         "failed if admitted before start + months; satisfied on or after", eligibility.initial_waiting_period,
     ),
     EligibilityRule(
         "ped_waiting_period", "Pre-existing disease waiting period", True,
         ("waiting_periods[pre_existing].months",),
-        ("facts.condition_is_pre_existing", "facts.first_diagnosed_on", "policy.start_date", "claim.admitted_on"),
-        "satisfied if not pre-existing or period served; at risk if 'not pre-existing' but diagnosed before the start date; "
+        ("facts.condition_is_pre_existing", "facts.first_diagnosed_on", "policy.first_inception_date or policy.start_date", "claim.admitted_on"),
+        "satisfied if not pre-existing or period served; at risk if 'not pre-existing' but diagnosed before cover started; "
         "failed if pre-existing and admitted before start + months; unknown if either fact is missing",
         eligibility.ped_waiting_period,
     ),
     EligibilityRule(
         "disease_specific_waiting_period", "Waiting period for specific conditions", True,
-        ("waiting_periods[disease_specific].months",), ("facts.matched_waiting_periods", "policy.start_date", "claim.admitted_on"),
+        ("waiting_periods[disease_specific].months",), ("facts.matched_waiting_periods", "policy.first_inception_date or policy.start_date", "claim.admitted_on"),
         "satisfied if the user chose none, or every chosen period is served; failed if one is not served; unknown if not answered",
         eligibility.disease_specific_waiting_period,
     ),
@@ -87,9 +87,9 @@ ELIGIBILITY_RULES: tuple[EligibilityRule, ...] = (
 
 ALERT_RULES: tuple[AlertRule, ...] = (
     AlertRule(
-        "waiting_period_expiring", "info", ("waiting_periods[*].months", "policy.start_date"),
+        "waiting_period_expiring", "info", ("waiting_periods[*].months", "policy.first_inception_date or policy.start_date"),
         f"a waiting period ends within the next {alerts.EXPIRING_WITHIN_DAYS} days",
-        "no policy start date, or the period is not in whole months", False,
+        "neither date is known, or the period is not in whole months", False,
     ),
     AlertRule(
         "renewal_due", "warning", ("policy.end_date",),
@@ -104,7 +104,8 @@ ALERT_RULES: tuple[AlertRule, ...] = (
         "the sum insured is below the reference figure for the household's size", "no sum insured extracted", True,
     ),
     AlertRule(
-        "room_rent_below_market", "warning", ("sub_limits[room_rent]", "household city"),
-        "the room rent cap is well below the typical rate in the household's city", "no household city is stored (always, for now)", True,
+        "room_rent_below_market", "info", ("sub_limits[room_rent]", "sum_insured", "household.city_tier"),
+        "the room rent cap per day is below the typical rate for the household's kind of city",
+        "the household has not chosen a city tier, chose 'other', or no single room rent cap per day can be worked out", True,
     ),
 )

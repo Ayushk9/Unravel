@@ -4,7 +4,7 @@ Nothing is stored and nothing runs on a schedule: the alerts for a policy
 are a function of the policy, the household and today's date.
 
 An alert that needs an input the system does not have (the household's
-city, a policy start date) is not guessed. It is skipped, and the reason is
+kind of city, a policy start date) is not guessed. It is skipped, and the reason is
 returned so the caller can log it.
 
 An alert that relies on a reference figure nobody has verified says it is
@@ -22,9 +22,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from contracts.models import CoverageProfile
 
-from engines.rules.dates import add_months, format_date, whole_months
+from engines.rules.dates import add_months, format_date, waiting_clock, whole_months
 from engines.rules.models import AlertInput, AlertKind, AlertResult, AlertsOutcome, SkippedAlert
 from engines.rules.money import format_rupees
+from engines.rules.room_rent import NoCap, room_rent_cap
 
 EXPIRING_WITHIN_DAYS = 90
 RENEWAL_WITHIN_DAYS = 30
@@ -87,17 +88,18 @@ def compute_alerts(data: AlertInput, reference: Reference, today: date) -> Alert
     else:
         _maternity(data, profile, alerts)
         _low_sum_insured(data, profile, reference, alerts, skip)
-        skip("room_rent_below_market", "the household's city is not stored, so a typical local room rate cannot be chosen")
+        _room_rent_below_market(data, profile, reference, alerts, skip)
     return AlertsOutcome(alerts=tuple(alerts), skipped=tuple(skipped))
 
 
 def _waiting_periods_ending(data: AlertInput, profile: CoverageProfile | None, today: date, alerts: list[AlertResult], skip) -> None:
     if profile is None or not profile.waiting_periods:
         return
-    start = data.policy.start_date
-    if start is None:
-        skip("waiting_period_expiring", "the policy start date is not known")
+    clock = waiting_clock(data.policy.start_date, data.policy.first_inception_date)
+    if clock is None:
+        skip("waiting_period_expiring", "neither the policy start date nor the first inception date is known")
         return
+    start = clock.start
     horizon = today + timedelta(days=EXPIRING_WITHIN_DAYS)
     for position, period in enumerate(profile.waiting_periods):
         months = whole_months(period.months.value)
@@ -121,9 +123,8 @@ def _waiting_periods_ending(data: AlertInput, profile: CoverageProfile | None, t
                 severity="info",
                 title=f"Your {what} ends in {days_left} day{'' if days_left == 1 else 's'}",
                 explanation=(
-                    f"The {months}-month {what}, counted from your policy start on {format_date(start)}, ends on "
-                    f"{format_date(end)}. Treatment from that date is no longer held back by it. If your cover has been "
-                    "renewed without a break, the period may have started earlier than this policy."
+                    f"The {months}-month {what} ends on {format_date(end)}. Treatment from that date is no longer "
+                    f"held back by it. {clock.note}"
                 ),
                 suggested_action="If you have been waiting on planned treatment for this, check with your insurer before booking.",
                 reference_source=None,
@@ -214,5 +215,44 @@ def _low_sum_insured(data: AlertInput, profile: CoverageProfile, reference: Refe
             triggers_on=None,
             verified=source.verified,
             provenance=sum_insured.provenance,
+        )
+    )
+
+
+def _room_rent_below_market(data: AlertInput, profile: CoverageProfile, reference: Reference, alerts: list[AlertResult], skip) -> None:
+    tier = data.household_city_tier
+    if tier is None:
+        skip("room_rent_below_market", "the household has not said what kind of city it lives in")
+        return
+    typical = reference.typical_room_rent_per_day.get(tier)
+    if typical is None:
+        skip("room_rent_below_market", f"there is no typical room rate on file for city tier '{tier}'")
+        return
+    found = room_rent_cap(profile)
+    if isinstance(found, NoCap):
+        skip("room_rent_below_market", f"in the policy's extracted terms {found.reason}")
+        return
+    if found.per_day >= typical:
+        return
+    source = reference.typical_room_rent_source
+    place = {"metro": "a metro city", "tier_2": "a tier-2 city"}[tier]
+    alerts.append(
+        AlertResult(
+            id=_alert_id("room_rent_below_market", data),
+            policy_id=data.policy.policy_id,
+            kind="room_rent_below_market",
+            severity="info",
+            title=f"Your room rent cap may be below typical rates in {place}",
+            explanation=(
+                f"{found.how} As a rough estimate, a private single room in {place} costs about "
+                f"{format_rupees(typical)} a day, {format_rupees(typical - found.per_day)} more. If you take a room above "
+                "your cap, many policies pay other room-linked charges only in proportion, which can reduce the whole "
+                "bill. This figure is an estimate that has not been checked against a published source."
+            ),
+            suggested_action="Before a planned admission, ask the hospital for a room within your cap, or check what the difference would cost you.",
+            reference_source=source.document,
+            triggers_on=None,
+            verified=source.verified,
+            provenance=found.clause.provenance,
         )
     )

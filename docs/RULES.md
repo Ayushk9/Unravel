@@ -11,9 +11,9 @@ inputs, the values it used, a sentence showing the arithmetic, the clause it rel
 | Rule | Title | Critical | Extracted fields read | Facts read | Outcomes |
 | --- | --- | --- | --- | --- | --- |
 | `coverage_profile` | Policy coverage details | yes | - | `policy has a coverage profile` | satisfied when the policy has been read; unknown while it has not |
-| `initial_waiting_period` | Initial waiting period | yes | `waiting_periods[initial].months` | `policy.start_date`<br>`claim.admitted_on` | failed if admitted before start + months; satisfied on or after |
-| `ped_waiting_period` | Pre-existing disease waiting period | yes | `waiting_periods[pre_existing].months` | `facts.condition_is_pre_existing`<br>`facts.first_diagnosed_on`<br>`policy.start_date`<br>`claim.admitted_on` | satisfied if not pre-existing or period served; at risk if 'not pre-existing' but diagnosed before the start date; failed if pre-existing and admitted before start + months; unknown if either fact is missing |
-| `disease_specific_waiting_period` | Waiting period for specific conditions | yes | `waiting_periods[disease_specific].months` | `facts.matched_waiting_periods`<br>`policy.start_date`<br>`claim.admitted_on` | satisfied if the user chose none, or every chosen period is served; failed if one is not served; unknown if not answered |
+| `initial_waiting_period` | Initial waiting period | yes | `waiting_periods[initial].months` | `policy.first_inception_date or policy.start_date`<br>`claim.admitted_on` | failed if admitted before start + months; satisfied on or after |
+| `ped_waiting_period` | Pre-existing disease waiting period | yes | `waiting_periods[pre_existing].months` | `facts.condition_is_pre_existing`<br>`facts.first_diagnosed_on`<br>`policy.first_inception_date or policy.start_date`<br>`claim.admitted_on` | satisfied if not pre-existing or period served; at risk if 'not pre-existing' but diagnosed before cover started; failed if pre-existing and admitted before start + months; unknown if either fact is missing |
+| `disease_specific_waiting_period` | Waiting period for specific conditions | yes | `waiting_periods[disease_specific].months` | `facts.matched_waiting_periods`<br>`policy.first_inception_date or policy.start_date`<br>`claim.admitted_on` | satisfied if the user chose none, or every chosen period is served; failed if one is not served; unknown if not answered |
 | `permanent_exclusions` | Permanent exclusions | yes | `exclusions[i]` | `facts.matched_exclusions` | satisfied if the user chose none; failed if the user chose one; unknown if not answered |
 | `room_rent_sub_limit` | Room rent limit | no | `sub_limits[room_rent].cap_amount`<br>`sub_limits[room_rent].percent_value`<br>`sum_insured` | `facts.planned_room_rent_per_day` | satisfied if rent <= cap; at risk if above (proportionate deduction); percent caps in integer paise |
 | `claim_intimation` | Telling the insurer in time | no | `intimation_deadline_hours` | `claim.admitted_on`<br>`the 'intimated' event's occurred_at` | satisfied if intimated by admission date + hours (rounded up to whole days); at risk if later; unknown if the deadline was not extracted |
@@ -22,7 +22,7 @@ inputs, the values it used, a sentence showing the arithmetic, the clause it rel
 ### Conventions every check follows
 
 - **Waiting-period end:** start + N calendar months, clamped to the last day of a shorter month (31 Jan + 1 month = 28 Feb). An admission on or after the end date counts as outside the waiting period.
-- **Start of the clock:** Counted from the policy start date we hold. If your cover has been renewed without a break, waiting periods usually run from the first policy's start, which could be earlier.
+- **Start of the clock:** the policy's `first_inception_date` (the start of continuous cover) if the user gave it; otherwise its `start_date`, and the explanation then says: "Counted from the policy start date we hold. If your cover has been renewed without a break, waiting periods usually run from the first policy's start, which could be earlier."
 - **Confidence:** the lowest confidence among the check's inputs. An extracted field counts at its own confidence, or `high` if the user confirmed it. Facts the user entered and policy dates count as `high`. One low-confidence, unconfirmed input stops a check being `high`.
 - **Money:** integer paise. A cap stated as a share of the sum insured is `sum_insured x round(percent x 100) // 10000`, rounded down.
 - **Disease-specific waiting periods and exclusions** apply only when the user selects them from the policy's own list. Nothing is matched by keyword or by an LLM.
@@ -59,11 +59,11 @@ Computed on every read for each of the household's policies; nothing is stored o
 
 | Kind | Severity | Reads | Fires when | Skipped when | Uses unverified reference data |
 | --- | --- | --- | --- | --- | --- |
-| `waiting_period_expiring` | info | `waiting_periods[*].months`<br>`policy.start_date` | a waiting period ends within the next 90 days | no policy start date, or the period is not in whole months | no |
+| `waiting_period_expiring` | info | `waiting_periods[*].months`<br>`policy.first_inception_date or policy.start_date` | a waiting period ends within the next 90 days | neither date is known, or the period is not in whole months | no |
 | `renewal_due` | warning | `policy.end_date` | the policy ends within the next 30 days | no policy end date | no |
 | `no_maternity_cover` | info | `waiting_periods[maternity]` | no maternity waiting period was found in the policy's extracted terms | the policy has not been read | no |
 | `low_sum_insured` | info | `sum_insured`<br>`household member count` | the sum insured is below the reference figure for the household's size | no sum insured extracted | yes |
-| `room_rent_below_market` | warning | `sub_limits[room_rent]`<br>`household city` | the room rent cap is well below the typical rate in the household's city | no household city is stored (always, for now) | yes |
+| `room_rent_below_market` | info | `sub_limits[room_rent]`<br>`sum_insured`<br>`household.city_tier` | the room rent cap per day is below the typical rate for the household's kind of city | the household has not chosen a city tier, chose 'other', or no single room rent cap per day can be worked out | yes |
 
 Windows: waiting period ending within 90 days; policy ending within 30 days.
 

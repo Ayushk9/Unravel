@@ -28,8 +28,9 @@ low_sum_insured_source:
   url: null
   verified: false
 
-# Typical private single-room rent per day, by kind of city. Used only when the
-# household's city is known, which it never is yet, so currently unused.
+# Typical private single-room rent per day, by kind of city. The household
+# chooses its kind of city itself (metro, tier_2 or other); "other" has no
+# figure, so the room-rent alert is skipped for it.
 typical_room_rent_per_day:
   metro: 600000                  # Rs 6,000      TODO(Ayush): verify
   tier_2: 350000                 # Rs 3,500      TODO(Ayush): verify
