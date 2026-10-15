@@ -30,6 +30,9 @@ class Policy(Base):
     policy_type: Mapped[str | None] = mapped_column(Text)
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
+    # The start of cover renewed without a break, which may be years before
+    # start_date. Only the user can give it (D-39); waiting periods count from it.
+    first_inception_date: Mapped[date | None] = mapped_column(Date)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

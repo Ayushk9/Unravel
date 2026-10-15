@@ -10,13 +10,15 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Claim, ClaimEvent, Member, Policy
-from app.services.policy_reader import build_coverage_profile
+from app.db.models import Claim, ClaimEvent, Household, Member, Policy
+from app.services.policy_reader import build_coverage_profile, waiting_clock_start
 from engines.rules.models import AlertInput, ClaimFacts, EligibilityInput, PolicyFacts
 
 
 def policy_facts(policy: Policy) -> PolicyFacts:
-    return PolicyFacts(policy_id=policy.id, start_date=policy.start_date, end_date=policy.end_date)
+    return PolicyFacts(
+        policy_id=policy.id, start_date=policy.start_date, end_date=policy.end_date, first_inception_date=policy.first_inception_date
+    )
 
 
 async def eligibility_input(session: AsyncSession, claim: Claim) -> EligibilityInput:
@@ -27,7 +29,7 @@ async def eligibility_input(session: AsyncSession, claim: Claim) -> EligibilityI
     )
     return EligibilityInput(
         policy=policy_facts(policy),
-        coverage_profile=await build_coverage_profile(session, policy.id, policy.start_date),
+        coverage_profile=await build_coverage_profile(session, policy.id, waiting_clock_start(policy)),
         claim=ClaimFacts(
             claim_id=claim.id,
             admitted_on=claim.admitted_on,
@@ -43,6 +45,7 @@ async def eligibility_input(session: AsyncSession, claim: Claim) -> EligibilityI
 
 
 async def alert_inputs(session: AsyncSession, household_id) -> list[AlertInput]:
+    city_tier = await session.scalar(select(Household.city_tier).where(Household.id == household_id))
     members = await session.scalar(select(func.count()).select_from(Member).where(Member.household_id == household_id)) or 0
     policies = await session.scalars(select(Policy).where(Policy.household_id == household_id).order_by(Policy.id))
     inputs = []
@@ -50,10 +53,9 @@ async def alert_inputs(session: AsyncSession, household_id) -> list[AlertInput]:
         inputs.append(
             AlertInput(
                 policy=policy_facts(policy),
-                coverage_profile=await build_coverage_profile(session, policy.id, policy.start_date),
+                coverage_profile=await build_coverage_profile(session, policy.id, waiting_clock_start(policy)),
                 household_member_count=members,
-                # Not stored anywhere yet; the room-rent alert is skipped (D-38).
-                household_city=None,
+                household_city_tier=city_tier,
             )
         )
     return inputs

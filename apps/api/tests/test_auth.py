@@ -110,6 +110,18 @@ def test_missing_authorization_header_is_401(prod_client: TestClient) -> None:
     _assert_401(prod_client.get("/api/v1/_test/user"))
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/api/v1/household", None),
+        ("PATCH", "/api/v1/household", {"city_tier": "metro"}),
+        ("PATCH", "/api/v1/policies/01920000-0000-7000-8000-0000000000a1", {"start_date": "2024-03-14"}),
+    ],
+)
+def test_household_and_policy_date_routes_need_a_token(prod_client: TestClient, method: str, path: str, body: Any) -> None:
+    _assert_401(prod_client.request(method, path, json=body))
+
+
 @pytest.mark.parametrize("header", ["Basic dXNlcjpwYXNz", "Bearer", "Bearer    ", "token-without-scheme"])
 def test_malformed_authorization_header_is_401(prod_client: TestClient, header: str) -> None:
     _assert_401(prod_client.get("/api/v1/_test/user", headers={"Authorization": header}))

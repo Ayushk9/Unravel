@@ -16,6 +16,10 @@ The demo policy has a small generated PDF schedule, stored with the local
 storage backend, so every provenance link opens a real page and highlights
 the line the value came from. All names are fictional.
 
+If the dev household has not chosen a city tier, it is set to "metro" so the
+room-rent alert can be seen (Rs 5,000 cap below the unverified Rs 6,000
+estimate). A tier the household already chose is left alone.
+
     Claim                     Band                       Why
     Vikram, emergency         likely_eligible            every check satisfied
     Ananya, planned           at_risk                    room rent Rs 8,000/day over a Rs 5,000/day cap
@@ -40,7 +44,7 @@ from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
-from app.db.models import Claim, ClaimEvent, Document, Member, Policy, policy_member  # noqa: E402
+from app.db.models import Claim, ClaimEvent, Document, Household, Member, Policy, policy_member  # noqa: E402
 from app.db.session import create_engine, create_session_factory  # noqa: E402
 from app.services.policy_writer import store_extraction  # noqa: E402
 from app.storage.base import build_object_path  # noqa: E402
@@ -293,8 +297,14 @@ async def main() -> None:
             raise SystemExit(f"Run scripts/seed.py first: members missing: {missing}")
         policy_id = await seed_policy(session, settings)
         created = await seed_claims(session, policy_id)
+        household = await session.get(Household, HOUSEHOLD_ID)
+        set_tier = household.city_tier is None
+        if set_tier:
+            household.city_tier = "metro"
+        tier = household.city_tier
     await engine.dispose()
     print(f"Demo policy {policy_id} ({POLICY_NUMBER}).")
+    print(f"Household city tier: {tier}" + (" (set now)" if set_tier else " (already chosen; left alone)"))
     print("Created claims:" if created else "All four demo claims already existed; nothing written.")
     for line in created:
         print(f"  {line}")

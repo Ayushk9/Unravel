@@ -66,10 +66,10 @@ def test_get_policy_returns_every_field_as_extracted_with_provenance(shared: Sim
     policy = response.json()
     assert set(policy) == {
         "id", "insurer", "policy_number", "product_name", "policy_type", "start_date", "end_date",
-        "members", "coverage_profile", "source_document_id",
+        "first_inception_date", "members", "coverage_profile", "source_document_id",
     }
-    # Not extracted by Engine A: sent as null, with every key still present (D-05, D-25).
-    assert [policy[key] for key in ("insurer", "policy_number", "product_name", "start_date", "end_date")] == [None] * 5
+    # Not extracted by Engine A: sent as null, with every key still present (D-05, D-25, D-39).
+    assert [policy[key] for key in ("insurer", "policy_number", "product_name", "start_date", "end_date", "first_inception_date")] == [None] * 6
     assert policy["policy_type"] == "other"
     assert policy["members"] == []
     assert policy["source_document_id"] == shared.document_id

@@ -28,6 +28,11 @@ from contracts.models import CoverageProfile, SubLimit, WaitingPeriod
 from engines.rules.dates import add_months, whole_months
 
 
+def waiting_clock_start(row: PolicyRow) -> date | None:
+    """The date waiting periods count from: first inception if the user gave it, else the policy start (D-39)."""
+    return row.first_inception_date or row.start_date
+
+
 def _period_dates(start_date: date | None, months: float | None) -> dict[str, date | None]:
     whole = whole_months(months)
     if start_date is None or whole is None:
@@ -63,15 +68,18 @@ async def build_policy(session: AsyncSession, row: PolicyRow) -> Policy:
         product_name=row.product_name,
         start_date=row.start_date,
         end_date=row.end_date,
+        first_inception_date=row.first_inception_date,
         policy_type=row.policy_type or "other",
         members=[Member.model_validate(member) for member in member_rows],
-        coverage_profile=await build_coverage_profile(session, row.id, row.start_date),
+        coverage_profile=await build_coverage_profile(session, row.id, waiting_clock_start(row)),
         source_document_id=row.source_document_id,
     )
 
 
 async def build_coverage_profile(session: AsyncSession, policy_id: UUID, start_date: date | None = None) -> CoverageProfile | None:
-    """The coverage profile, with each waiting period's starts_on / expires_on filled in when the policy start date is known.
+    """The coverage profile, with each waiting period's starts_on / expires_on filled in when `start_date` is known.
+
+    Callers pass waiting_clock_start(policy), so the periods count from first inception when the user gave it.
 
     The contract marks those two dates "derived server-side": they are computed here from the start date and the month
     count, with the same calendar rule the eligibility engine uses, and never stored.

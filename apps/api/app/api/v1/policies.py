@@ -2,23 +2,27 @@
 
 GET   /policies                                               CONTRACTS.md row 7
 GET   /policies/{id}                                          CONTRACTS.md row 9
+PATCH /policies/{id}                                          CONTRACTS.md row 27, D-39
 PATCH /policies/{id}/coverage-profile/fields/{field_path}     CONTRACTS.md row 10, D-15
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.claims.deadlines import india_date
 from app.core.auth import CurrentHousehold, get_current_household
 from app.core.errors import ApiError
 from app.db.session import get_session
 from app.schemas.errors import FieldError
-from app.schemas.policies import FieldCorrectionRequest, Policy
+from app.schemas.policies import FieldCorrectionRequest, Policy, PolicyDatesUpdate
 from app.services.field_correction import correct_field, find_profile
+from app.services.policy_dates import apply_dates
 from app.services.policy_reader import build_policy, find_policy_row, list_policy_rows
 
 router = APIRouter()
@@ -47,6 +51,22 @@ async def get_policy(
     row = await find_policy_row(session, household.household_id, policy_id)
     if row is None:
         raise _policy_not_found()
+    return await build_policy(session, row)
+
+
+@router.patch("/policies/{policy_id}")
+async def update_policy_dates(
+    policy_id: UUID,
+    body: PolicyDatesUpdate,
+    household: Annotated[CurrentHousehold, Depends(get_current_household)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Policy:
+    """Set the dates from the user's policy schedule: start, end, and first inception of continuous cover (D-39)."""
+    row = await find_policy_row(session, household.household_id, policy_id)
+    if row is None:
+        raise _policy_not_found()
+    apply_dates(row, body, india_date(datetime.now(timezone.utc)))
+    await session.commit()
     return await build_policy(session, row)
 
 

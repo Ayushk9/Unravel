@@ -23,6 +23,9 @@ class Policy(ApiModel):
     product_name: str | None
     start_date: date | None
     end_date: date | None
+    # The start of cover renewed without a break, given by the user (D-39).
+    # Waiting periods are counted from it when it is set.
+    first_inception_date: date | None
     # Never null: an unknown type is sent as the enum's escape hatch, "other".
     policy_type: PolicyType
     members: list[Member]
@@ -37,3 +40,16 @@ class FieldCorrectionRequest(ApiModel):
     # Checked against the specific field's type in services/field_correction.py.
     value: int | float | str | bool | None
     user_confirmed: bool
+
+
+class PolicyDatesUpdate(ApiModel):
+    """Body of PATCH /policies/{id} (D-39): the dates printed on the user's schedule.
+
+    Only the keys present in the body are changed; a key sent as null clears
+    that date. A key left out keeps its current value. That is why each field
+    has a default: the route reads `model_fields_set` to tell "left out" from "null".
+    """
+
+    start_date: date | None = None
+    end_date: date | None = None
+    first_inception_date: date | None = None
