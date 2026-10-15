@@ -22,7 +22,7 @@ from tests.db import ApiTester, Database, run
 ENVELOPE_KEYS = {"code", "message", "field_errors", "request_id", "retryable"}
 CLAIM_KEYS = {
     "id", "policy_id", "member_id", "claim_type", "admission_type", "hospital_name", "admitted_on", "discharged_on",
-    "claimed_amount", "settled_amount", "current_state", "events", "deadlines", "omitted_deadlines",
+    "claimed_amount", "settled_amount", "current_state", "events", "deadlines", "omitted_deadlines", "facts",
 }
 
 
