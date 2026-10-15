@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, Field, StringConstraints, model_validator
+from pydantic import AwareDatetime, Field, StrictBool, StringConstraints, model_validator
 
 from app.schemas.base import ApiModel
 from app.schemas.documents import DocumentType
@@ -60,6 +60,27 @@ class OmittedDeadline(ApiModel):
     reason: str
 
 
+class ClaimFacts(ApiModel):
+    """What the user has told us about the illness and the stay (D-37).
+
+    Every field may be null, meaning "not answered". The eligibility rules
+    report a check as unknown when the fact it needs is null; nothing is guessed.
+    """
+
+    # Display text only: no rule reads it.
+    diagnosis: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None
+    # Strict: "yes" or 1 is refused, not quietly read as true.
+    condition_is_pre_existing: StrictBool | None
+    first_diagnosed_on: date | None
+    # Positions (0-based) in the policy's coverage_profile.waiting_periods that
+    # apply to this illness. Null: not answered. []: none apply.
+    matched_waiting_periods: list[Annotated[int, Field(strict=True, ge=0)]] | None
+    # Positions in coverage_profile.exclusions. Null: not answered. []: none apply.
+    matched_exclusions: list[Annotated[int, Field(strict=True, ge=0)]] | None
+    # Integer paise per day.
+    planned_room_rent_per_day: Annotated[int, Field(strict=True, ge=0)] | None
+
+
 class Claim(ApiModel):
     id: UUID
     policy_id: UUID
@@ -78,6 +99,7 @@ class Claim(ApiModel):
     # Computed on every read from the events and the policy (D-17).
     deadlines: list[Deadline]
     omitted_deadlines: list[OmittedDeadline]
+    facts: ClaimFacts
 
 
 class ClaimCreateRequest(ApiModel):

@@ -7,6 +7,7 @@ returns 404 rather than 403 for other people's data (D-10).
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
@@ -24,6 +25,14 @@ from app.schemas.household import Insurer, Member
 from app.schemas.policies import Policy
 from app.services.extracted_columns import columns_to_extracted
 from contracts.models import CoverageProfile, SubLimit, WaitingPeriod
+from engines.rules.dates import add_months, whole_months
+
+
+def _period_dates(start_date: date | None, months: float | None) -> dict[str, date | None]:
+    whole = whole_months(months)
+    if start_date is None or whole is None:
+        return {"starts_on": None, "expires_on": None}
+    return {"starts_on": start_date, "expires_on": add_months(start_date, whole)}
 
 
 async def find_policy_row(session: AsyncSession, household_id: UUID, policy_id: UUID) -> PolicyRow | None:
@@ -56,12 +65,17 @@ async def build_policy(session: AsyncSession, row: PolicyRow) -> Policy:
         end_date=row.end_date,
         policy_type=row.policy_type or "other",
         members=[Member.model_validate(member) for member in member_rows],
-        coverage_profile=await _build_coverage_profile(session, row.id),
+        coverage_profile=await build_coverage_profile(session, row.id, row.start_date),
         source_document_id=row.source_document_id,
     )
 
 
-async def _build_coverage_profile(session: AsyncSession, policy_id: UUID) -> CoverageProfile | None:
+async def build_coverage_profile(session: AsyncSession, policy_id: UUID, start_date: date | None = None) -> CoverageProfile | None:
+    """The coverage profile, with each waiting period's starts_on / expires_on filled in when the policy start date is known.
+
+    The contract marks those two dates "derived server-side": they are computed here from the start date and the month
+    count, with the same calendar rule the eligibility engine uses, and never stored.
+    """
     profile = await session.scalar(select(CoverageProfileRow).where(CoverageProfileRow.policy_id == policy_id))
     if profile is None:
         return None
@@ -97,8 +111,7 @@ async def _build_coverage_profile(session: AsyncSession, policy_id: UUID) -> Cov
                 kind=row.kind,
                 months=columns_to_extracted(row, "months"),
                 applies_to=row.applies_to,
-                starts_on=row.starts_on,
-                expires_on=row.expires_on,
+                **_period_dates(start_date, row.months_value),
             )
             for row in waiting_periods
         ],

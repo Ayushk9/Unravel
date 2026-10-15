@@ -25,6 +25,19 @@ from app.db.models import ClaimEvent as ClaimEventRow
 from app.db.models import CoverageProfile, claim_current_state
 from app.rules.loader import load_deadline_rules
 from app.schemas.claims import Claim, ClaimEvent
+from app.schemas.claims import ClaimFacts as WireClaimFacts
+
+
+def facts_of(row: ClaimRow) -> WireClaimFacts:
+    """What the user has told us about the claim, as sent on the wire (D-37)."""
+    return WireClaimFacts(
+        diagnosis=row.diagnosis,
+        condition_is_pre_existing=row.condition_is_pre_existing,
+        first_diagnosed_on=row.first_diagnosed_on,
+        matched_waiting_periods=list(row.matched_waiting_periods) if row.matched_waiting_periods is not None else None,
+        matched_exclusions=list(row.matched_exclusions) if row.matched_exclusions is not None else None,
+        planned_room_rent_per_day=row.planned_room_rent_per_day,
+    )
 
 
 async def find_claim_row(session: AsyncSession, household_id: UUID, claim_id: UUID) -> ClaimRow | None:
@@ -102,6 +115,7 @@ async def build_claims(session: AsyncSession, rows: list[ClaimRow], today: date)
                 ],
                 deadlines=deadlines,
                 omitted_deadlines=omitted,
+                facts=facts_of(row),
             )
         )
     return claims

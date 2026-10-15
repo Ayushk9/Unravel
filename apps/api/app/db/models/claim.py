@@ -6,7 +6,9 @@ from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    ARRAY,
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     Date,
@@ -56,6 +58,20 @@ class Claim(Base):
     # Integer paise.
     claimed_amount: Mapped[int | None] = mapped_column(BigInteger)
     settled_amount: Mapped[int | None] = mapped_column(BigInteger)
+
+    # --- facts the user tells us, read by the eligibility rules (D-37) ---
+    # Every one is nullable: null means "not answered yet", which the rules
+    # report as unknown rather than guess.
+    # Display text only. No rule reads it: diagnoses are never matched by keyword.
+    diagnosis: Mapped[str | None] = mapped_column(Text)
+    condition_is_pre_existing: Mapped[bool | None] = mapped_column(Boolean)
+    first_diagnosed_on: Mapped[date | None] = mapped_column(Date)
+    # Positions in the policy's waiting_periods / exclusions lists the user
+    # says apply. Null: not answered. Empty array: none apply.
+    matched_waiting_periods: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
+    matched_exclusions: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
+    planned_room_rent_per_day: Mapped[int | None] = mapped_column(BigInteger)  # paise
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
