@@ -74,7 +74,7 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 8 | `POST /policies` | `{ source_document_id }` | `Policy` | 401, 409, 422 | Sync | — | — |
 | 9 | `GET /policies/{id}` | — | `Policy` (embeds `coverage_profile`; identity fields nullable, D-25) | 401, 404 | Sync | — | — |
 | 10 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }`; list rows addressed by position, e.g. `sub_limits.2.cap_amount` (D-41) | `Policy` | 401, 404, 409 (profile not ready, or a category path matches several rows, D-30), 422 | Sync | — | — |
-| 11 | `POST /policies/{id}/questions` | `{ question }` | 202 `JobAccepted` (kind `answer_question`) | 401, 404 | **Job**, 3–6s | — | — |
+| 11 | `POST /policies/{id}/questions` | `{ question }` (1–500 chars, D-42) | 202 `JobAccepted` (kind `answer_question`); result `QuestionAnswerResult` + `verification` (D-42) | 401, 404, 409 `policy_not_indexed`, 422 | **Job**, seconds | — | — |
 | 12 | `GET /members` | — | `Member[]` | 401 | Sync | No (full array) | — |
 | 13 | `GET /claims` | — | `Claim[]` (with `omitted_deadlines`, D-33) | 401 | Sync | No (full array, D-31) | — |
 | 14 | `POST /claims` | `ClaimCreateRequest` | 201 `Claim` | 401, 422 | Sync | — | — |
@@ -263,7 +263,7 @@ assumption so Phase 2 could proceed; none should be read as settled.
    flagging that it's load-bearing here: the Ombudsman filing deadline shown on the
    denied claim fixture is computed from a placeholder, not a real figure.
 
-9. **Citation-marker convention in generated prose is unratified** (added in Phase
+9. **Resolved by D-42 for Q&A.** Original note: **Citation-marker convention in generated prose is unratified** (added in Phase
    3). Q&A answers embed `[[n]]` tokens in the text so the frontend can render
    clickable superscripts; nothing in `API_DECISIONS.md` specifies this, and
    Feature 7 (grievance drafting, Phase 5) will need the same mechanism. See §3.

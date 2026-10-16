@@ -199,6 +199,7 @@ The server returns `due_at`, `days_remaining`, `basis`, and `urgency`. The clien
 *Revisit:* if real policy PDFs exceed 25 MB, or if the FastAPI host's request timeout becomes the bottleneck on slow campus uploads.
 
 ### D-19 · LLM response caching is invisible to the client
+*Amended by D-42 for Q&A: the cache key and the absence of `X-Cache`.*
 Grounded Q&A responses are cached by a hash of (retrieved chunk ids + normalised question) for 24 h. Grievance generation is **not** cached. Cache status appears in an `X-Cache: hit|miss` header for debugging only; the UI does not render it.
 
 *Why:* Gemini free-tier quota is a real constraint during demo season, and Q&A is the endpoint a panel will hammer. Grievance drafts must not be cached because the underlying claim facts change between attempts.
@@ -432,6 +433,45 @@ The category / kind form (`sub_limits.room_rent.cap_amount`) still works and is 
 *Why:* closes D-30's revisit. Positions are what D-37 already uses for the same lists, so a client addresses a row the same way everywhere.
 *Ratified:* 2026-10-16. Additive.
 *Revisit:* if rows get stable ids (D-37's revisit), address by id instead.
+
+### D-42 · Policy Q&A: request, result, verification and caching
+Specifies `POST /api/v1/policies/{id}/questions` (CONTRACTS.md row 11), whose job result was never pinned down.
+
+**Request:** `{ "question": string }`, 1–500 characters after trimming, otherwise `422`. Any language; Hindi and Marathi are recognised by their script. Errors:
+- another household's policy, or an unknown one, is `404`;
+- a policy that has not been read and indexed yet (no stored clauses, or clauses without search vectors) is `409` with `error.code = "policy_not_indexed"`, per D-04.
+
+Otherwise `202 JobAccepted` with `kind: "answer_question"`. No `Idempotency-Key` (D-13 unchanged).
+
+**Progress:** `progress.step` runs `retrieving`, `generating`, `verifying`, then `done`.
+
+**Result** (`Job.result` when `succeeded`) is `QuestionAnswerResult` plus one additive field:
+```json
+{
+  "answer": "Your policy caps room rent at Rs 5,000 per day. [[1]] ...",
+  "citations": [{ "id": "<chunk id>", "kind": "policy_clause", "label": "Page 2",
+                  "provenance": { "document_id": "...", "page": 2, "bbox": [0.1, 0.2, 0.6, 0.23], "snippet": "..." },
+                  "external_url": null }],
+  "abstained": false,
+  "missing_context": null,
+  "verification": { "sentences_checked": 3, "sentences_removed": 1 }
+}
+```
+- **Citation markers (ratifies CONTRACTS §4 item 9):** `answer` is a sequence of sentences, each followed by one or more `[[n]]` markers, where `n` is the 1-indexed position in `citations`. Every citation is referenced at least once. Each citation is one clause (chunk) of the policy's own document, with its page and normalised bbox (D-23), so a client opens the exact clause.
+- **Verification:** every generated sentence is checked before it is sent.
+  - Every number in it must appear in a cited clause or in the user's own question.
+  - A second model call must judge at least one cited clause to support it.
+  - A sentence that fails is **left out of `answer`**; its text is never sent. `verification` reports how many sentences were checked and how many were removed, so a client can say so.
+  - A citation judged not to support its sentence is dropped.
+- **Abstention:** `abstained: true`, `answer: ""`, `citations: []` and `missing_context` set to a sentence. This happens when the clauses don't answer the question, or when no sentence survives verification. Abstention is a normal result, not an error.
+- **Language:** answers are in English whatever the question's language. A non-English question is rewritten into English search terms for retrieval only; the original question is stored unchanged.
+
+**Caching (amends D-19):** a result is cached for 24 h, keyed by the document's SHA-256, the normalised question, the prompt version and the model. A hit makes no model call at all. There is no `X-Cache` header: the answer arrives through `GET /jobs/{id}`, not the response that queued it. Hit or miss is recorded server-side.
+
+**Parse progress (amends D-28):** a policy parse gains a step `indexing` between `storing` and `done`. Indexing failure does not fail the parse; questions on that policy are `409 policy_not_indexed` until it is re-indexed.
+
+*Ratified:* 2026-10-16. Additive except the D-19 amendment.
+*Revisit:* when grievance drafting (Feature 7) reuses the marker convention.
 
 ---
 
