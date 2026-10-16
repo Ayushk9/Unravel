@@ -70,6 +70,15 @@ export interface CoverageProfile {
   extraction_completeness: number; // 0..1, drives the "review these fields" banner
 }
 
+// D-40: the household's own choice of what kind of city it lives in. "other" is the escape hatch.
+export type CityTier = "metro" | "tier_2" | "other";
+
+export interface Household {
+  id: UUID;
+  name: string;
+  city_tier: CityTier | null; // null until the household chooses
+}
+
 export interface Member {
   id: UUID;
   full_name: string;
@@ -88,6 +97,9 @@ export interface Policy {
   policy_type: "individual" | "family_floater" | "group_employer" | "top_up" | "other";
   start_date: ISODate | null;
   end_date: ISODate | null;
+  // D-39: the start of cover renewed without a break, entered by the user.
+  // Waiting periods count from it when set, otherwise from start_date.
+  first_inception_date: ISODate | null;
   members: Member[];
   coverage_profile: CoverageProfile | null; // null while parsing
   source_document_id: UUID;
@@ -133,14 +145,30 @@ export interface DocumentFile {
 // --- Engine B: eligibility ---
 export type CheckStatus = "satisfied" | "at_risk" | "failed" | "unknown";
 
+// D-36: a fact a check needs and doesn't have, and where to get it.
+export interface MissingFact {
+  fact: string;
+  where_to_get: string;
+  // A document type that would provide it; null when no document does (e.g. "is it pre-existing?").
+  resolving_document: DocumentType | null;
+}
+
+// D-36: what a check's sentence was rendered from. Dates are "YYYY-MM-DD",
+// month/day counts and paise are integers. Keys are rule-specific.
+export type CheckValue = string | number | boolean | null;
+
 export interface EligibilityCheck {
   id: string; // stable rule id, e.g. "ped_waiting_period"
   title: string; // "Pre-existing disease waiting period"
   status: CheckStatus;
   explanation: string; // plain language, includes date arithmetic
   governing_clause: Provenance | null;
-  missing_fact: string | null; // set when status === "unknown"
-  resolving_document: DocumentType | null;
+  missing_fact: string | null; // the first of missing_facts, for older clients
+  resolving_document: DocumentType | null; // ditto
+  // D-36: the lowest confidence among the check's inputs. A three-level label, never a probability.
+  confidence: Confidence;
+  values: Record<string, CheckValue>;
+  missing_facts: MissingFact[];
 }
 
 export interface EligibilityAssessment {
@@ -151,6 +179,8 @@ export interface EligibilityAssessment {
   band: "likely_eligible" | "at_risk" | "likely_ineligible" | "insufficient_information";
   checks: EligibilityCheck[];
   ombudsman_precedent: OmbudsmanAward[]; // similar fact patterns, may be empty
+  // D-36: why ombudsman_precedent is empty, e.g. "Precedent corpus not yet loaded ...".
+  ombudsman_precedent_note: string | null;
   generated_at: ISODateTime;
 }
 
@@ -267,6 +297,18 @@ export interface Claim {
   events: ClaimEvent[];
   deadlines: Deadline[];
   omitted_deadlines: OmittedDeadline[];
+  facts: ClaimFacts; // D-37
+}
+
+// D-37: what the user has told us about the illness and the stay. null means
+// "not answered" (the rule that needs it says unknown); [] means "none apply".
+export interface ClaimFacts {
+  diagnosis: string | null; // display only; no rule reads it
+  condition_is_pre_existing: boolean | null;
+  first_diagnosed_on: ISODate | null;
+  matched_waiting_periods: number[] | null; // positions in coverage_profile.waiting_periods (disease_specific only)
+  matched_exclusions: number[] | null; // positions in coverage_profile.exclusions
+  planned_room_rent_per_day: Paise | null;
 }
 
 // --- Engine C: grounded generation ---
@@ -302,7 +344,7 @@ export interface OmbudsmanAward {
 
 // --- Engine B: alerts ---
 export interface Alert {
-  id: UUID;
+  id: string; // D-38: deterministic, e.g. "alert-low_sum_insured-<policy_id>", not a UUID
   policy_id: UUID;
   kind:
     | "room_rent_below_market"
@@ -317,6 +359,10 @@ export interface Alert {
   suggested_action: string | null;
   reference_source: string | null; // for estimate-based alerts
   triggers_on: ISODate | null;
+  // D-38: false when the alert rests on a reference figure nobody has checked. Show it as an estimate.
+  verified: boolean;
+  // D-38: the policy field the alert is based on; null when it is about something not being found.
+  provenance: Provenance | null;
 }
 
 // --- Engine D: benchmarking ---
@@ -397,6 +443,28 @@ export interface PolicyCreateRequest {
   source_document_id: UUID;
 }
 
+// D-39: only the keys sent change; a key sent as null clears that date.
+export interface PolicyDatesUpdateRequest {
+  start_date?: ISODate | null;
+  end_date?: ISODate | null;
+  first_inception_date?: ISODate | null;
+}
+
+// D-40
+export interface HouseholdUpdateRequest {
+  city_tier: CityTier | null;
+}
+
+// D-37: PUT /claims/{id}/facts is a full replacement.
+export type ClaimFactsRequest = ClaimFacts;
+
+/**
+ * D-15 / D-41: field_path is one of sum_insured, co_pay_percent,
+ * intimation_deadline_hours, sub_limits.<position>.cap_amount,
+ * waiting_periods.<position>.months. <position> is the 0-based index in the
+ * list as GET /policies/{id} returns it. The older sub_limits.<category>.cap_amount
+ * form still works but is a 409 when two rows share the category.
+ */
 export interface FieldCorrectionRequest {
   value: string | number | boolean | null;
   user_confirmed: boolean;

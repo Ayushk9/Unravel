@@ -73,6 +73,14 @@ export const coverageProfileSchema = z.object({
   extraction_completeness: z.number().min(0).max(1),
 });
 
+export const cityTierSchema = z.enum(["metro", "tier_2", "other"]).catch("other");
+
+export const householdSchema = z.object({
+  id: uuidSchema,
+  name: z.string(),
+  city_tier: cityTierSchema.nullable(),
+});
+
 export const memberSchema = z.object({
   id: uuidSchema,
   full_name: z.string(),
@@ -88,6 +96,7 @@ export const policySchema = z.object({
   policy_type: z.enum(["individual", "family_floater", "group_employer", "top_up", "other"]).catch("other"),
   start_date: isoDateSchema.nullable(),
   end_date: isoDateSchema.nullable(),
+  first_inception_date: isoDateSchema.nullable(),
   members: z.array(memberSchema),
   coverage_profile: coverageProfileSchema.nullable(),
   source_document_id: uuidSchema,
@@ -135,6 +144,15 @@ export const eligibilityCheckSchema = z.object({
   governing_clause: provenanceSchema.nullable(),
   missing_fact: z.string().nullable(),
   resolving_document: documentTypeSchema.nullable(),
+  confidence: confidenceSchema,
+  values: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  missing_facts: z.array(
+    z.object({
+      fact: z.string(),
+      where_to_get: z.string(),
+      resolving_document: documentTypeSchema.nullable(),
+    }),
+  ),
 });
 
 // Forward-declared below (ombudsmanAwardSchema) — eligibility assessments embed awards.
@@ -143,6 +161,7 @@ export const eligibilityAssessmentSchema = z.object({
   band: z.enum(["likely_eligible", "at_risk", "likely_ineligible", "insufficient_information"]),
   checks: z.array(eligibilityCheckSchema),
   ombudsman_precedent: z.array(z.lazy(() => ombudsmanAwardSchema)),
+  ombudsman_precedent_note: z.string().nullable(),
   generated_at: isoDateTimeSchema,
 });
 
@@ -232,6 +251,15 @@ export const omittedDeadlineSchema = z.object({
   reason: z.string(),
 });
 
+export const claimFactsSchema = z.object({
+  diagnosis: z.string().nullable(),
+  condition_is_pre_existing: z.boolean().nullable(),
+  first_diagnosed_on: isoDateSchema.nullable(),
+  matched_waiting_periods: z.array(z.number().int()).nullable(),
+  matched_exclusions: z.array(z.number().int()).nullable(),
+  planned_room_rent_per_day: z.number().int().nullable(),
+});
+
 export const claimSchema = z.object({
   id: uuidSchema,
   policy_id: uuidSchema,
@@ -247,6 +275,7 @@ export const claimSchema = z.object({
   events: z.array(claimEventSchema),
   deadlines: z.array(deadlineSchema),
   omitted_deadlines: z.array(omittedDeadlineSchema),
+  facts: claimFactsSchema,
 });
 
 export const citationSchema = z.object({
@@ -288,7 +317,7 @@ export const ombudsmanAwardSchema = z.object({
 });
 
 export const alertSchema = z.object({
-  id: uuidSchema,
+  id: z.string(),
   policy_id: uuidSchema,
   kind: z
     .enum([
@@ -306,6 +335,8 @@ export const alertSchema = z.object({
   suggested_action: z.string().nullable(),
   reference_source: z.string().nullable(),
   triggers_on: isoDateSchema.nullable(),
+  verified: z.boolean(),
+  provenance: provenanceSchema.nullable(),
 });
 
 export const insurerBenchmarkSchema = z.object({
