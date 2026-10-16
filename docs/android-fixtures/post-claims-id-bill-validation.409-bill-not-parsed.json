@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "bill_not_parsed",
+    "message": "This claim doesn't have a parsed itemised bill yet.",
+    "field_errors": [],
+    "request_id": "mock-req-mv7zx77w-5",
+    "retryable": false
+  }
+}

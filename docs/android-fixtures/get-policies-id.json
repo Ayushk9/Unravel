@@ -1,0 +1,155 @@
+{
+  "id": "policy-retail-individual",
+  "insurer": {
+    "id": "insurer-suraksha-general",
+    "name": "Suraksha General Insurance",
+    "irdai_code": "IRDAI-SGI-027"
+  },
+  "policy_number": "SGI/IND/2023/00456781",
+  "product_name": "Suraksha Complete Health Plan",
+  "policy_type": "individual",
+  "start_date": "2026-04-01",
+  "end_date": "2027-03-31",
+  "members": [
+    {
+      "id": "member-self",
+      "full_name": "Ananya Rao",
+      "relationship": "self",
+      "date_of_birth": "1990-02-14"
+    }
+  ],
+  "coverage_profile": {
+    "policy_id": "policy-retail-individual",
+    "sum_insured": {
+      "value": 100000000,
+      "confidence": "high",
+      "provenance": {
+        "document_id": "doc-retail-policy-schedule",
+        "page": 1,
+        "bbox": null,
+        "snippet": "Sum Insured: Rs. 10,00,000"
+      },
+      "user_confirmed": true
+    },
+    "co_pay_percent": {
+      "value": 10,
+      "confidence": "medium",
+      "provenance": {
+        "document_id": "doc-retail-policy-schedule",
+        "page": 1,
+        "bbox": null,
+        "snippet": "Co-payment: 10% of admissible claim amount"
+      },
+      "user_confirmed": false
+    },
+    "sub_limits": [
+      {
+        "category": "room_rent",
+        "label": "Room rent",
+        "cap_amount": {
+          "value": 500000,
+          "confidence": "low",
+          "provenance": {
+            "document_id": "doc-retail-policy-wording",
+            "page": 14,
+            "bbox": null,
+            "snippet": "...room rent shall not exceed Rs. 5,000 per day, beyond which..."
+          },
+          "user_confirmed": false
+        },
+        "cap_basis": "per_day",
+        "percent_value": null
+      }
+    ],
+    "waiting_periods": [
+      {
+        "kind": "initial",
+        "months": {
+          "value": 1,
+          "confidence": "high",
+          "provenance": {
+            "document_id": "doc-retail-policy-wording",
+            "page": 6,
+            "bbox": null,
+            "snippet": "Initial waiting period of 30 days from inception"
+          },
+          "user_confirmed": true
+        },
+        "applies_to": null,
+        "starts_on": "2023-04-01",
+        "expires_on": "2023-05-01"
+      },
+      {
+        "kind": "pre_existing",
+        "months": {
+          "value": 48,
+          "confidence": "high",
+          "provenance": {
+            "document_id": "doc-retail-policy-wording",
+            "page": 7,
+            "bbox": null,
+            "snippet": "Pre-existing diseases are covered after 48 months of continuous coverage"
+          },
+          "user_confirmed": true
+        },
+        "applies_to": null,
+        "starts_on": "2023-04-01",
+        "expires_on": "2027-04-01"
+      },
+      {
+        "kind": "maternity",
+        "months": {
+          "value": 24,
+          "confidence": "high",
+          "provenance": {
+            "document_id": "doc-retail-policy-wording",
+            "page": 9,
+            "bbox": null,
+            "snippet": "Maternity benefit becomes available after 24 months of continuous coverage"
+          },
+          "user_confirmed": true
+        },
+        "applies_to": null,
+        "starts_on": "2023-04-01",
+        "expires_on": "2025-04-01"
+      }
+    ],
+    "exclusions": [
+      {
+        "value": "Cosmetic surgery is excluded unless medically necessitated by an accident covered under this policy.",
+        "confidence": "high",
+        "provenance": {
+          "document_id": "doc-retail-policy-wording",
+          "page": 18,
+          "bbox": null,
+          "snippet": "Exclusion 9.4: Cosmetic surgery"
+        },
+        "user_confirmed": true
+      },
+      {
+        "value": "Dental treatment is excluded unless it requires hospitalisation due to an accident.",
+        "confidence": "high",
+        "provenance": {
+          "document_id": "doc-retail-policy-wording",
+          "page": 18,
+          "bbox": null,
+          "snippet": "Exclusion 9.6: Dental treatment"
+        },
+        "user_confirmed": true
+      }
+    ],
+    "intimation_deadline_hours": {
+      "value": 48,
+      "confidence": "medium",
+      "provenance": {
+        "document_id": "doc-retail-policy-wording",
+        "page": 22,
+        "bbox": null,
+        "snippet": "Intimation of claim within 48 hours of admission"
+      },
+      "user_confirmed": false
+    },
+    "extraction_completeness": 0.82
+  },
+  "source_document_id": "doc-retail-policy-schedule"
+}

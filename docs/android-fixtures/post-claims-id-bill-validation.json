@@ -1,0 +1,272 @@
+{
+  "claim_id": "claim-denied-ped",
+  "line_items": [
+    {
+      "id": "bill-item-01",
+      "description": "Room rent (5 days)",
+      "quantity": 5,
+      "rate": 1200000,
+      "amount": 6000000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 1,
+        "bbox": null,
+        "snippet": "Room Rent 5 days @ Rs.12,000"
+      }
+    },
+    {
+      "id": "bill-item-02",
+      "description": "ICU charges",
+      "quantity": 1,
+      "rate": 800000,
+      "amount": 800000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 1,
+        "bbox": null,
+        "snippet": "ICU Charges"
+      }
+    },
+    {
+      "id": "bill-item-03",
+      "description": "Nursing charges (5 days)",
+      "quantity": 5,
+      "rate": 150000,
+      "amount": 750000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 1,
+        "bbox": null,
+        "snippet": "Nursing Charges"
+      }
+    },
+    {
+      "id": "bill-item-04",
+      "description": "Surgeon's fee",
+      "quantity": 1,
+      "rate": 4500000,
+      "amount": 4500000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 1,
+        "bbox": null,
+        "snippet": "Surgeon Fee"
+      }
+    },
+    {
+      "id": "bill-item-05",
+      "description": "Anaesthetist's fee",
+      "quantity": 1,
+      "rate": 1200000,
+      "amount": 1200000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 1,
+        "bbox": null,
+        "snippet": "Anaesthetist Fee"
+      }
+    },
+    {
+      "id": "bill-item-06",
+      "description": "OT charges",
+      "quantity": 1,
+      "rate": 1800000,
+      "amount": 1800000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 1,
+        "bbox": null,
+        "snippet": "OT Charges"
+      }
+    },
+    {
+      "id": "bill-item-07",
+      "description": "OT charges",
+      "quantity": 1,
+      "rate": 1800000,
+      "amount": 1800000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "OT Charges"
+      }
+    },
+    {
+      "id": "bill-item-08",
+      "description": "Consumables",
+      "quantity": 1,
+      "rate": 650000,
+      "amount": 650000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Consumables"
+      }
+    },
+    {
+      "id": "bill-item-09",
+      "description": "Surgical gloves",
+      "quantity": 1,
+      "rate": 420000,
+      "amount": 420000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Surgical Gloves"
+      }
+    },
+    {
+      "id": "bill-item-10",
+      "description": "Investigation — blood tests",
+      "quantity": 1,
+      "rate": 320000,
+      "amount": 320000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Lab — Blood Tests"
+      }
+    },
+    {
+      "id": "bill-item-11",
+      "description": "Investigation — X-Ray",
+      "quantity": 1,
+      "rate": 180000,
+      "amount": 180000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Radiology — X-Ray"
+      }
+    },
+    {
+      "id": "bill-item-12",
+      "description": "Investigation — MRI",
+      "quantity": 1,
+      "rate": 950000,
+      "amount": 950000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Radiology — MRI"
+      }
+    },
+    {
+      "id": "bill-item-13",
+      "description": "Pharmacy (inpatient)",
+      "quantity": 1,
+      "rate": 1430000,
+      "amount": 1430000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Pharmacy"
+      }
+    },
+    {
+      "id": "bill-item-14",
+      "description": "Pharmacy (post-discharge)",
+      "quantity": 1,
+      "rate": 210000,
+      "amount": 210000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Pharmacy — Take Home"
+      }
+    },
+    {
+      "id": "bill-item-15",
+      "description": "Physiotherapy (3 sessions)",
+      "quantity": 3,
+      "rate": 100000,
+      "amount": 300000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Physiotherapy"
+      }
+    },
+    {
+      "id": "bill-item-16",
+      "description": "Dietician charges",
+      "quantity": 1,
+      "rate": 120000,
+      "amount": 120000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Dietician"
+      }
+    },
+    {
+      "id": "bill-item-17",
+      "description": "Registration / admission fee",
+      "quantity": 1,
+      "rate": 50000,
+      "amount": 50000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 1,
+        "bbox": null,
+        "snippet": "Registration Fee"
+      }
+    },
+    {
+      "id": "bill-item-18",
+      "description": "Ambulance charges",
+      "quantity": 1,
+      "rate": 250000,
+      "amount": 250000,
+      "provenance": {
+        "document_id": "doc-denied-claim-itemised-bill",
+        "page": 2,
+        "bbox": null,
+        "snippet": "Ambulance"
+      }
+    }
+  ],
+  "flags": [
+    {
+      "severity": "error",
+      "rule": "sub_limit_breach",
+      "message": "Room rent of ₹12,000/day is above your policy's ₹5,000/day cap. Charges above a room-rent cap can also trigger a proportionate deduction across the rest of the bill, not just this line — check your policy wording.",
+      "line_item_ids": [
+        "bill-item-01"
+      ],
+      "estimated_impact": 3500000
+    },
+    {
+      "severity": "warning",
+      "rule": "duplicate_line",
+      "message": "\"OT charges\" appears twice for the same amount — likely entered in error.",
+      "line_item_ids": [
+        "bill-item-06",
+        "bill-item-07"
+      ],
+      "estimated_impact": 1800000
+    },
+    {
+      "severity": "warning",
+      "rule": "non_payable_item",
+      "message": "Surgical gloves are a non-payable consumable under standard policy terms.",
+      "line_item_ids": [
+        "bill-item-09"
+      ],
+      "estimated_impact": 420000
+    }
+  ],
+  "total_billed": 21730000,
+  "total_at_risk": 5720000,
+  "generated_at": "2026-10-14T10:57:39.462Z"
+}

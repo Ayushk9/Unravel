@@ -1,0 +1,81 @@
+{
+  "claim_id": "claim-denied-ped",
+  "band": "likely_ineligible",
+  "checks": [
+    {
+      "id": "ped_waiting_period",
+      "title": "Pre-existing disease waiting period",
+      "status": "failed",
+      "explanation": "Your policy's continuous cover began 1 Apr 2023. The pre-existing-disease waiting period is 48 months, so it runs to 1 Apr 2027. Your admission on 5 Jul 2026 falls 39 months inside it.",
+      "governing_clause": {
+        "document_id": "doc-retail-policy-wording",
+        "page": 7,
+        "bbox": null,
+        "snippet": "Pre-existing diseases are covered after 48 months of continuous coverage"
+      },
+      "missing_fact": null,
+      "resolving_document": null
+    },
+    {
+      "id": "initial_waiting_period",
+      "title": "Initial waiting period",
+      "status": "satisfied",
+      "explanation": "Your policy's initial waiting period ended 1 May 2023, before your admission on 5 Jul 2026.",
+      "governing_clause": {
+        "document_id": "doc-retail-policy-wording",
+        "page": 6,
+        "bbox": null,
+        "snippet": "Initial waiting period of 30 days from inception"
+      },
+      "missing_fact": null,
+      "resolving_document": null
+    },
+    {
+      "id": "sum_insured_adequacy",
+      "title": "Sum insured adequacy",
+      "status": "satisfied",
+      "explanation": "Your claimed amount is within your policy's sum insured.",
+      "governing_clause": {
+        "document_id": "doc-retail-policy-schedule",
+        "page": 1,
+        "bbox": null,
+        "snippet": "Sum Insured: Rs. 10,00,000"
+      },
+      "missing_fact": null,
+      "resolving_document": null
+    }
+  ],
+  "ombudsman_precedent": [
+    {
+      "id": "award-01",
+      "case_reference": "GIC/2025/00142",
+      "insurer_name": "Suraksha General Insurance",
+      "decided_on": "2025-11-20",
+      "denial_ground": "Pre-existing disease non-disclosure",
+      "outcome": "overturned",
+      "summary": "Insurer denied the claim alleging the condition pre-existed the policy but produced no medical evidence beyond the discharge summary. The Ombudsman held that continuous, unbroken renewal counts toward the waiting period from original inception, and that the insurer's own underwriting file showed no adverse remark at renewal.",
+      "external_url": null
+    },
+    {
+      "id": "award-02",
+      "case_reference": "GIC/2025/00298",
+      "insurer_name": "Kavach Health Assurance",
+      "decided_on": "2025-08-05",
+      "denial_ground": "Pre-existing disease non-disclosure",
+      "outcome": "overturned",
+      "summary": "The insurer's investigator relied on a single unclear line in an old prescription to infer a pre-existing condition. The Ombudsman found the inference speculative and directed settlement in full, noting the insurer bears the burden of proof for a non-disclosure denial.",
+      "external_url": null
+    },
+    {
+      "id": "award-03",
+      "case_reference": "GIC/2024/00871",
+      "insurer_name": "Nirvaan Health Insurance",
+      "decided_on": "2024-12-12",
+      "denial_ground": "Pre-existing disease non-disclosure",
+      "outcome": "upheld",
+      "summary": "Medical records from two years before the policy's inception documented the same diagnosis under active treatment, and the proposal form's health declaration was silent on it. The Ombudsman upheld the denial for non-disclosure of a known pre-existing condition.",
+      "external_url": null
+    }
+  ],
+  "generated_at": "2026-10-14T16:27:38+05:30"
+}

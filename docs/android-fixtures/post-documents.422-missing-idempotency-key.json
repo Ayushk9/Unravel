@@ -1,0 +1,14 @@
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Idempotency-Key is required on this endpoint.",
+    "field_errors": [
+      {
+        "field": "Idempotency-Key",
+        "message": "This header is required."
+      }
+    ],
+    "request_id": "mock-req-mv7zx6x9-4",
+    "retryable": false
+  }
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "member-self",
+    "full_name": "Ananya Rao",
+    "relationship": "self",
+    "date_of_birth": "1990-02-14"
+  },
+  {
+    "id": "member-spouse",
+    "full_name": "Vikram Rao",
+    "relationship": "spouse",
+    "date_of_birth": "1988-11-02"
+  },
+  {
+    "id": "member-child",
+    "full_name": "Ishaan Rao",
+    "relationship": "child",
+    "date_of_birth": "2019-06-30"
+  },
+  {
+    "id": "member-parent",
+    "full_name": "Lakshmi Rao",
+    "relationship": "parent",
+    "date_of_birth": "1962-09-18"
+  }
+]

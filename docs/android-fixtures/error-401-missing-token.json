@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "Missing bearer token.",
+    "field_errors": [],
+    "request_id": "mock-req-mv7zx6ig-1",
+    "retryable": false
+  }
+}

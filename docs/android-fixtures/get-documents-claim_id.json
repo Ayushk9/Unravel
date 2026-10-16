@@ -1,0 +1,72 @@
+{
+  "items": [
+    {
+      "id": "doc-denied-claim-discharge-summary",
+      "file_name": "discharge-summary-jul-2026.pdf",
+      "mime_type": "application/pdf",
+      "page_count": 3,
+      "uploaded_at": "2026-07-12T14:05:00+05:30",
+      "claim_id": "claim-denied-ped",
+      "detected_type": {
+        "value": "discharge_summary",
+        "confidence": "high",
+        "provenance": {
+          "document_id": "doc-denied-claim-discharge-summary",
+          "page": 1,
+          "bbox": null,
+          "snippet": "Discharge Summary"
+        },
+        "user_confirmed": true
+      },
+      "parse_status": "parsed",
+      "parse_error": null,
+      "deleted_at": null
+    },
+    {
+      "id": "doc-denied-claim-itemised-bill",
+      "file_name": "hospital-bill-jul-2026.pdf",
+      "mime_type": "application/pdf",
+      "page_count": 2,
+      "uploaded_at": "2026-07-12T14:08:00+05:30",
+      "claim_id": "claim-denied-ped",
+      "detected_type": {
+        "value": "itemised_bill",
+        "confidence": "high",
+        "provenance": {
+          "document_id": "doc-denied-claim-itemised-bill",
+          "page": 1,
+          "bbox": null,
+          "snippet": "Itemised Bill"
+        },
+        "user_confirmed": true
+      },
+      "parse_status": "parsed",
+      "parse_error": null,
+      "deleted_at": null
+    },
+    {
+      "id": "doc-denied-claim-denial-letter",
+      "file_name": "denial-letter-suraksha-aug-2026.pdf",
+      "mime_type": "application/pdf",
+      "page_count": 1,
+      "uploaded_at": "2026-08-10T16:20:00+05:30",
+      "claim_id": "claim-denied-ped",
+      "detected_type": {
+        "value": "denial_letter",
+        "confidence": "high",
+        "provenance": {
+          "document_id": "doc-denied-claim-denial-letter",
+          "page": 1,
+          "bbox": null,
+          "snippet": "Claim Denial Letter"
+        },
+        "user_confirmed": true
+      },
+      "parse_status": "parsed",
+      "parse_error": null,
+      "deleted_at": null
+    }
+  ],
+  "next_cursor": null,
+  "total": 3
+}

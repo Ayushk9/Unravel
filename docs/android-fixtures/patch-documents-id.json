@@ -1,0 +1,22 @@
+{
+  "id": "doc-under-review-payment-receipt",
+  "file_name": "payment-receipt-aug-2026.pdf",
+  "mime_type": "application/pdf",
+  "page_count": 1,
+  "uploaded_at": "2026-08-16T10:05:00+05:30",
+  "claim_id": "claim-under-review",
+  "detected_type": {
+    "value": "payment_receipt",
+    "confidence": "high",
+    "provenance": {
+      "document_id": "doc-under-review-payment-receipt",
+      "page": 1,
+      "bbox": null,
+      "snippet": "Payment Receipt"
+    },
+    "user_confirmed": true
+  },
+  "parse_status": "parsed",
+  "parse_error": null,
+  "deleted_at": null
+}

@@ -1,0 +1,18 @@
+{
+  "error": {
+    "code": "illegal_transition",
+    "message": "That transition isn't allowed from the claim's current state.",
+    "field_errors": [
+      {
+        "field": "to_state",
+        "message": "escalated"
+      },
+      {
+        "field": "to_state",
+        "message": "resolved"
+      }
+    ],
+    "request_id": "mock-req-mv7zx6x3-3",
+    "retryable": false
+  }
+}

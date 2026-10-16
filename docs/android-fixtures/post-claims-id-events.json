@@ -1,0 +1,35 @@
+{
+  "id": "claim-mv7zx7h4-3te5jr",
+  "policy_id": "policy-retail-individual",
+  "member_id": "member-self",
+  "claim_type": "reimbursement",
+  "admission_type": "planned",
+  "hospital_name": "City Hospital",
+  "admitted_on": "2026-09-20",
+  "discharged_on": "2026-09-24",
+  "claimed_amount": 8500000,
+  "settled_amount": null,
+  "current_state": "documents_submitted",
+  "events": [
+    {
+      "id": "event-mv7zx7h5-9fv1db",
+      "claim_id": "claim-mv7zx7h4-3te5jr",
+      "from_state": null,
+      "to_state": "intimated",
+      "occurred_at": "2026-10-14T10:57:41.656Z",
+      "note": "Claim intimated via app",
+      "source": "user"
+    },
+    {
+      "id": "event-mv7zx7qa-iytkkf",
+      "claim_id": "claim-mv7zx7h4-3te5jr",
+      "from_state": "intimated",
+      "to_state": "documents_submitted",
+      "occurred_at": "2026-09-26T11:00:00+05:30",
+      "note": "Sent by courier",
+      "source": "user"
+    }
+  ],
+  "deadlines": [],
+  "omitted_deadlines": []
+}

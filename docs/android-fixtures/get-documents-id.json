@@ -1,0 +1,22 @@
+{
+  "id": "doc-retail-policy-schedule",
+  "file_name": "suraksha-complete-health-plan-schedule.pdf",
+  "mime_type": "application/pdf",
+  "page_count": 4,
+  "uploaded_at": "2023-04-02T18:45:00+05:30",
+  "claim_id": null,
+  "detected_type": {
+    "value": "policy_schedule",
+    "confidence": "high",
+    "provenance": {
+      "document_id": "doc-retail-policy-schedule",
+      "page": 1,
+      "bbox": null,
+      "snippet": "Policy Schedule"
+    },
+    "user_confirmed": true
+  },
+  "parse_status": "parsed",
+  "parse_error": null,
+  "deleted_at": null
+}

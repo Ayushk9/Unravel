@@ -1,0 +1,73 @@
+{
+  "job_id": "job-mv7zxglk-61gchv",
+  "kind": "generate_grievance_draft",
+  "status": "succeeded",
+  "progress": {
+    "step": "done",
+    "percent": 100
+  },
+  "result": {
+    "id": "grievance-mv7zy02k-rcd10u",
+    "claim_id": "claim-denied-ped",
+    "rung": "insurer_grievance_cell",
+    "subject": "Grievance regarding denial of claim at Manipal Hospital, Bengaluru",
+    "paragraphs": [
+      {
+        "text": "I am writing regarding the denial of my claim for hospitalisation at Manipal Hospital, Bengaluru from 2026-07-05 to 2026-07-10.",
+        "citation_ids": [],
+        "verified": true
+      },
+      {
+        "text": "Your policy's continuous cover began 1 Apr 2023. The pre-existing-disease waiting period is 48 months, so it runs to 1 Apr 2027. Your admission on 5 Jul 2026 falls 39 months inside it.",
+        "citation_ids": [
+          "cite-policy"
+        ],
+        "verified": true
+      },
+      {
+        "text": "Similar denials on this ground have previously been overturned by the Insurance Ombudsman.",
+        "citation_ids": [
+          "cite-award"
+        ],
+        "verified": false
+      }
+    ],
+    "citations": [
+      {
+        "id": "cite-policy",
+        "kind": "policy_clause",
+        "label": "Suraksha Complete Health Plan",
+        "provenance": {
+          "document_id": "doc-retail-policy-wording",
+          "page": 7,
+          "bbox": null,
+          "snippet": "Pre-existing diseases are covered after 48 months of continuous coverage"
+        },
+        "external_url": null
+      },
+      {
+        "id": "cite-award",
+        "kind": "ombudsman_award",
+        "label": "Similar PED-denial precedent",
+        "provenance": null,
+        "external_url": null
+      }
+    ],
+    "evidence_checklist": [
+      {
+        "item": "Discharge summary",
+        "satisfied": true
+      },
+      {
+        "item": "Itemised bill",
+        "satisfied": true
+      },
+      {
+        "item": "Denial letter",
+        "satisfied": true
+      }
+    ],
+    "citation_precision": 0.67
+  },
+  "error": null
+}

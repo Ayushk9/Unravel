@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "not_found",
+    "message": "No policy with that id belongs to your household.",
+    "field_errors": [],
+    "request_id": "mock-req-mv7zx6q9-2",
+    "retryable": false
+  }
+}

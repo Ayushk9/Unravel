@@ -1,0 +1,182 @@
+[
+  {
+    "insurer": {
+      "id": "insurer-suraksha-general",
+      "name": "Suraksha General Insurance",
+      "irdai_code": "IRDAI-SGI-027"
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.94,
+    "incurred_claims_ratio": 0.68,
+    "avg_turnaround_days": 12,
+    "complaints_per_10k_policies": 3.2,
+    "ombudsman_cases_lost_share": 0.31,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-kavach-health",
+      "name": "Kavach Health Assurance",
+      "irdai_code": "IRDAI-KHA-014"
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.91,
+    "incurred_claims_ratio": 0.71,
+    "avg_turnaround_days": 15,
+    "complaints_per_10k_policies": 2.8,
+    "ombudsman_cases_lost_share": 0.24,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-nirvaan-health",
+      "name": "Nirvaan Health Insurance",
+      "irdai_code": "IRDAI-NHI-033"
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.88,
+    "incurred_claims_ratio": 0.74,
+    "avg_turnaround_days": null,
+    "complaints_per_10k_policies": 4.1,
+    "ombudsman_cases_lost_share": 0.4,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-bharosa-general",
+      "name": "Bharosa General Insurance",
+      "irdai_code": "IRDAI-BGI-041"
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.96,
+    "incurred_claims_ratio": 0.62,
+    "avg_turnaround_days": 9,
+    "complaints_per_10k_policies": 1.9,
+    "ombudsman_cases_lost_share": 0.18,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-sanjeevani-health",
+      "name": "Sanjeevani Health Insurance",
+      "irdai_code": "IRDAI-SHI-052"
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.85,
+    "incurred_claims_ratio": 0.79,
+    "avg_turnaround_days": null,
+    "complaints_per_10k_policies": 5.6,
+    "ombudsman_cases_lost_share": 0.52,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-rakshak-general",
+      "name": "Rakshak General Insurance",
+      "irdai_code": "IRDAI-RGI-059"
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.9,
+    "incurred_claims_ratio": 0.7,
+    "avg_turnaround_days": 18,
+    "complaints_per_10k_policies": 3.5,
+    "ombudsman_cases_lost_share": 0.29,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-arogya-mitra",
+      "name": "Arogya Mitra Insurance",
+      "irdai_code": "IRDAI-AMI-063"
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.93,
+    "incurred_claims_ratio": 0.65,
+    "avg_turnaround_days": null,
+    "complaints_per_10k_policies": 2.4,
+    "ombudsman_cases_lost_share": null,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-vishwas-general",
+      "name": "Vishwas General Insurance",
+      "irdai_code": "IRDAI-VGI-071"
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.82,
+    "incurred_claims_ratio": 0.83,
+    "avg_turnaround_days": 24,
+    "complaints_per_10k_policies": 6.8,
+    "ombudsman_cases_lost_share": 0.61,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-shubham-health",
+      "name": "Shubham Health Insurance",
+      "irdai_code": null
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": 0.97,
+    "incurred_claims_ratio": 0.59,
+    "avg_turnaround_days": 7,
+    "complaints_per_10k_policies": 1.4,
+    "ombudsman_cases_lost_share": 0.12,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  },
+  {
+    "insurer": {
+      "id": "insurer-poorna-suraksha",
+      "name": "Poorna Suraksha Insurance",
+      "irdai_code": null
+    },
+    "period": "FY2024-25",
+    "claim_settlement_ratio": null,
+    "incurred_claims_ratio": 0.77,
+    "avg_turnaround_days": 20,
+    "complaints_per_10k_policies": 4.7,
+    "ombudsman_cases_lost_share": 0.38,
+    "source": {
+      "name": "IRDAI Annual Report FY2024-25 (fixture placeholder — unverified)",
+      "published_on": "2025-09-30",
+      "url": ""
+    }
+  }
+]

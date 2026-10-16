@@ -1,0 +1,61 @@
+{
+  "claim_id": "claim-under-review",
+  "required": [
+    "discharge_summary",
+    "itemised_bill",
+    "payment_receipt",
+    "id_proof"
+  ],
+  "present": [
+    "discharge_summary",
+    "id_proof",
+    "payment_receipt"
+  ],
+  "missing": [
+    "itemised_bill"
+  ],
+  "advisory_note": "Missing 1 document before this claim looks complete.",
+  "required_details": [
+    {
+      "type": "discharge_summary",
+      "description": "Usually needed for this type of claim.",
+      "where_to_get": "Ask the hospital or your insurer.",
+      "source": {
+        "document": "Mock checklist",
+        "section": null,
+        "url": null
+      }
+    },
+    {
+      "type": "itemised_bill",
+      "description": "Usually needed for this type of claim.",
+      "where_to_get": "Ask the hospital or your insurer.",
+      "source": {
+        "document": "Mock checklist",
+        "section": null,
+        "url": null
+      }
+    },
+    {
+      "type": "payment_receipt",
+      "description": "Usually needed for this type of claim.",
+      "where_to_get": "Ask the hospital or your insurer.",
+      "source": {
+        "document": "Mock checklist",
+        "section": null,
+        "url": null
+      }
+    },
+    {
+      "type": "id_proof",
+      "description": "Usually needed for this type of claim.",
+      "where_to_get": "Ask the hospital or your insurer.",
+      "source": {
+        "document": "Mock checklist",
+        "section": null,
+        "url": null
+      }
+    }
+  ],
+  "verified": false
+}

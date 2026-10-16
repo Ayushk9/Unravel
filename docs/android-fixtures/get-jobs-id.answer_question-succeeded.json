@@ -1,0 +1,29 @@
+{
+  "job_id": "job-mv7zxdv9-s3qmeh",
+  "kind": "answer_question",
+  "status": "succeeded",
+  "progress": {
+    "step": "done",
+    "percent": 100
+  },
+  "result": {
+    "answer": "Your policy excludes: \"Cosmetic surgery is excluded unless medically necessitated by an accident covered under this policy.\" [[1]]. Knee surgery isn't itself on that list, so it's most likely covered subject to your waiting periods and sub-limits — but this is a plain-language read of your document, not a claims decision.",
+    "citations": [
+      {
+        "id": "cite-exclusion",
+        "kind": "policy_clause",
+        "label": "Suraksha Complete Health Plan — exclusions",
+        "provenance": {
+          "document_id": "doc-retail-policy-wording",
+          "page": 18,
+          "bbox": null,
+          "snippet": "Exclusion 9.4: Cosmetic surgery"
+        },
+        "external_url": null
+      }
+    ],
+    "abstained": false,
+    "missing_context": null
+  },
+  "error": null
+}

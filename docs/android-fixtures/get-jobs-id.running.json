@@ -1,0 +1,11 @@
+{
+  "job_id": "job-mv7zx86f-rh92x7",
+  "kind": "parse_document",
+  "status": "queued",
+  "progress": {
+    "step": "classifying_pages",
+    "percent": 0
+  },
+  "result": null,
+  "error": null
+}

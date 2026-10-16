@@ -1,0 +1,200 @@
+[
+  {
+    "file": "get-health.json",
+    "method": "GET",
+    "route": "/health",
+    "status": 200
+  },
+  {
+    "file": "get-members.json",
+    "method": "GET",
+    "route": "/members",
+    "status": 200
+  },
+  {
+    "file": "get-policies.json",
+    "method": "GET",
+    "route": "/policies",
+    "status": 200
+  },
+  {
+    "file": "get-policies-id.json",
+    "method": "GET",
+    "route": "/policies/policy-retail-individual",
+    "status": 200
+  },
+  {
+    "file": "get-documents.json",
+    "method": "GET",
+    "route": "/documents?limit=20",
+    "status": 200
+  },
+  {
+    "file": "get-documents-claim_id.json",
+    "method": "GET",
+    "route": "/documents?claim_id=claim-denied-ped",
+    "status": 200
+  },
+  {
+    "file": "get-documents-id.json",
+    "method": "GET",
+    "route": "/documents/doc-retail-policy-schedule",
+    "status": 200
+  },
+  {
+    "file": "get-documents-id-file.json",
+    "method": "GET",
+    "route": "/documents/doc-retail-policy-schedule/file",
+    "status": 200
+  },
+  {
+    "file": "get-claims.json",
+    "method": "GET",
+    "route": "/claims",
+    "status": 200
+  },
+  {
+    "file": "get-claims-id.json",
+    "method": "GET",
+    "route": "/claims/claim-denied-ped",
+    "status": 200
+  },
+  {
+    "file": "post-claims-id-eligibility.json",
+    "method": "POST",
+    "route": "/claims/claim-denied-ped/eligibility",
+    "status": 200
+  },
+  {
+    "file": "post-claims-id-completeness.json",
+    "method": "POST",
+    "route": "/claims/claim-under-review/completeness",
+    "status": 200
+  },
+  {
+    "file": "post-claims-id-bill-validation.json",
+    "method": "POST",
+    "route": "/claims/claim-denied-ped/bill-validation",
+    "status": 200
+  },
+  {
+    "file": "get-alerts.json",
+    "method": "GET",
+    "route": "/alerts",
+    "status": 200
+  },
+  {
+    "file": "get-ombudsman-awards.json",
+    "method": "GET",
+    "route": "/ombudsman-awards?limit=20",
+    "status": 200
+  },
+  {
+    "file": "get-insurers-benchmarks.json",
+    "method": "GET",
+    "route": "/insurers/benchmarks",
+    "status": 200
+  },
+  {
+    "file": "error-401-missing-token.json",
+    "method": "GET",
+    "route": "/policies",
+    "status": 401
+  },
+  {
+    "file": "error-404-not-found.json",
+    "method": "GET",
+    "route": "/policies/does-not-exist",
+    "status": 404
+  },
+  {
+    "file": "post-claims-id-events.409-illegal-transition.json",
+    "method": "POST",
+    "route": "/claims/claim-denied-ped/events",
+    "status": 409
+  },
+  {
+    "file": "post-documents.422-missing-idempotency-key.json",
+    "method": "POST",
+    "route": "/documents",
+    "status": 422
+  },
+  {
+    "file": "post-claims-id-bill-validation.409-bill-not-parsed.json",
+    "method": "POST",
+    "route": "/claims/claim-under-review/bill-validation",
+    "status": 409
+  },
+  {
+    "file": "post-claims.201.json",
+    "method": "POST",
+    "route": "/claims",
+    "status": 201
+  },
+  {
+    "file": "post-claims-id-events.json",
+    "method": "POST",
+    "route": "/claims/claim-mv7zx7h4-3te5jr/events",
+    "status": 200
+  },
+  {
+    "file": "patch-policies-id-coverage-profile-fields-field_path.json",
+    "method": "PATCH",
+    "route": "/policies/policy-retail-individual/coverage-profile/fields/sub_limits.room_rent.cap_amount",
+    "status": 200
+  },
+  {
+    "file": "patch-documents-id.json",
+    "method": "PATCH",
+    "route": "/documents/doc-under-review-payment-receipt",
+    "status": 200
+  },
+  {
+    "file": "post-documents.202.json",
+    "method": "POST",
+    "route": "/documents",
+    "status": 202
+  },
+  {
+    "file": "get-jobs-id.running.json",
+    "method": "GET",
+    "route": "/jobs/job-mv7zx86f-rh92x7",
+    "status": 200
+  },
+  {
+    "file": "get-jobs-id.parse_document-succeeded.json",
+    "method": "GET",
+    "route": "/jobs/job-mv7zx86f-rh92x7",
+    "status": 200
+  },
+  {
+    "file": "post-policies.json",
+    "method": "POST",
+    "route": "/policies",
+    "status": 200
+  },
+  {
+    "file": "post-policies-id-questions.202.json",
+    "method": "POST",
+    "route": "/policies/policy-retail-individual/questions",
+    "status": 202
+  },
+  {
+    "file": "get-jobs-id.answer_question-succeeded.json",
+    "method": "GET",
+    "route": "/jobs/job-mv7zxdv9-s3qmeh",
+    "status": 200
+  },
+  {
+    "file": "post-claims-id-grievance-drafts.202.json",
+    "method": "POST",
+    "route": "/claims/claim-denied-ped/grievance-drafts",
+    "status": 202
+  },
+  {
+    "file": "get-jobs-id.generate_grievance_draft-succeeded.json",
+    "method": "GET",
+    "route": "/jobs/job-mv7zxglk-61gchv",
+    "status": 200
+  }
+]

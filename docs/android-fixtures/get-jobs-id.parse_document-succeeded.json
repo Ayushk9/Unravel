@@ -1,0 +1,14 @@
+{
+  "job_id": "job-mv7zx86f-rh92x7",
+  "kind": "parse_document",
+  "status": "succeeded",
+  "progress": {
+    "step": "done",
+    "percent": 100
+  },
+  "result": {
+    "document_id": "doc-mv7zx86f-ju3wuy",
+    "policy_id": "policy-mv7zxdmv-db67hb"
+  },
+  "error": null
+}
