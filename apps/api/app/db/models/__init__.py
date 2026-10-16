@@ -11,6 +11,7 @@ from app.db.models.household import Household, Member
 from app.db.models.insurer import Insurer, InsurerTermMap
 from app.db.models.job import Job
 from app.db.models.policy import Policy, policy_member
+from app.db.models.policy_question import PolicyQuestion
 
 __all__ = [
     "Claim",
@@ -25,6 +26,7 @@ __all__ = [
     "Job",
     "Member",
     "Policy",
+    "PolicyQuestion",
     "SubLimit",
     "WaitingPeriod",
     "claim_current_state",

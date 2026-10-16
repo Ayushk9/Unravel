@@ -24,6 +24,8 @@ from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.db.session import create_engine, create_session_factory
 from app.jobs.queue import delete_expired_jobs, recover_interrupted_jobs
 from app.jobs.runner import JobRunner
+from app.models_server.client import ModelServer
+from app.qa.llm import GeminiQaLlm
 from app.storage.base import remove_stale_temporary_files
 from app.storage.factory import create_storage
 
@@ -52,12 +54,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             expired,
             stale_files,
         )
-    # 4. Jobs that were still `queued` lost nothing. Start working on them.
+    # 4. Start loading the Q&A models in their own process. This returns at
+    #    once; the server answers requests while the models load.
+    model_server: ModelServer | None = app.state.model_server
+    if model_server is not None:
+        model_server.start()
+    # 5. Jobs that were still `queued` lost nothing. Start working on them.
     await runner.wake()
 
     yield
 
     await runner.shutdown()
+    if model_server is not None:
+        await model_server.stop()
     # Close pooled database connections cleanly.
     await app.state.engine.dispose()
 
@@ -91,8 +100,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(app.state.engine)
     app.state.token_verifier = TokenVerifier(settings.supabase_url)
     app.state.storage = create_storage(settings)
+    # Policy Q&A: one warm process for the two models (app/models_server/client.py) and Gemini.
+    app.state.model_server = (
+        ModelServer(
+            embed_model=settings.embedding_model,
+            rerank_model=settings.rerank_model,
+            device=settings.model_device,
+            load_timeout_seconds=settings.model_load_timeout_seconds,
+            request_timeout_seconds=settings.model_request_timeout_seconds,
+        )
+        if settings.model_server_enabled
+        else None
+    )
     app.state.runner = JobRunner(
-        session_factory=app.state.session_factory, storage=app.state.storage, settings=settings
+        session_factory=app.state.session_factory,
+        storage=app.state.storage,
+        settings=settings,
+        models=app.state.model_server,
+        qa_llm=GeminiQaLlm(api_key=settings.gemini_api_key, model=settings.gemini_model, timeout_seconds=settings.qa_llm_timeout_seconds),
     )
 
     # Middleware wraps the app in layers, and the LAST one added is the

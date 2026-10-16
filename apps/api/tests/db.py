@@ -130,12 +130,21 @@ def create_database(url: str) -> Database:
         admin = create_async_engine(url)
         async with admin.begin() as connection:
             await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+            # pgvector's `vector` type lives in whichever schema the extension
+            # was installed in (`extensions` on Supabase). Same statement as
+            # migration 0006: a no-op when it is already installed.
+            await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            vector_schema = await connection.scalar(
+                text("SELECT n.nspname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE t.typname = 'vector'")
+            )
         await admin.dispose()
 
         # Every connection from this engine looks in the test schema first,
         # so unqualified table names resolve there and never in `public`.
+        # The extension's schema comes second, only so the `vector` type is found.
+        search_path = f'"{schema}", "{vector_schema}"' if vector_schema and vector_schema != schema else f'"{schema}"'
         engine = create_async_engine(
-            url, connect_args={"server_settings": {"search_path": schema}}, pool_size=5, max_overflow=0
+            url, connect_args={"server_settings": {"search_path": search_path}}, pool_size=5, max_overflow=0
         )
         async with engine.begin() as connection:
             current = (await connection.execute(text("select current_schema()"))).scalar()
@@ -214,6 +223,10 @@ class ApiTester:
         self,
         extraction_target: ChildTarget,
         classification_target: ChildTarget = fake_workers.classify_by_file_name,
+        *,
+        models: Any = None,
+        qa_llm: Any = None,
+        qa_cache: Any = None,
         **settings_overrides: Any,
     ) -> None:
         settings = self.settings.model_copy(update=settings_overrides)
@@ -223,6 +236,9 @@ class ApiTester:
             settings=settings,
             extraction_target=extraction_target,
             classification_target=classification_target,
+            models=models,
+            qa_llm=qa_llm,
+            qa_cache=qa_cache,
         )
 
     def hold_jobs(self) -> None:

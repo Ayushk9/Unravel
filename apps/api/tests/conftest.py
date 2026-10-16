@@ -18,6 +18,8 @@ os.environ["STORAGE_BACKEND"] = "local"
 os.environ["LOCAL_STORAGE_DIR"] = "/nonexistent/unravel-test-storage"
 os.environ["CORS_ALLOWED_ORIGINS"] = "http://localhost:5173"
 os.environ["ENVIRONMENT"] = "test"
+# Q&A tests use tests/fake_models.py; the real models (~4.5 GB) are never loaded by the test suite.
+os.environ["MODEL_SERVER_ENABLED"] = "false"
 
 from typing import Literal  # noqa: E402
 

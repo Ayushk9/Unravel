@@ -4,6 +4,7 @@ GET   /policies                                               CONTRACTS.md row 7
 GET   /policies/{id}                                          CONTRACTS.md row 9
 PATCH /policies/{id}                                          CONTRACTS.md row 27, D-39
 PATCH /policies/{id}/coverage-profile/fields/{field_path}     CONTRACTS.md row 10, D-15
+POST  /policies/{id}/questions                                CONTRACTS.md row 11, D-42
 """
 
 from __future__ import annotations
@@ -12,12 +13,17 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.claims.deadlines import india_date
 from app.core.auth import CurrentHousehold, get_current_household
 from app.core.errors import ApiError
+from app.core.ids import new_id
+from app.db.models import Job as JobRow
+from app.qa.indexing import index_counts
+from app.schemas.jobs import JobAccepted
+from app.schemas.questions import QuestionRequest
 from app.db.session import get_session
 from app.schemas.errors import FieldError
 from app.schemas.policies import FieldCorrectionRequest, Policy, PolicyDatesUpdate
@@ -106,3 +112,42 @@ async def correct_policy_field(
     await correct_field(session, profile, field_path, body.value)
     await session.commit()
     return await build_policy(session, row)
+
+
+@router.post("/policies/{policy_id}/questions", status_code=202)
+async def ask_question(
+    policy_id: UUID,
+    body: QuestionRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    household: Annotated[CurrentHousehold, Depends(get_current_household)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JobAccepted:
+    """Queue a question about this policy. The answer arrives through GET /jobs/{id} (D-07, D-42)."""
+    row = await find_policy_row(session, household.household_id, policy_id)
+    if row is None:
+        raise _policy_not_found()
+
+    # Every clause must have its search vector, or the answer could miss the one that matters.
+    total, indexed = await index_counts(session, row.source_document_id)
+    if total == 0 or indexed < total:
+        raise ApiError(
+            409,
+            "policy_not_indexed",
+            "This policy hasn't been prepared for questions yet. Try again once it has finished processing.",
+            retryable=True,
+        )
+
+    job = JobRow(
+        id=new_id(),
+        household_id=household.household_id,
+        kind="answer_question",
+        status="queued",
+        progress={"step": "queued", "percent": 0},
+        payload={"policy_id": str(policy_id), "question": body.question},
+    )
+    session.add(job)
+    await session.commit()
+    # Only a nudge: the job is already committed, whether or not this runs.
+    background_tasks.add_task(request.app.state.runner.wake)
+    return JobAccepted(job_id=job.id, kind="answer_question", status="queued")

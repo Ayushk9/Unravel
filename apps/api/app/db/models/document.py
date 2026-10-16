@@ -6,12 +6,16 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Text, false, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Computed, DateTime, ForeignKey, Index, Integer, Text, false, func
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.ids import new_id
 from app.db.base import CONFIDENCE_VALUES, Base, one_of
+from app.db.vector_type import Vector
+
+# BGE-M3's dense vectors have 1024 numbers.
+EMBEDDING_DIMENSIONS = 1024
 
 DOCUMENT_TYPES = (
     "policy_schedule",
@@ -73,6 +77,9 @@ class Document(Base):
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunk"
+    # The keyword index for Q&A retrieval (app/qa/retrieval.py). GIN is the
+    # Postgres index type for "which rows contain this word".
+    __table_args__ = (Index("ix_document_chunk_search_text", "search_text", postgresql_using="gin"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=new_id)
     document_id: Mapped[UUID] = mapped_column(ForeignKey("document.id", ondelete="CASCADE"), index=True)
@@ -82,3 +89,11 @@ class DocumentChunk(Base):
     text: Mapped[str] = mapped_column(Text)
     # [x0, y0, x1, y1], normalised 0..1, top-left origin (D-23). Null if unknown.
     bbox: Mapped[list[float] | None] = mapped_column(JSONB)
+    # Q&A search (Engine C). The vector is written by the indexing step at the
+    # end of a parse (app/qa/indexing.py); null until then. There is no vector
+    # index on purpose: every search is limited to one document's few hundred
+    # chunks, and an exact scan over those is faster and never misses a row.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
+    # Postgres keeps this up to date itself from `text`: the words of the
+    # chunk, stemmed for English ("covered" and "coverage" both become "cover").
+    search_text: Mapped[str | None] = mapped_column(TSVECTOR, Computed("to_tsvector('english', text)", persisted=True))

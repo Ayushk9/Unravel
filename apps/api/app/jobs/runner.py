@@ -22,11 +22,22 @@ list of pending jobs and no job state. If the server dies:
 upload (through FastAPI's BackgroundTasks) and once at startup. Losing a
 wake-up loses no work, because the job row is already committed.
 
+LANES
+
+Jobs run in two lanes, each with its own drain loops:
+
+    documents   parse_document (policies and claim documents)
+                at most `max_concurrent_parses` at once
+    questions   answer_question, one at a time
+
+A question takes seconds and a parse can take minutes; with one lane, a
+question asked while a policy is being read would wait for the whole parse.
+
 CONCURRENCY
 
-At most `max_concurrent_parses` drain loops exist at once, and each runs
-one job at a time, so that is also the maximum number of parses in
-progress. The default is 1: Docling loads large models, and two parses side
+In the documents lane, at most `max_concurrent_parses` drain loops exist at
+once, and each runs one job at a time, so that is also the maximum number of
+parses in progress. The default is 1: Docling loads large models, and two parses side
 by side can use more memory than a small host has, at which point the
 kernel starts killing processes. Extra jobs simply wait as `queued` rows.
 
@@ -48,9 +59,16 @@ from app.core.config import Settings
 from app.classification.classifier import run_classification
 from app.jobs.classify_document import run_classify_document
 from app.jobs.parse_document import JobFailure, run_parse_document
-from app.jobs.queue import ClaimedJob, SessionFactory, claim_next_job, mark_failed
+from app.jobs.queue import ClaimedJob, SessionFactory, claim_next_job, interrupted_message, mark_failed
 from app.jobs.worker_process import ChildTarget, run_extraction
+from app.models_server.client import Models
+from app.qa.cache import QaCache
+from app.qa.llm import QaLlm
+from app.qa.run_question import run_answer_question
 from app.storage.base import DocumentStorage
+
+DOCUMENT_KINDS = ("parse_document",)
+QUESTION_KINDS = ("answer_question",)
 
 logger = logging.getLogger("unravel.jobs")
 
@@ -65,14 +83,23 @@ class JobRunner:
         # Tests replace this with a small stand-in so they never start Docling.
         extraction_target: ChildTarget = run_extraction,
         classification_target: ChildTarget = run_classification,
+        # The warm model server and Gemini for questions and indexing. None
+        # means unavailable: question jobs fail readably and indexing is skipped.
+        models: Models | None = None,
+        qa_llm: QaLlm | None = None,
+        qa_cache: QaCache | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._storage = storage
         self._settings = settings
         self._extraction_target = extraction_target
         self._classification_target = classification_target
-        self._drain_tasks: set[asyncio.Task[None]] = set()
-        self._wake_requested = False
+        self.models = models
+        self.qa_llm = qa_llm
+        self.qa_cache = qa_cache or QaCache()
+        self._lanes: dict[tuple[str, ...], int] = {DOCUMENT_KINDS: settings.max_concurrent_parses, QUESTION_KINDS: 1}
+        self._drain_tasks: dict[tuple[str, ...], set[asyncio.Task[None]]] = {kinds: set() for kinds in self._lanes}
+        self._wake_requested: dict[tuple[str, ...], bool] = {kinds: False for kinds in self._lanes}
 
     async def wake(self) -> None:
         """Make sure something is looking at the queue.
@@ -80,34 +107,40 @@ class JobRunner:
         Async so that FastAPI's BackgroundTasks runs it on the event loop,
         where creating a task is allowed.
         """
-        self._wake_requested = True
-        self._drain_tasks = {task for task in self._drain_tasks if not task.done()}
-        while len(self._drain_tasks) < self._settings.max_concurrent_parses:
-            self._drain_tasks.add(asyncio.create_task(self._drain()))
+        for kinds, limit in self._lanes.items():
+            self._wake_requested[kinds] = True
+            tasks = {task for task in self._drain_tasks[kinds] if not task.done()}
+            while len(tasks) < limit:
+                tasks.add(asyncio.create_task(self._drain(kinds)))
+            self._drain_tasks[kinds] = tasks
+
+    def _all_tasks(self) -> set[asyncio.Task[None]]:
+        return set().union(*self._drain_tasks.values())
 
     async def wait_until_idle(self) -> None:
         """Wait for every job currently being drained to finish. Used by tests and scripts."""
-        while self._drain_tasks:
-            await asyncio.gather(*self._drain_tasks, return_exceptions=True)
-            self._drain_tasks = {task for task in self._drain_tasks if not task.done()}
+        while tasks := {task for task in self._all_tasks() if not task.done()}:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def shutdown(self) -> None:
         """Stop draining. A job in progress is cancelled; its child process is terminated."""
-        for task in self._drain_tasks:
+        tasks = self._all_tasks()
+        for task in tasks:
             task.cancel()
-        await asyncio.gather(*self._drain_tasks, return_exceptions=True)
-        self._drain_tasks.clear()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for kinds in self._drain_tasks:
+            self._drain_tasks[kinds] = set()
 
-    async def _drain(self) -> None:
-        """Run queued jobs one after another until the queue is empty."""
+    async def _drain(self, kinds: tuple[str, ...]) -> None:
+        """Run this lane's queued jobs one after another until there are none."""
         while True:
             # A wake() that arrives while the query below is in flight may be
             # for a job that query did not see. The flag makes the loop look
             # once more instead of exiting and stranding that job.
-            self._wake_requested = False
-            job = await claim_next_job(self._session_factory)
+            self._wake_requested[kinds] = False
+            job = await claim_next_job(self._session_factory, kinds)
             if job is None:
-                if self._wake_requested:
+                if self._wake_requested[kinds]:
                     continue
                 return
             await self._run(job)
@@ -119,9 +152,20 @@ class JobRunner:
         failure, an unknown exception and success all end in a final status.
         """
         try:
-            if job.kind != "parse_document":
+            if job.kind == "answer_question":
+                if self.models is None or self.qa_llm is None:
+                    raise JobFailure("qa_unavailable", "Questions can't be answered on this server right now.", retryable=True)
+                await run_answer_question(
+                    job,
+                    session_factory=self._session_factory,
+                    models=self.models,
+                    llm=self.qa_llm,
+                    cache=self.qa_cache,
+                    gemini_model=self._settings.gemini_model,
+                )
+            elif job.kind != "parse_document":
                 raise JobFailure("unsupported_job", "This kind of task isn't available yet.", retryable=False)
-            if job.payload.get("document_kind") == "claim_document":
+            elif job.payload.get("document_kind") == "claim_document":
                 # A document uploaded to a claim only needs a label.
                 await run_classify_document(
                     job,
@@ -138,6 +182,7 @@ class JobRunner:
                     storage=self._storage,
                     settings=self._settings,
                     extraction_target=self._extraction_target,
+                    models=self.models,
                 )
         except JobFailure as failure:
             logger.warning("Job failed. job_id=%s code=%s detail=%s", job.id, failure.code, failure.detail)
@@ -152,7 +197,7 @@ class JobRunner:
                     self._session_factory,
                     job.id,
                     code="interrupted",
-                    message="This document was being read when the server stopped. Please upload it again.",
+                    message=interrupted_message(job.kind),
                     retryable=True,
                 )
             )
@@ -164,6 +209,10 @@ class JobRunner:
                 self._session_factory,
                 job.id,
                 code="internal_error",
-                message="Something went wrong on our side while reading this document. Please try again.",
+                message=(
+                    "Something went wrong on our side while answering this question. Please try again."
+                    if job.kind == "answer_question"
+                    else "Something went wrong on our side while reading this document. Please try again."
+                ),
                 retryable=True,
             )

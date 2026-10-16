@@ -6,6 +6,7 @@ Stages, each written to job.progress so a polling client can show them:
     parsing_layout     Engine A is running in a child process
     extracting_fields  Engine A has returned; its output is being checked
     storing            the result is being written to the database
+    indexing           each chunk gets its search vector (D-42); see below
 
 Engine A is one function call with no progress callbacks, and its signature
 is not changed. Its two internal stages (Docling layout parsing, then Gemini
@@ -25,6 +26,8 @@ from app.core.config import Settings
 from app.db.models import Document, Job
 from app.jobs.queue import ClaimedJob, SessionFactory, set_progress
 from app.jobs.worker_process import ChildCrashed, ChildTarget, ChildTimedOut, run_in_child_process
+from app.models_server.client import Models, ModelServerError
+from app.qa.indexing import index_document
 from app.services.policy_writer import store_extraction
 from app.storage.base import DocumentStorage, StorageError
 from contracts.models import ExtractionResult
@@ -35,6 +38,7 @@ UPLOADING = ("uploading", 5)
 PARSING_LAYOUT = ("parsing_layout", 20)
 EXTRACTING_FIELDS = ("extracting_fields", 80)
 STORING = ("storing", 90)
+INDEXING = ("indexing", 95)
 
 PDF_CONTENT_TYPE = "application/pdf"
 
@@ -60,6 +64,7 @@ async def run_parse_document(
     storage: DocumentStorage,
     settings: Settings,
     extraction_target: ChildTarget,
+    models: Models | None = None,
 ) -> None:
     """Run one parse job to completion. Raises JobFailure if it cannot succeed."""
     document_id = UUID(job.payload["document_id"])
@@ -137,9 +142,9 @@ async def run_parse_document(
 
     await set_progress(session_factory, job.id, *STORING)
 
-    # One transaction for everything the job produces: the policy rows, the
-    # document's new status, and the job's own success. A reader therefore
-    # never sees "succeeded" without the data, or data without "succeeded".
+    # The policy rows and the document's new status are committed first; the
+    # job itself is marked succeeded only after indexing (below), so a client
+    # polling it sees "indexing" before "done".
     async with session_factory() as session, session.begin():
         document = await session.get(Document, document_id, with_for_update=True)
         job_row = await session.get(Job, job.id, with_for_update=True)
@@ -150,6 +155,33 @@ async def run_parse_document(
 
         document.parse_status = "parsed"
         document.parse_error = None
+
+    # INDEXING. A failure here does not fail the parse: the policy is fully
+    # usable without search vectors except for Q&A, which answers 409
+    # policy_not_indexed until scripts/index_chunks.py fills them in.
+    indexed_warning = None
+    if policy_id is not None:
+        await set_progress(session_factory, job.id, *INDEXING)
+        if models is None:
+            # No model server on this process (MODEL_SERVER_ENABLED=false). Not a
+            # failure of this document; questions answer 409 until it is indexed.
+            logger.info("Indexing skipped: no model server. document_id=%s", document_id)
+        else:
+            try:
+                count = await index_document(session_factory, models, document_id)
+                logger.info("Indexed document. document_id=%s chunks=%s", document_id, count)
+            except ModelServerError as exc:
+                logger.warning("Indexing failed. document_id=%s detail=%s", document_id, exc)
+                indexed_warning = "Not indexed for questions yet: the search models were unavailable. It can be indexed later."
+
+    async with session_factory() as session, session.begin():
+        job_row = await session.get(Job, job.id, with_for_update=True)
+        if job_row is None:
+            raise JobFailure("document_missing", "This document is no longer available.", retryable=False)
+        if indexed_warning:
+            document = await session.get(Document, document_id, with_for_update=True)
+            if document is not None:
+                document.warnings = [*(document.warnings or []), indexed_warning]
         job_row.status = "succeeded"
         job_row.progress = {"step": "done", "percent": 100}
         job_row.result = {"document_id": str(document_id), "policy_id": str(policy_id) if policy_id else None}

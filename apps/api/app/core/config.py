@@ -59,6 +59,20 @@ class Settings(BaseSettings):
     # Docling is memory-heavy: two parses at once can exhaust a small host.
     max_concurrent_parses: int = Field(default=1, ge=1)
 
+    # Policy Q&A (Engine C). The two models run in one warm process
+    # (app/models_server/). "mps" is the Mac's GPU; "cpu" works everywhere.
+    embedding_model: str = "BAAI/bge-m3"
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    model_device: Literal["cpu", "mps"] = "cpu"
+    # The first start downloads ~4.5 GB, so loading may take minutes once.
+    model_load_timeout_seconds: float = Field(default=900, gt=0)
+    model_request_timeout_seconds: float = Field(default=120, gt=0)
+    # Start the model server with the API, so the first question doesn't wait for loading.
+    # Tests turn this off and use an in-process fake.
+    model_server_enabled: bool = True
+    # One Gemini call's limit inside a question job.
+    qa_llm_timeout_seconds: float = Field(default=60, gt=0)
+
     # Deployed web origins, comma-separated. Never "*".
     cors_allowed_origins: str = ""
 
