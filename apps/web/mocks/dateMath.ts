@@ -51,3 +51,19 @@ export function formatDMY(isoDate: string): string {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${d} ${months[m - 1]} ${y}`;
 }
+
+/** `months` calendar months after an ISODate, clamped to a shorter month's last day (31 Jan + 1 = 28/29 Feb), as the backend does. */
+export function addMonthsIso(isoDate: string, months: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number) as [number, number, number];
+  const total = y * 12 + (m - 1) + months;
+  const year = Math.floor(total / 12);
+  const month = (total % 12) + 1;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(Math.min(d, lastDay))}`;
+}
+
+/** Today's date in India, "YYYY-MM-DD". */
+export function todayIst(): string {
+  return nowIso().slice(0, 10);
+}

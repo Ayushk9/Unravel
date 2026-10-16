@@ -5,6 +5,7 @@ import type { Provenance } from "@/api/types";
 import { useDocumentFile } from "@/api/endpoints/documents";
 import { usePolicy } from "@/api/endpoints/policies";
 import { insurerLabel, policyNumberLabel, productLabel } from "@/lib/policyLabels";
+import { PolicyDatesForm } from "@/components/PolicyDatesForm";
 import {
   DocumentViewer,
   ErrorState,
@@ -64,6 +65,11 @@ export function PolicyDetail() {
           </Link>
         </header>
 
+        <section className="flex flex-col gap-2">
+          <h2 className="font-serif text-lg font-semibold text-foreground">Policy dates</h2>
+          <PolicyDatesForm policy={policy.data} />
+        </section>
+
         {!profile ? (
           <p className="rounded border border-dashed border-rule px-4 py-6 text-center text-sm text-muted-foreground">
             This policy is still being parsed — coverage details aren't ready yet.
@@ -108,8 +114,8 @@ export function PolicyDetail() {
             <section className="flex flex-col gap-2">
               <h2 className="font-serif text-lg font-semibold text-foreground">Waiting periods</h2>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {profile.waiting_periods.map((wp) => (
-                  <WaitingPeriodTimeline key={wp.kind} waitingPeriod={wp} />
+                {profile.waiting_periods.map((wp, i) => (
+                  <WaitingPeriodTimeline key={i} waitingPeriod={wp} />
                 ))}
               </div>
             </section>

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import type { ClaimCreateRequest, ClaimEventRequest, GrievanceDraftRequest } from "@/api/types";
+import type { ClaimCreateRequest, ClaimEventRequest, ClaimFactsRequest, GrievanceDraftRequest } from "@/api/types";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/api/queryKeys";
 import {
@@ -54,6 +54,18 @@ export function useAppendClaimEvent(claimId: string) {
     mutationFn: (body: ClaimEventRequest) => apiFetch(`/claims/${claimId}/events`, { method: "POST", body, schema: claimSchema }),
     onSuccess: (claim) => {
       queryClient.setQueryData(queryKeys.claims.detail(claimId), claim);
+    },
+  });
+}
+
+/** D-37: PUT replaces every fact at once. The eligibility assessment reads them, so it is refetched. */
+export function useSaveClaimFacts(claimId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ClaimFactsRequest) => apiFetch(`/claims/${claimId}/facts`, { method: "PUT", body, schema: claimSchema }),
+    onSuccess: (claim) => {
+      queryClient.setQueryData(queryKeys.claims.detail(claimId), claim);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.claims.eligibility(claimId) });
     },
   });
 }

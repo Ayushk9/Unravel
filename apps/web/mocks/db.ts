@@ -9,7 +9,8 @@
  * starts fresh, matching "resets on reload" for a genuinely new session.
  */
 import type { JsonBodyType } from "msw";
-import type { Claim, ClaimEvent, ClaimState, CoverageProfile, Job, JobKind, Policy, StoredDocument } from "@/api/types";
+import type { Claim, ClaimEvent, ClaimFacts, ClaimState, CoverageProfile, Household, Job, JobKind, Policy, PolicyDatesUpdateRequest, StoredDocument } from "@/api/types";
+import { addMonthsIso, todayIst } from "./dateMath";
 import * as fixtures from "./fixtures";
 import { genId } from "./utils";
 
@@ -17,7 +18,8 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
-const STORAGE_KEY = "unravel:mock-db:v1";
+// v2: Claim.facts, Policy.first_inception_date and the household (D-37, D-39, D-40). A v1 session is ignored, not migrated.
+const STORAGE_KEY = "unravel:mock-db:v2";
 
 interface JobRecord {
   job: Job<unknown>;
@@ -33,6 +35,7 @@ interface PersistedShape {
   documents: StoredDocument[];
   policies: Policy[];
   claims: Claim[];
+  household: Household;
   jobs: [string, JobRecord][];
   idempotency: [string, { status: number; body: JsonBodyType }][];
 }
@@ -52,6 +55,7 @@ function persist(): void {
       documents,
       policies,
       claims,
+      household,
       jobs: [...jobs.entries()],
       idempotency: [...idempotencyStore.entries()],
     };
@@ -132,6 +136,22 @@ export function patchCoverageField(
     }
   }
 
+  // sub_limits.<position>.cap_amount and waiting_periods.<position>.months (D-41):
+  // the 0-based index in the list, which always names exactly one row.
+  if (segments.length === 3 && segments[1] !== undefined && /^\d+$/.test(segments[1])) {
+    const position = Number(segments[1]);
+    const subLimit = segments[0] === "sub_limits" && segments[2] === "cap_amount" ? profile.sub_limits[position] : undefined;
+    const waitingPeriod = segments[0] === "waiting_periods" && segments[2] === "months" ? profile.waiting_periods[position] : undefined;
+    const field = subLimit?.cap_amount ?? waitingPeriod?.months;
+    if (field) {
+      field.value = typeof value === "number" ? value : field.value;
+      field.user_confirmed = userConfirmed;
+      persist();
+      return { ok: true, policy };
+    }
+    return { ok: false, reason: "unknown_field" };
+  }
+
   // sub_limits.<category>.cap_amount — addressed by category label per
   // API_DECISIONS.md D-15's own example ("sub_limits.room_rent.cap_amount"),
   // not array index.
@@ -158,6 +178,54 @@ export function patchCoverageField(
   }
 
   return { ok: false, reason: "unknown_field" };
+}
+
+/** D-39: same checks as the backend (apps/api/app/services/policy_dates.py). Returns field errors, or the updated policy. */
+export function updatePolicyDates(
+  policyId: string,
+  body: PolicyDatesUpdateRequest,
+): { ok: true; policy: Policy } | { ok: false; reason: "policy_not_found" } | { ok: false; reason: "invalid"; fieldErrors: { field: string; message: string }[] } {
+  const policy = getPolicy(policyId);
+  if (!policy) return { ok: false, reason: "policy_not_found" };
+  const keys = ["start_date", "end_date", "first_inception_date"] as const;
+  if (!keys.some((k) => k in body)) {
+    return { ok: false, reason: "invalid", fieldErrors: keys.map((k) => ({ field: k, message: "Not sent." })) };
+  }
+  const next = {
+    start_date: "start_date" in body ? (body.start_date ?? null) : policy.start_date,
+    end_date: "end_date" in body ? (body.end_date ?? null) : policy.end_date,
+    first_inception_date: "first_inception_date" in body ? (body.first_inception_date ?? null) : policy.first_inception_date,
+  };
+  const errors: { field: string; message: string }[] = [];
+  if (next.start_date && next.end_date && next.end_date <= next.start_date) errors.push({ field: "end_date", message: "Must be after start_date." });
+  if (next.first_inception_date && next.first_inception_date > todayIst()) errors.push({ field: "first_inception_date", message: "Can't be in the future." });
+  if (next.first_inception_date && next.start_date && next.first_inception_date > next.start_date) {
+    errors.push({ field: "first_inception_date", message: "Can't be after start_date: continuous cover begins on or before the current policy's start." });
+  }
+  if (errors.length > 0) return { ok: false, reason: "invalid", fieldErrors: errors };
+
+  Object.assign(policy, next);
+  // Waiting-period dates are derived from the clock start, as on the server.
+  const clockStart = next.first_inception_date ?? next.start_date;
+  for (const period of policy.coverage_profile?.waiting_periods ?? []) {
+    const months = period.months.value;
+    const whole = months !== null && Number.isInteger(months) && months > 0;
+    period.starts_on = clockStart && whole ? clockStart : null;
+    period.expires_on = clockStart && whole ? addMonthsIso(clockStart, months) : null;
+  }
+  persist();
+  return { ok: true, policy };
+}
+
+// --- household (D-40) ---
+let household: Household = persisted ? persisted.household : clone(fixtures.household);
+export function getHousehold(): Household {
+  return household;
+}
+export function setCityTier(cityTier: Household["city_tier"]): Household {
+  household = { ...household, city_tier: cityTier };
+  persist();
+  return household;
 }
 
 // --- members / alerts / ombudsman / benchmarks — read-only fixtures ---
@@ -238,6 +306,32 @@ export function appendClaimEvent(
   return { ok: true, claim };
 }
 
+/** D-37: replaces every fact. Positions are checked against the claim's policy, as on the server. */
+export function setClaimFacts(
+  claimId: string,
+  facts: ClaimFacts,
+): { ok: true; claim: Claim } | { ok: false; reason: "not_found" } | { ok: false; reason: "invalid"; field: string; message: string } {
+  const claim = claims.find((c) => c.id === claimId);
+  if (!claim) return { ok: false, reason: "not_found" };
+  const profile = getPolicy(claim.policy_id)?.coverage_profile;
+  if (facts.first_diagnosed_on && facts.first_diagnosed_on > todayIst()) {
+    return { ok: false, reason: "invalid", field: "first_diagnosed_on", message: "Can't be in the future." };
+  }
+  for (const position of facts.matched_waiting_periods ?? []) {
+    if (profile?.waiting_periods[position]?.kind !== "disease_specific") {
+      return { ok: false, reason: "invalid", field: "matched_waiting_periods", message: `Position ${position} is not a condition-specific waiting period.` };
+    }
+  }
+  for (const position of facts.matched_exclusions ?? []) {
+    if (!profile?.exclusions[position]) {
+      return { ok: false, reason: "invalid", field: "matched_exclusions", message: `Position ${position} is not one of the policy's exclusions.` };
+    }
+  }
+  claim.facts = { ...facts };
+  persist();
+  return { ok: true, claim: { ...claim, current_state: computeCurrentState(claim.events) } };
+}
+
 export function documentsForClaim(claimId: string): StoredDocument[] {
   return listDocuments().filter((d) => d.claim_id === claimId);
 }
@@ -311,6 +405,7 @@ export function resetDb(): void {
   documents = clone(fixtures.documents);
   policies = clone(fixtures.policies);
   claims = clone(fixtures.claims);
+  household = clone(fixtures.household);
   jobs.clear();
   idempotencyStore.clear();
   try {

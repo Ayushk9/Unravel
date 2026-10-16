@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import type { Claim, ClaimState, Provenance, StoredDocument } from "@/api/types";
+import type { Claim, ClaimState, Policy, Provenance, StoredDocument } from "@/api/types";
 import { ApiError } from "@/api/client";
 import { useAppendClaimEvent, useClaim, useEligibility } from "@/api/endpoints/claims";
 import { useClaimDocuments, useCorrectDocumentType, useDeleteDocument, useUploadDocument } from "@/api/endpoints/documents";
@@ -15,7 +15,6 @@ import {
   claimStateLabel,
   DeadlineCard,
   DocumentRow,
-  DocumentViewer,
   EligibilityAssessmentView,
   EmptyState,
   ErrorState,
@@ -24,9 +23,8 @@ import {
   Skeleton,
 } from "@/components/primitives";
 import { insurerLabel, productLabel } from "@/lib/policyLabels";
-
-/** Same mock limitation as /policies/upload and /claims/new — see DECISIONS.md. */
-const MOCK_SOURCE_PDF = "/kitchen-sink/sample-policy.pdf";
+import { ProvenanceModal } from "@/components/ProvenanceModal";
+import { ClaimFactsForm } from "@/components/ClaimFactsForm";
 
 const TABS: { key: string; label: string }[] = [
   { key: "timeline", label: "Timeline" },
@@ -92,7 +90,7 @@ export function ClaimWorkspace() {
       </div>
 
       {tab === "timeline" && <TimelineTab claim={claim.data} />}
-      {tab === "eligibility" && <EligibilityTab claimId={claim.data.id} onGoToDocuments={() => switchTab("documents")} />}
+      {tab === "eligibility" && <EligibilityTab claim={claim.data} policy={policy.data ?? null} onGoToDocuments={() => switchTab("documents")} />}
       {tab === "documents" && <DocumentsTab claimId={claim.data.id} />}
       {tab === "bill" && <BillTab />}
     </div>
@@ -293,9 +291,20 @@ function AddEventModal({ claimId, open, onClose }: { claimId: string; open: bool
 
 // --- Eligibility tab ---
 
-function EligibilityTab({ claimId, onGoToDocuments }: { claimId: string; onGoToDocuments: () => void }) {
+function EligibilityTab({ claim, policy, onGoToDocuments }: { claim: Claim; policy: Policy | null; onGoToDocuments: () => void }) {
   const [viewerProvenance, setViewerProvenance] = useState<Provenance | null>(null);
-  const eligibility = useEligibility(claimId);
+  const eligibility = useEligibility(claim.id);
+  const anyUnanswered = Object.entries(claim.facts).some(([key, value]) => key !== "diagnosis" && value === null);
+
+  const factsSection = (
+    // Open while something is unanswered, so the missing facts can be answered right here.
+    <details open={anyUnanswered} className="rounded border border-rule bg-card px-4 py-3">
+      <summary className="cursor-pointer font-serif text-base font-semibold text-foreground">About this illness and stay</summary>
+      <div className="mt-3">
+        <ClaimFactsForm claim={claim} policy={policy} />
+      </div>
+    </details>
+  );
 
   if (eligibility.isPending) return <Skeleton className="h-64 w-full" />;
   if (eligibility.isError) {
@@ -304,10 +313,9 @@ function EligibilityTab({ claimId, onGoToDocuments }: { claimId: string; onGoToD
 
   return (
     <div className="flex flex-col gap-4">
+      {factsSection}
       <EligibilityAssessmentView assessment={eligibility.data} onOpenProvenance={setViewerProvenance} onUploadResolvingDocument={onGoToDocuments} />
-      <Modal open={viewerProvenance !== null} onClose={() => setViewerProvenance(null)} title="Governing clause">
-        <DocumentViewer fileUrl={MOCK_SOURCE_PDF} activeProvenance={viewerProvenance} />
-      </Modal>
+      <ProvenanceModal provenance={viewerProvenance} onClose={() => setViewerProvenance(null)} title="Governing clause" />
     </div>
   );
 }
@@ -386,9 +394,7 @@ function DocumentsTab({ claimId }: { claimId: string }) {
         <ParseJobPoller key={jobId} jobId={jobId} />
       ))}
 
-      <Modal open={viewerProvenance !== null} onClose={() => setViewerProvenance(null)} title="Document preview">
-        <DocumentViewer fileUrl={MOCK_SOURCE_PDF} activeProvenance={viewerProvenance} />
-      </Modal>
+      <ProvenanceModal provenance={viewerProvenance} onClose={() => setViewerProvenance(null)} title="Document preview" />
     </div>
   );
 }

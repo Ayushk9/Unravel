@@ -21,6 +21,7 @@ import { HYBRID_LIVE_ROUTES, type HybridHttpMethod } from "@/api/hybridRoutes";
 const methodFn: Record<HybridHttpMethod, typeof http.get> = {
   GET: http.get,
   POST: http.post,
+  PUT: http.put,
   PATCH: http.patch,
   DELETE: http.delete,
 };

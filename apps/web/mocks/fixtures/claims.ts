@@ -126,6 +126,15 @@ const settledEvents: ClaimEvent[] = [
   },
 ];
 
+export const NO_FACTS: Claim["facts"] = {
+  diagnosis: null,
+  condition_is_pre_existing: null,
+  first_diagnosed_on: null,
+  matched_waiting_periods: null,
+  matched_exclusions: null,
+  planned_room_rent_per_day: null,
+};
+
 export const deniedClaim: Claim = {
   id: ids.claim.denied,
   policy_id: ids.policy.retail,
@@ -141,6 +150,14 @@ export const deniedClaim: Claim = {
   events: deniedEvents,
   deadlines: [],
   omitted_deadlines: [],
+  facts: {
+    diagnosis: "Complications of type 2 diabetes",
+    condition_is_pre_existing: true,
+    first_diagnosed_on: "2022-11-05",
+    matched_waiting_periods: [],
+    matched_exclusions: [],
+    planned_room_rent_per_day: null,
+  },
 };
 
 export const underReviewClaim: Claim = {
@@ -158,6 +175,7 @@ export const underReviewClaim: Claim = {
   events: underReviewEvents,
   deadlines: [],
   omitted_deadlines: [],
+  facts: NO_FACTS,
 };
 
 export const settledClaim: Claim = {
@@ -175,6 +193,7 @@ export const settledClaim: Claim = {
   events: settledEvents,
   deadlines: [],
   omitted_deadlines: [],
+  facts: NO_FACTS,
 };
 
 export const claims: Claim[] = [deniedClaim, underReviewClaim, settledClaim];

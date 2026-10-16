@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import type {
+  ClaimFacts,
   BillValidationReport,
   Claim,
   ClaimCreateRequest,
@@ -12,6 +13,7 @@ import type {
 } from "@/api/types";
 import * as db from "../db";
 import { deniedClaimBillFlags, deniedClaimBillLineItems, deniedClaimBillTotalAtRisk, deniedClaimBillTotalBilled, ids } from "../fixtures";
+import { NO_FACTS } from "../fixtures/claims";
 import { computeDeadlines } from "../deadlines";
 import { computeEligibility } from "../eligibility";
 import { errorResponse, genId, notFound, plainReadDelay, requireAuth } from "../utils";
@@ -119,6 +121,7 @@ export const claimsHandlers = [
       events: [{ id: genId("event"), claim_id: claimId, from_state: null, to_state: "intimated", occurred_at: now, note: "Claim intimated via app", source: "user" }],
       deadlines: [],
       omitted_deadlines: [],
+      facts: { ...NO_FACTS },
     };
     db.addClaim(claim);
     return HttpResponse.json(withComputedDeadlines(claim), { status: 201 });
@@ -164,6 +167,25 @@ export const claimsHandlers = [
         code: "illegal_transition",
         message: "That transition isn't allowed from the claim's current state.",
         field_errors: result.allowed.map((state) => ({ field: "to_state", message: state })),
+      });
+    }
+    return HttpResponse.json(withComputedDeadlines(result.claim));
+  }),
+
+  // D-37: a full replacement of the claim's facts.
+  http.put("*/api/v1/claims/:id/facts", async ({ request, params }) => {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+    await plainReadDelay();
+
+    const body = (await request.json()) as ClaimFacts;
+    const result = db.setClaimFacts(params.id as string, body);
+    if (!result.ok) {
+      if (result.reason === "not_found") return notFound("No claim with that id belongs to your household.");
+      return errorResponse(422, {
+        code: "validation_error",
+        message: "Those claim facts aren't valid.",
+        field_errors: [{ field: result.field, message: result.message }],
       });
     }
     return HttpResponse.json(withComputedDeadlines(result.claim));

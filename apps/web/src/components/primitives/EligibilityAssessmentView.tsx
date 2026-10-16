@@ -55,8 +55,12 @@ export function EligibilityAssessmentView({
   onUploadResolvingDocument,
   className,
 }: EligibilityAssessmentViewProps) {
-  const { band, checks, ombudsman_precedent } = assessment;
-  const unknownChecks = checks.filter((c) => c.status === "unknown");
+  const { band, checks, ombudsman_precedent, ombudsman_precedent_note } = assessment;
+  // D-36: one card per missing fact (a check can need several), not one per check. The same fact is listed once.
+  const missingFacts = checks
+    .filter((c) => c.status === "unknown")
+    .flatMap((check) => check.missing_facts.map((missing) => ({ check, missing })))
+    .filter((item, index, all) => all.findIndex((other) => other.missing.fact === item.missing.fact) === index);
 
   return (
     <div className={`flex flex-col gap-6 ${className ?? ""}`}>
@@ -67,15 +71,15 @@ export function EligibilityAssessmentView({
           <section className="flex flex-col gap-2">
             <h2 className="font-serif text-lg font-semibold text-foreground">What's missing</h2>
             <div className="flex flex-col gap-2">
-              {unknownChecks.length > 0 ? (
-                unknownChecks.map((check) => (
+              {missingFacts.length > 0 ? (
+                missingFacts.map(({ check, missing }) => (
                   <AbstentionCard
-                    key={check.id}
-                    missingFact={check.missing_fact ?? check.explanation}
-                    resolvingDocument={check.resolving_document ? documentTypeLabel[check.resolving_document] : null}
+                    key={missing.fact}
+                    missingFact={`${missing.fact}. ${missing.where_to_get}`}
+                    resolvingDocument={missing.resolving_document ? documentTypeLabel[missing.resolving_document] : null}
                     action={
-                      check.resolving_document && onUploadResolvingDocument
-                        ? { label: `Upload ${documentTypeLabel[check.resolving_document]}`, onClick: () => onUploadResolvingDocument(check) }
+                      missing.resolving_document && onUploadResolvingDocument
+                        ? { label: `Upload ${documentTypeLabel[missing.resolving_document]}`, onClick: () => onUploadResolvingDocument(check) }
                         : undefined
                     }
                   />
@@ -131,7 +135,7 @@ export function EligibilityAssessmentView({
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No similar Ombudsman cases found for this claim yet.</p>
+          <p className="text-sm text-muted-foreground">{ombudsman_precedent_note ?? "No similar Ombudsman cases found for this claim yet."}</p>
         )}
       </section>
     </div>

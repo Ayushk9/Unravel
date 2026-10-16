@@ -10,7 +10,7 @@
  * the same syntax MSW's own `http.get(...)` path matching understands, so
  * hybridPassthrough.ts can hand these patterns straight to MSW unmodified.
  */
-export type HybridHttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HybridHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface HybridRoute {
   method: HybridHttpMethod;
@@ -25,6 +25,8 @@ export const HYBRID_LIVE_ROUTES: HybridRoute[] = [
   // corrections must go to the same backend.
   { method: "GET", pattern: "/documents/:id/file" },
   { method: "PATCH", pattern: "/policies/:id/coverage-profile/fields/:fieldPath" },
+  // Changing a live policy's dates (D-39) must reach the same backend as reading it.
+  { method: "PATCH", pattern: "/policies/:id" },
 ];
 
 function toPathRegex(pattern: string): RegExp {

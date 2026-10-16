@@ -11,6 +11,8 @@ import { PolicyAsk } from "@/pages/PolicyAsk";
 import { ClaimList } from "@/pages/ClaimList";
 import { ClaimNew } from "@/pages/ClaimNew";
 import { ClaimWorkspace } from "@/pages/ClaimWorkspace";
+import { Alerts } from "@/pages/Alerts";
+import { Settings } from "@/pages/Settings";
 
 /**
  * Route table from docs/claude-code-frontend-prompt.md §6. Screens not built
@@ -34,9 +36,9 @@ const appShellChildren: RouteObject[] = [
   { path: "claims/new", element: <ClaimNew /> },
   { path: "claims/:id", element: <ClaimWorkspace /> },
   { path: "claims/:id/grievance", element: <PlaceholderScreen title="Grievance drafting" phase="Phase 5" /> },
-  { path: "alerts", element: <PlaceholderScreen title="Alerts" phase="Phase 6" /> },
+  { path: "alerts", element: <Alerts /> },
   { path: "insurers", element: <PlaceholderScreen title="Insurer benchmarking" phase="Phase 6" /> },
-  { path: "settings", element: <PlaceholderScreen title="Settings" phase="a later phase" /> },
+  { path: "settings", element: <Settings /> },
   { path: "*", element: <PlaceholderScreen title="Page not found" phase="—" /> },
 ].map((route) => ({ ...route, errorElement: <RouteErrorFallback /> }));
 

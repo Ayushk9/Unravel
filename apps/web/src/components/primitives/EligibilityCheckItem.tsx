@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, UploadCloud } from "lucide-react";
-import type { EligibilityCheck, Provenance } from "@/api/types";
+import type { Confidence, EligibilityCheck, Provenance } from "@/api/types";
+import { CheckValues } from "./CheckValues";
 import { ProvenanceChip } from "./ProvenanceChip";
 import { stateClasses, stateIcon, type StateTone } from "./state";
 import { documentTypeLabel } from "./DocumentTypeSelect";
@@ -18,6 +19,15 @@ const statusLabel: Record<EligibilityCheck["status"], string> = {
   failed: "Not satisfied",
   unknown: "Unknown",
 };
+
+// D-36: a three-level label for how sure the inputs were. Never a number or a percentage.
+const confidenceText: Record<Confidence, string> = {
+  high: "Based on high-confidence facts",
+  medium: "Based on at least one medium-confidence fact; worth checking",
+  low: "Based on at least one low-confidence fact; check it before relying on this",
+  unknown: "Confidence not reported",
+};
+const confidenceTone: Record<Confidence, StateTone> = { high: "neutral", medium: "caution", low: "negative", unknown: "neutral" };
 
 export interface EligibilityCheckItemProps {
   check: EligibilityCheck;
@@ -57,6 +67,9 @@ export function EligibilityCheckItem({
         <div className="flex flex-1 flex-col">
           <span className="font-serif text-sm font-semibold text-foreground">{check.title}</span>
           <span className={`text-xs font-medium ${c.text}`}>{statusLabel[check.status]}</span>
+          {check.status !== "unknown" && check.confidence !== "high" && (
+            <span className={`text-xs ${stateClasses[confidenceTone[check.confidence]].text}`}>{confidenceText[check.confidence]}</span>
+          )}
         </div>
         <ChevronDown className={`size-4 shrink-0 text-ink-muted transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
@@ -68,20 +81,37 @@ export function EligibilityCheckItem({
           {/* EligibilityCheck.governing_clause is a bare Provenance (D-14's Extracted<T> wrapper, with its confidence/user_confirmed, lives on the source coverage-profile field, not here) — so this never claims "verified" for something nobody actually confirmed. */}
           {check.governing_clause && <ProvenanceChip provenance={check.governing_clause} userConfirmed={false} onOpen={onOpenProvenance} />}
 
-          {check.status === "unknown" && check.missing_fact && (
-            <div className="mt-1 flex flex-col gap-1.5 rounded border border-dashed border-neutral-border bg-neutral-bg px-3 py-2">
-              <span className="text-sm text-neutral">Missing: {check.missing_fact}</span>
-              {check.resolving_document && onUploadResolvingDocument && (
-                <button
-                  type="button"
-                  onClick={() => onUploadResolvingDocument(check)}
-                  className="inline-flex w-fit items-center gap-1.5 rounded border border-neutral-border bg-card px-2 py-1 text-xs font-medium text-neutral hover:bg-neutral-bg"
-                >
-                  <UploadCloud className="size-3.5" aria-hidden="true" />
-                  Upload {documentTypeLabel[check.resolving_document]}
-                </button>
-              )}
-            </div>
+          {check.status !== "unknown" && (
+            <p className={`text-xs ${stateClasses[confidenceTone[check.confidence]].text}`}>{confidenceText[check.confidence]}.</p>
+          )}
+
+          {/* D-36: every missing fact, each with where to get it. Only facts a document can answer get an upload button. */}
+          {check.status === "unknown" && check.missing_facts.length > 0 && (
+            <ul className="mt-1 flex flex-col gap-2">
+              {check.missing_facts.map((missing) => (
+                <li key={missing.fact} className="flex flex-col gap-1 rounded border border-dashed border-neutral-border bg-neutral-bg px-3 py-2">
+                  <span className="text-sm font-medium text-neutral">Missing: {missing.fact}</span>
+                  <span className="text-xs text-muted-foreground">{missing.where_to_get}</span>
+                  {missing.resolving_document && onUploadResolvingDocument && (
+                    <button
+                      type="button"
+                      onClick={() => onUploadResolvingDocument(check)}
+                      className="inline-flex w-fit items-center gap-1.5 rounded border border-neutral-border bg-card px-2 py-1 text-xs font-medium text-neutral hover:bg-neutral-bg"
+                    >
+                      <UploadCloud className="size-3.5" aria-hidden="true" />
+                      Upload {documentTypeLabel[missing.resolving_document]}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {Object.keys(check.values).length > 0 && (
+            <details className="rounded border border-rule px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">How this was worked out</summary>
+              <CheckValues values={check.values} className="mt-2" />
+            </details>
           )}
         </div>
       )}

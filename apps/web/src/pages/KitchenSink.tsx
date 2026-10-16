@@ -205,6 +205,7 @@ const samplePolicy: Policy = {
   policy_type: "individual",
   start_date: "2026-01-01",
   end_date: "2027-01-01",
+  first_inception_date: null,
   members: [],
   coverage_profile: {
     policy_id: "policy-sample",
@@ -230,6 +231,8 @@ const sampleAlerts: Alert[] = [
     suggested_action: null,
     reference_source: null,
     triggers_on: "2026-09-02",
+    verified: true,
+    provenance: pedWaitingProvenance,
   },
   {
     id: "alert-2",
@@ -241,6 +244,8 @@ const sampleAlerts: Alert[] = [
     suggested_action: "Compare the two policies",
     reference_source: null,
     triggers_on: null,
+    verified: true,
+    provenance: null,
   },
   {
     id: "alert-3",
@@ -252,6 +257,8 @@ const sampleAlerts: Alert[] = [
     suggested_action: null,
     reference_source: "Estimate based on your policy's stated cap",
     triggers_on: null,
+    verified: false,
+    provenance: roomRentProvenance,
   },
 ];
 
@@ -309,6 +316,14 @@ const sampleClaim: Claim = {
   ],
   deadlines: [sampleDeadlines[2]!],
   omitted_deadlines: [],
+  facts: {
+    diagnosis: "Complications of type 2 diabetes",
+    condition_is_pre_existing: true,
+    first_diagnosed_on: "2022-11-05",
+    matched_waiting_periods: [],
+    matched_exclusions: [],
+    planned_room_rent_per_day: null,
+  },
 };
 
 const sampleDocumentParsed: StoredDocument = {
@@ -348,10 +363,13 @@ const sampleEligibilityChecks: EligibilityCheck[] = [
     title: "Pre-existing disease waiting period",
     status: "failed",
     explanation:
-      "Your policy's continuous cover began 1 Apr 2023. The pre-existing-disease waiting period is 48 months, so it runs to 1 Apr 2027. Your admission on 5 Jul 2026 falls 27 months inside it.",
+      "Your continuous cover started 1 Apr 2023; the 48-month waiting period ends on 1 Apr 2027. Your admission on 5 Jul 2026 is before that date: 39 months and 4 days into the waiting period, with 8 months and 27 days still to run.",
     governing_clause: pedWaitingProvenance,
     missing_fact: null,
     resolving_document: null,
+    confidence: "high",
+    values: { first_inception_date: "2023-04-01", waiting_months: 48, waiting_period_ends: "2027-04-01", admitted_on: "2026-07-05" },
+    missing_facts: [],
   },
   {
     id: "check-at-risk",
@@ -361,6 +379,9 @@ const sampleEligibilityChecks: EligibilityCheck[] = [
     governing_clause: null,
     missing_fact: null,
     resolving_document: null,
+    confidence: "medium",
+    values: { claimed_amount: 120000000, sum_insured: 100000000, amount_over: 20000000 },
+    missing_facts: [],
   },
   {
     id: "check-unknown",
@@ -368,8 +389,13 @@ const sampleEligibilityChecks: EligibilityCheck[] = [
     status: "unknown",
     explanation: "We don't know this claim's admission date yet, so we can't check it against the waiting period.",
     governing_clause: null,
-    missing_fact: "Admission date",
+    missing_fact: "Date of admission",
     resolving_document: "discharge_summary",
+    confidence: "high",
+    values: {},
+    missing_facts: [
+      { fact: "Date of admission", where_to_get: "On the hospital's discharge summary or admission note.", resolving_document: "discharge_summary" },
+    ],
   },
   {
     id: "check-satisfied",
@@ -379,6 +405,9 @@ const sampleEligibilityChecks: EligibilityCheck[] = [
     governing_clause: roomRentProvenance,
     missing_fact: null,
     resolving_document: null,
+    confidence: "low",
+    values: { room_rent_per_day: 450000, room_rent_cap_per_day: 500000 },
+    missing_facts: [],
   },
 ];
 
@@ -399,6 +428,7 @@ const sampleEligibilityAssessment: EligibilityAssessment = {
   band: "likely_ineligible",
   checks: sampleEligibilityChecks,
   ombudsman_precedent: [sampleOmbudsmanAward],
+  ombudsman_precedent_note: null,
   generated_at: "2026-08-20T10:00:00+05:30",
 };
 
@@ -407,6 +437,7 @@ const sampleAbstainedAssessment: EligibilityAssessment = {
   band: "insufficient_information",
   checks: [sampleEligibilityChecks[2]!],
   ombudsman_precedent: [],
+  ombudsman_precedent_note: "Precedent corpus not yet loaded, so no similar Ombudsman decisions are shown.",
   generated_at: "2026-08-20T10:00:00+05:30",
 };
 

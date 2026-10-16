@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { FieldCorrectionRequest, JobAccepted, Policy, PolicyCreateRequest, QuestionAnswerResult, QuestionRequest } from "@/api/types";
+import type { FieldCorrectionRequest, JobAccepted, Policy, PolicyCreateRequest, PolicyDatesUpdateRequest, QuestionAnswerResult, QuestionRequest } from "@/api/types";
 import * as db from "../db";
 import { errorResponse, notFound, plainReadDelay, requireAuth } from "../utils";
 import { applyGlobalScenarios, getScenarios } from "../scenarios";
@@ -166,6 +166,21 @@ export const policiesHandlers = [
     const policy = db.getPolicy(params.id as string);
     if (!policy) return notFound("No policy with that id belongs to your household.");
     return HttpResponse.json(withLowConfidenceOverride(policy));
+  }),
+
+  // D-39: only the keys sent change; null clears a date.
+  http.patch("*/api/v1/policies/:id", async ({ request, params }) => {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+    await plainReadDelay();
+
+    const body = (await request.json()) as PolicyDatesUpdateRequest;
+    const result = db.updatePolicyDates(params.id as string, body);
+    if (!result.ok) {
+      if (result.reason === "policy_not_found") return notFound("No policy with that id belongs to your household.");
+      return errorResponse(422, { code: "validation_error", message: "Those policy dates don't fit together.", field_errors: result.fieldErrors });
+    }
+    return HttpResponse.json(result.policy);
   }),
 
   http.patch("*/api/v1/policies/:id/coverage-profile/fields/:fieldPath", async ({ request, params }) => {

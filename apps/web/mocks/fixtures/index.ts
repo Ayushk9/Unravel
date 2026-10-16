@@ -14,3 +14,4 @@ export {
 export { ombudsmanAwards, ombudsmanAwardsByDenialGroundKeyword } from "./ombudsman-awards";
 export { benchmarks } from "./benchmarks";
 export { alerts } from "./alerts";
+export { household } from "./household";

@@ -28,6 +28,7 @@ export { DocumentTypeSelect, documentTypeLabel } from "./DocumentTypeSelect";
 export { DocumentRow } from "./DocumentRow";
 export { CompletenessPanel } from "./CompletenessPanel";
 export { EligibilityCheckItem } from "./EligibilityCheckItem";
+export { CheckValues } from "./CheckValues";
 export { EligibilityAssessmentView } from "./EligibilityAssessmentView";
 export { PrecedentCard } from "./PrecedentCard";
 export { ClaimEventItem } from "./ClaimEventItem";

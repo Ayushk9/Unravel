@@ -209,11 +209,12 @@ export function PolicyUpload() {
       parse: (raw) => Number.parseFloat(raw),
       placeholder: "Hours",
     },
+    // D-41: addressed by position in the list, which names exactly one row even when two share a category.
     ...profile.sub_limits.map(
-      (s): CorrectableField => ({
-        key: `sub_limit_${s.category}`,
+      (s, position): CorrectableField => ({
+        key: `sub_limit_${position}`,
         label: `${s.label} cap`,
-        fieldPath: `sub_limits.${s.category}.cap_amount`,
+        fieldPath: `sub_limits.${position}.cap_amount`,
         valueDisplay: <Money value={s.cap_amount.value} />,
         confidence: s.cap_amount.confidence,
         userConfirmed: s.cap_amount.user_confirmed,
@@ -245,7 +246,7 @@ export function PolicyUpload() {
       case "intimation_deadline_hours":
         return profile!.intimation_deadline_hours.value ?? 0;
       default: {
-        const subLimit = profile!.sub_limits.find((s) => `sub_limit_${s.category}` === field.key);
+        const subLimit = profile!.sub_limits.find((_, position) => `sub_limit_${position}` === field.key);
         return subLimit?.cap_amount.value ?? 0;
       }
     }
@@ -317,8 +318,8 @@ export function PolicyUpload() {
         <section className="flex flex-col gap-2">
           <h2 className="font-serif text-lg font-semibold text-foreground">Waiting periods</h2>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {profile.waiting_periods.map((wp) => (
-              <WaitingPeriodTimeline key={wp.kind} waitingPeriod={wp} />
+            {profile.waiting_periods.map((wp, i) => (
+              <WaitingPeriodTimeline key={i} waitingPeriod={wp} />
             ))}
           </div>
         </section>

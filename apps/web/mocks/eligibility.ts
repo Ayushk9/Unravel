@@ -1,15 +1,61 @@
-import type { Claim, EligibilityAssessment, EligibilityCheck, Policy } from "@/api/types";
-import { approxMonthsBetween, formatDMY, nowIso } from "./dateMath";
+import type { Claim, Confidence, EligibilityAssessment, EligibilityCheck, MissingFact, Policy } from "@/api/types";
+import { formatDMY, nowIso } from "./dateMath";
 import { ombudsmanAwardsByDenialGroundKeyword } from "./fixtures";
 import { getScenarios } from "./scenarios";
 
-const STATUS_RANK: Record<EligibilityCheck["status"], number> = { failed: 0, at_risk: 1, unknown: 2, satisfied: 3 };
-
 /**
- * Computed live from the claim + its policy's actual coverage profile —
- * deliberately not hand-typed prose, so the date arithmetic in each
- * explanation can't drift from the waiting-period data it describes.
+ * A small stand-in for Engine B (engines/rules), enough to exercise every
+ * screen state in mock mode. The real rules, and their exact wording, live in
+ * the backend; this file only mirrors the wire shape (D-36) and the band
+ * precedence.
  */
+
+const STATUS_RANK: Record<EligibilityCheck["status"], number> = { failed: 0, at_risk: 1, unknown: 2, satisfied: 3 };
+const CRITICAL = new Set(["coverage_profile", "initial_waiting_period", "ped_waiting_period"]);
+const PRECEDENT_NOTE = "Precedent corpus not yet loaded, so no similar Ombudsman decisions are shown.";
+
+const ADMISSION_DATE: MissingFact = {
+  fact: "Date of admission",
+  where_to_get: "On the hospital's discharge summary or admission note.",
+  resolving_document: "discharge_summary",
+};
+const IS_PRE_EXISTING: MissingFact = {
+  fact: "Whether this illness started before the policy did (a pre-existing condition)",
+  where_to_get: "Your doctor or your own medical history; answer it on this claim.",
+  resolving_document: null,
+};
+
+interface CheckInput {
+  id: string;
+  title: string;
+  status: EligibilityCheck["status"];
+  explanation: string;
+  governing_clause: EligibilityCheck["governing_clause"];
+  confidence?: Confidence;
+  values?: EligibilityCheck["values"];
+  missing_facts?: MissingFact[];
+}
+
+/** Fills the D-36 fields the way the backend does: missing_fact / resolving_document mirror the first missing fact. */
+function check(input: CheckInput): EligibilityCheck {
+  const missing = input.missing_facts ?? [];
+  return {
+    ...input,
+    confidence: input.confidence ?? "high",
+    values: input.values ?? {},
+    missing_facts: missing,
+    missing_fact: missing[0]?.fact ?? null,
+    resolving_document: missing[0]?.resolving_document ?? null,
+  };
+}
+
+function bandOf(checks: EligibilityCheck[]): EligibilityAssessment["band"] {
+  if (checks.some((c) => c.status === "unknown" && CRITICAL.has(c.id))) return "insufficient_information";
+  if (checks.some((c) => c.status === "failed" && c.confidence === "high")) return "likely_ineligible";
+  if (checks.some((c) => c.status === "failed" || c.status === "at_risk")) return "at_risk";
+  return "likely_eligible";
+}
+
 export function computeEligibility(claim: Claim, policy: Policy): EligibilityAssessment {
   const scenarios = getScenarios();
   if (scenarios.forceEligibilityBand) {
@@ -22,159 +68,130 @@ export function computeEligibility(claim: Claim, policy: Policy): EligibilityAss
       claim_id: claim.id,
       band: "insufficient_information",
       checks: [
-        {
-          id: "coverage_profile_missing",
-          title: "Policy coverage profile",
+        check({
+          id: "coverage_profile",
+          title: "Policy coverage details",
           status: "unknown",
-          explanation: "This policy hasn't finished parsing yet, so we can't check anything against it.",
+          confidence: "low",
+          explanation: "This policy's coverage details have not been read yet, so nothing can be checked against them.",
           governing_clause: null,
-          missing_fact: "Coverage profile",
-          resolving_document: "policy_wording",
-        },
+          missing_facts: [{ fact: "Your policy's coverage details", where_to_get: "In your policy wording.", resolving_document: "policy_wording" }],
+        }),
       ],
       ombudsman_precedent: [],
+      ombudsman_precedent_note: PRECEDENT_NOTE,
       generated_at: nowIso(),
     };
   }
 
   const checks: EligibilityCheck[] = [];
+  const facts = claim.facts;
 
   const ped = profile.waiting_periods.find((w) => w.kind === "pre_existing");
   if (ped) {
-    if (!claim.admitted_on) {
-      checks.push({
-        id: "ped_waiting_period",
-        title: "Pre-existing disease waiting period",
+    const base = { id: "ped_waiting_period", title: "Pre-existing disease waiting period", governing_clause: ped.months.provenance };
+    if (facts.condition_is_pre_existing === null) {
+      checks.push(check({
+        ...base,
         status: "unknown",
-        explanation: "We don't know this claim's admission date yet, so we can't check it against the waiting period.",
-        governing_clause: ped.months.provenance,
-        missing_fact: "Admission date",
-        resolving_document: "discharge_summary",
-      });
+        explanation: "Whether this waiting period applies depends on facts about the illness that we don't have yet.",
+        missing_facts: [IS_PRE_EXISTING],
+      }));
+    } else if (facts.condition_is_pre_existing === false) {
+      checks.push(check({
+        ...base,
+        status: "satisfied",
+        explanation: "You said this illness is not pre-existing. The pre-existing disease waiting period therefore does not apply.",
+        values: { condition_is_pre_existing: false },
+      }));
+    } else if (!claim.admitted_on) {
+      checks.push(check({ ...base, status: "unknown", explanation: "We don't know the admission date yet.", missing_facts: [ADMISSION_DATE] }));
     } else if (ped.months.value == null || !ped.starts_on || !ped.expires_on) {
-      checks.push({
-        id: "ped_waiting_period",
-        title: "Pre-existing disease waiting period",
+      checks.push(check({
+        ...base,
         status: "unknown",
+        confidence: "low",
         explanation: "Your policy's pre-existing disease waiting period wasn't extracted clearly enough to check.",
-        governing_clause: ped.months.provenance,
-        missing_fact: "Pre-existing disease waiting period length",
-        resolving_document: "policy_wording",
-      });
+        missing_facts: [{ fact: "Your policy's pre-existing disease waiting period", where_to_get: "In your policy wording.", resolving_document: "policy_wording" }],
+      }));
     } else {
-      // Plain string comparison — correct for zero-padded ISO dates, and
-      // sidesteps the Date-parsing timezone pitfalls this arithmetic
-      // deliberately avoids (see dateMath.ts).
+      // Plain string comparison is correct for zero-padded ISO dates (see dateMath.ts).
       const stillInside = claim.admitted_on < ped.expires_on;
-      const monthsIn = approxMonthsBetween(ped.starts_on, claim.admitted_on);
-      checks.push({
-        id: "ped_waiting_period",
-        title: "Pre-existing disease waiting period",
+      checks.push(check({
+        ...base,
         status: stillInside ? "failed" : "satisfied",
         explanation: stillInside
-          ? `Your policy's continuous cover began ${formatDMY(ped.starts_on)}. The pre-existing-disease waiting period is ${ped.months.value} months, so it runs to ${formatDMY(ped.expires_on)}. Your admission on ${formatDMY(claim.admitted_on)} falls ${monthsIn} months inside it.`
-          : `Your policy's continuous cover began ${formatDMY(ped.starts_on)}. The pre-existing-disease waiting period ran to ${formatDMY(ped.expires_on)}. Your admission on ${formatDMY(claim.admitted_on)} comes after that, so this check is satisfied.`,
-        governing_clause: ped.months.provenance,
-        missing_fact: null,
-        resolving_document: null,
-      });
+          ? `You said this illness is pre-existing. Cover started ${formatDMY(ped.starts_on)}; the ${ped.months.value}-month waiting period ends on ${formatDMY(ped.expires_on)}. Your admission on ${formatDMY(claim.admitted_on)} is before that date.`
+          : `You said this illness is pre-existing. Cover started ${formatDMY(ped.starts_on)}; the ${ped.months.value}-month waiting period ended on ${formatDMY(ped.expires_on)}. Your admission on ${formatDMY(claim.admitted_on)} is on or after that date, so the period has been served.`,
+        values: { waiting_months: ped.months.value, waiting_period_ends: ped.expires_on, admitted_on: claim.admitted_on },
+      }));
     }
   }
 
   const initial = profile.waiting_periods.find((w) => w.kind === "initial");
   if (initial && initial.expires_on && claim.admitted_on) {
     const stillInside = claim.admitted_on < initial.expires_on;
-    checks.push({
+    checks.push(check({
       id: "initial_waiting_period",
       title: "Initial waiting period",
       status: stillInside ? "failed" : "satisfied",
       explanation: stillInside
-        ? `Your policy's initial waiting period runs to ${formatDMY(initial.expires_on)}. Your admission on ${formatDMY(claim.admitted_on)} falls inside it.`
+        ? `Your policy's initial waiting period runs to ${formatDMY(initial.expires_on)}. Your admission on ${formatDMY(claim.admitted_on)} is before that date.`
         : `Your policy's initial waiting period ended ${formatDMY(initial.expires_on)}, before your admission on ${formatDMY(claim.admitted_on)}.`,
       governing_clause: initial.months.provenance,
-      missing_fact: null,
-      resolving_document: null,
-    });
+      values: { waiting_period_ends: initial.expires_on, admitted_on: claim.admitted_on },
+    }));
   }
 
   if (claim.claimed_amount != null && profile.sum_insured.value != null) {
-    const overSumInsured = claim.claimed_amount > profile.sum_insured.value;
-    checks.push({
+    const over = claim.claimed_amount > profile.sum_insured.value;
+    checks.push(check({
       id: "sum_insured_adequacy",
-      title: "Sum insured adequacy",
-      status: overSumInsured ? "at_risk" : "satisfied",
-      explanation: overSumInsured
-        ? "Your claimed amount is above your policy's sum insured, so part of the bill may not be payable."
-        : "Your claimed amount is within your policy's sum insured.",
+      title: "Amount within the sum insured",
+      status: over ? "at_risk" : "satisfied",
+      explanation: over
+        ? "The amount claimed is more than your sum insured. The part above the sum insured is not payable under this policy."
+        : "The amount claimed is within your sum insured.",
       governing_clause: profile.sum_insured.provenance,
-      missing_fact: null,
-      resolving_document: null,
-    });
+      confidence: profile.sum_insured.user_confirmed ? "high" : profile.sum_insured.confidence,
+      values: { claimed_amount: claim.claimed_amount, sum_insured: profile.sum_insured.value },
+    }));
   }
 
-  const orderedChecks = [...checks].sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
-
-  const band: EligibilityAssessment["band"] = checks.some((c) => c.status === "failed")
-    ? "likely_ineligible"
-    : checks.some((c) => c.status === "unknown")
-      ? "insufficient_information"
-      : checks.some((c) => c.status === "at_risk")
-        ? "at_risk"
-        : "likely_eligible";
-
-  const failedPed = checks.find((c) => c.id === "ped_waiting_period" && c.status === "failed");
+  const band = bandOf(checks);
+  const ordered = [...checks].sort((a, b) =>
+    band === "insufficient_information" ? Number(b.status === "unknown") - Number(a.status === "unknown") : STATUS_RANK[a.status] - STATUS_RANK[b.status],
+  );
+  const failedPed = checks.some((c) => c.id === "ped_waiting_period" && c.status === "failed");
   const ombudsman_precedent = failedPed ? ombudsmanAwardsByDenialGroundKeyword("pre-existing") : [];
 
-  return { claim_id: claim.id, band, checks: orderedChecks, ombudsman_precedent, generated_at: nowIso() };
+  return {
+    claim_id: claim.id,
+    band,
+    checks: ordered,
+    ombudsman_precedent,
+    ombudsman_precedent_note: ombudsman_precedent.length > 0 ? null : PRECEDENT_NOTE,
+    generated_at: nowIso(),
+  };
 }
 
 function forcedAssessment(claim: Claim, band: EligibilityAssessment["band"]): EligibilityAssessment {
-  const byBand: Record<EligibilityAssessment["band"], EligibilityCheck[]> = {
-    likely_eligible: [
-      {
-        id: "forced_check",
-        title: "All checks (forced from dev toolbar)",
-        status: "satisfied",
-        explanation: "Forced into the likely_eligible band from the dev toolbar.",
-        governing_clause: null,
-        missing_fact: null,
-        resolving_document: null,
-      },
-    ],
-    at_risk: [
-      {
-        id: "forced_check",
-        title: "Forced check (dev toolbar)",
-        status: "at_risk",
-        explanation: "Forced into the at_risk band from the dev toolbar.",
-        governing_clause: null,
-        missing_fact: null,
-        resolving_document: null,
-      },
-    ],
-    likely_ineligible: [
-      {
-        id: "forced_check",
-        title: "Forced check (dev toolbar)",
-        status: "failed",
-        explanation: "Forced into the likely_ineligible band from the dev toolbar.",
-        governing_clause: null,
-        missing_fact: null,
-        resolving_document: null,
-      },
-    ],
-    insufficient_information: [
-      {
-        id: "forced_check",
-        title: "Forced check (dev toolbar)",
-        status: "unknown",
-        explanation: "Forced into the insufficient_information band from the dev toolbar.",
-        governing_clause: null,
-        missing_fact: "Forced from the dev toolbar",
-        resolving_document: "policy_wording",
-      },
-    ],
+  const status: Record<EligibilityAssessment["band"], EligibilityCheck["status"]> = {
+    likely_eligible: "satisfied",
+    at_risk: "at_risk",
+    likely_ineligible: "failed",
+    insufficient_information: "unknown",
   };
-
-  return { claim_id: claim.id, band, checks: byBand[band], ombudsman_precedent: [], generated_at: nowIso() };
+  const forced = check({
+    id: "forced_check",
+    title: "Forced check (dev toolbar)",
+    status: status[band],
+    explanation: `Forced into the ${band} band from the dev toolbar.`,
+    governing_clause: null,
+    missing_facts:
+      band === "insufficient_information"
+        ? [{ fact: "Forced from the dev toolbar", where_to_get: "Turn the scenario off in the dev toolbar.", resolving_document: "policy_wording" }]
+        : [],
+  });
+  return { claim_id: claim.id, band, checks: [forced], ombudsman_precedent: [], ombudsman_precedent_note: PRECEDENT_NOTE, generated_at: nowIso() };
 }

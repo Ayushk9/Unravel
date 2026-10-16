@@ -3,7 +3,7 @@ import { ids } from "./ids";
 import { insurerById } from "./insurers";
 import { memberById } from "./members";
 
-function prov(documentId: string, page: number, snippet: string): Provenance {
+export function prov(documentId: string, page: number, snippet: string): Provenance {
   return { document_id: documentId, page, bbox: null, snippet };
 }
 
@@ -38,8 +38,9 @@ const groupCoverage: CoverageProfile = {
       kind: "initial",
       months: confirmed(1, "high", prov(ids.document.groupSchedule, 3, "Initial waiting period: 30 days")),
       applies_to: null,
-      starts_on: "2026-04-01",
-      expires_on: "2026-05-01",
+      // Counted from first inception (2024-09-05), like every waiting period of a continuously renewed policy.
+      starts_on: "2024-09-05",
+      expires_on: "2024-10-05",
     },
     {
       // Continuously renewed since 2024-09-05 — this clock runs from that
@@ -71,6 +72,7 @@ export const groupPolicy: Policy = {
   policy_type: "group_employer",
   start_date: "2026-04-01",
   end_date: "2027-03-31",
+  first_inception_date: "2024-09-05",
   members: [memberById(ids.member.self), memberById(ids.member.spouse), memberById(ids.member.child), memberById(ids.member.parent)],
   coverage_profile: groupCoverage,
   source_document_id: ids.document.groupSchedule,
@@ -150,6 +152,7 @@ export const retailPolicy: Policy = {
   policy_type: "individual",
   start_date: "2026-04-01",
   end_date: "2027-03-31",
+  first_inception_date: ORIGINAL_INCEPTION,
   members: [memberById(ids.member.self)],
   coverage_profile: retailCoverage,
   source_document_id: ids.document.retailSchedule,

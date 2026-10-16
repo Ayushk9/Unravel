@@ -1,14 +1,18 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import type { Provenance } from "@/api/types";
 import { usePolicies } from "@/api/endpoints/policies";
 import { useClaims } from "@/api/endpoints/claims";
 import { useAlerts } from "@/api/endpoints/alerts";
 import { AlertCard, ClaimStateBadge, EmptyState, ErrorState, PolicyCard, Skeleton } from "@/components/primitives";
+import { ProvenanceModal } from "@/components/ProvenanceModal";
 
 export function Dashboard() {
   const navigate = useNavigate();
   const policies = usePolicies();
   const claims = useClaims();
   const alerts = useAlerts();
+  const [viewerProvenance, setViewerProvenance] = useState<Provenance | null>(null);
 
   const activeClaims = (claims.data ?? []).filter((c) => c.current_state !== "resolved");
   const topAlerts = (alerts.data ?? []).slice(0, 3);
@@ -91,7 +95,7 @@ export function Dashboard() {
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="font-serif text-lg font-semibold text-foreground">Top alerts</h2>
-          {alerts.data && alerts.data.length > 3 && (
+          {alerts.data && alerts.data.length > 0 && (
             <Link to="/alerts" className="text-sm text-stamp underline underline-offset-2">
               View all
             </Link>
@@ -106,11 +110,13 @@ export function Dashboard() {
         {alerts.isSuccess && topAlerts.length > 0 && (
           <div className="flex flex-col gap-2">
             {topAlerts.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} />
+              <AlertCard key={alert.id} alert={alert} onOpenProvenance={setViewerProvenance} />
             ))}
           </div>
         )}
       </section>
+
+      <ProvenanceModal provenance={viewerProvenance} onClose={() => setViewerProvenance(null)} title="Where this comes from" />
     </div>
   );
 }

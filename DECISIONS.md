@@ -778,3 +778,39 @@ The mock said an admission on 2 Apr 2026 "falls 23 months inside" a 48-month
 waiting period that started on 14 Mar 2024. That mixes up elapsed and
 remaining time: the admission is 24 months and 19 days INTO the period, and
 23 months and 12 days REMAIN before it ends on 14 Mar 2028. Engine B says both.
+
+
+## After Phase 5: web screens for the new endpoints
+
+### Third approved `apps/web` edit, and `packages/contracts-ts`
+
+Approved by Ayush on 2026-10-16 ("Go ahead and update the apps/web"; "update
+it" for `packages/contracts-ts`). What changed:
+
+- `packages/contracts-ts`: types and zod for D-36 to D-41 (`EligibilityCheck`
+  `confidence` / `values` / `missing_facts`, `ombudsman_precedent_note`,
+  `Claim.facts`, `Alert.verified` / `provenance` and a string `Alert.id`,
+  `Policy.first_inception_date`, `Household`, and the request bodies). The new
+  fields are required, matching the rule that nulls are emitted, never omitted.
+- Eligibility tab: a form for the claim facts (every question has "Not
+  answered yet"); each check shows a confidence label when it is below high
+  (words, never a number), every missing fact with where to get it, and a
+  collapsible "How this was worked out" list of the server's values. Clause
+  links now open the real document through `GET /documents/{id}/file`
+  instead of the sample PDF.
+- Policy page: a "Policy dates" section to enter start, end and first
+  inception dates. They show "Entered by you" and no provenance chip, since
+  nothing was read from a page.
+- `/alerts` is a real page (it was a placeholder); `/settings` sets the city
+  tier. Alert cards show "Estimate · not checked against a published source"
+  when `verified` is false, and a provenance chip when there is one.
+- The upload review screen corrects sub-limits by position (D-41).
+- Mocks: handlers for `PUT /claims/{id}/facts`, `PATCH /policies/{id}`, `GET`
+  and `PATCH /household`; fixtures carry the new fields; the mock eligibility
+  engine reads the claim facts and no longer says "N months inside". The
+  mock session-storage key moved to `v2`, so an old mock session is discarded
+  rather than read with missing fields.
+
+Not done: a browser check of these screens (no browser control here; see the
+summary for what to click), and `docs/android-fixtures/` are a 2026-10-14
+snapshot of the mocks, from before these fields existed.

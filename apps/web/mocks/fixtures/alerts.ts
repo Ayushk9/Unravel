@@ -1,5 +1,6 @@
 import type { Alert } from "@/api/types";
 import { ids } from "./ids";
+import { prov } from "./policies";
 
 /**
  * One alert per real Alert.kind value (five, not the brief's stated "four" —
@@ -22,6 +23,8 @@ export const alerts: Alert[] = [
     suggested_action: "Ask the hospital for a room at or below ₹5,000/day, or budget for the difference.",
     reference_source: "Estimated from typical private-ward rates in metro hospitals — not insurer-published data.",
     triggers_on: null,
+    verified: false,
+    provenance: prov(ids.document.retailWording, 14, "...room rent shall not exceed Rs. 5,000 per day, beyond which..."),
   },
   {
     id: "alert-waiting-period",
@@ -34,6 +37,8 @@ export const alerts: Alert[] = [
     suggested_action: null,
     reference_source: null,
     triggers_on: "2026-09-05",
+    verified: true,
+    provenance: prov(ids.document.groupSchedule, 3, "Cataract surgery: 24-month waiting period"),
   },
   {
     id: "alert-renewal",
@@ -45,6 +50,8 @@ export const alerts: Alert[] = [
     suggested_action: "Set a reminder for early March.",
     reference_source: null,
     triggers_on: "2027-03-31",
+    verified: true,
+    provenance: null,
   },
   {
     id: "alert-no-maternity",
@@ -56,6 +63,8 @@ export const alerts: Alert[] = [
     suggested_action: "Consider a maternity rider or a different plan if you're planning a family.",
     reference_source: null,
     triggers_on: null,
+    verified: true,
+    provenance: null,
   },
   {
     id: "alert-low-sum-insured",
@@ -67,5 +76,7 @@ export const alerts: Alert[] = [
     suggested_action: "Consider a top-up policy for additional cover.",
     reference_source: "Estimated from average metro hospitalisation costs — not insurer-published data.",
     triggers_on: null,
+    verified: false,
+    provenance: prov(ids.document.groupSchedule, 1, "Sum Insured: Rs. 5,00,000 (Family Floater)"),
   },
 ];

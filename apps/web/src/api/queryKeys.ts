@@ -20,6 +20,9 @@ export const queryKeys = {
   members: {
     list: () => ["members", "list"] as const,
   },
+  household: {
+    detail: () => ["household"] as const,
+  },
   claims: {
     all: () => ["claims"] as const,
     list: () => ["claims", "list"] as const,
