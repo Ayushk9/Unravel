@@ -7,8 +7,15 @@ from a client must never be turned into a column name directly.
     sum_insured
     co_pay_percent
     intimation_deadline_hours
+    sub_limits.<position>.cap_amount       e.g. sub_limits.2.cap_amount        (D-41)
+    waiting_periods.<position>.months      e.g. waiting_periods.0.months       (D-41)
     sub_limits.<category>.cap_amount       e.g. sub_limits.room_rent.cap_amount
     waiting_periods.<kind>.months          e.g. waiting_periods.pre_existing.months
+
+<position> is the 0-based index of the row in the policy's `sub_limits` or
+`waiting_periods` list, exactly as GET /policies/{id} returns it. It always
+names one row. The category / kind form still works, but is refused with a
+409 when several rows share that category or kind.
 
 A correction sets `_value` and `_user_confirmed` only (apply_correction).
 The parser's `_original_value` and `_provenance` are never changed.
@@ -90,6 +97,20 @@ async def correct_field(session: AsyncSession, profile: CoverageProfile, field_p
         return
 
     parts = field_path.split(".")
+    if len(parts) == 3 and parts[0] == "sub_limits" and parts[2] == "cap_amount" and _is_position(parts[1]):
+        rows = await session.scalars(
+            select(SubLimit).where(SubLimit.coverage_profile_id == profile.id).order_by(SubLimit.position)
+        )
+        apply_correction(_at_position(list(rows), int(parts[1]), field_path), "cap_amount", paise(value))
+        return
+
+    if len(parts) == 3 and parts[0] == "waiting_periods" and parts[2] == "months" and _is_position(parts[1]):
+        rows = await session.scalars(
+            select(WaitingPeriod).where(WaitingPeriod.coverage_profile_id == profile.id).order_by(WaitingPeriod.position)
+        )
+        apply_correction(_at_position(list(rows), int(parts[1]), field_path), "months", non_negative_number(value))
+        return
+
     if len(parts) == 3 and parts[0] == "sub_limits" and parts[2] == "cap_amount" and parts[1] in SUB_LIMIT_CATEGORIES:
         rows = await session.scalars(
             select(SubLimit).where(SubLimit.coverage_profile_id == profile.id, SubLimit.category == parts[1])
@@ -107,6 +128,18 @@ async def correct_field(session: AsyncSession, profile: CoverageProfile, field_p
     raise _unknown_path(field_path)
 
 
+def _is_position(segment: str) -> bool:
+    """'0', '1', '12': plain digits only. '-1', '+1' or '1.0' are not positions."""
+    return segment.isascii() and segment.isdigit()
+
+
+def _at_position(rows: list[Any], position: int, field_path: str) -> Any:
+    """The row at this index of the list the client was shown (ordered as GET /policies/{id} orders it)."""
+    if position >= len(rows):
+        raise _unknown_path(field_path)
+    return rows[position]
+
+
 def _exactly_one(rows: list[Any], field_path: str) -> Any:
     """The single row a path refers to.
 
@@ -122,7 +155,8 @@ def _exactly_one(rows: list[Any], field_path: str) -> Any:
         raise ApiError(
             409,
             "ambiguous_field_path",
-            f"This policy has {len(rows)} entries matching that field, so it isn't clear which one to change.",
+            f"This policy has {len(rows)} entries matching that field, so it isn't clear which one to change. "
+            "Address the entry by its position in the list instead, e.g. sub_limits.1.cap_amount.",
             field_errors=[FieldError(field="field_path", message=field_path)],
         )
     return rows[0]

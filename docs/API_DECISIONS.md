@@ -279,7 +279,7 @@ If a path matches more than one row (two sub-limits with the same category, or s
 
 *Why:* the mock edits the first matching row. On a real policy that can silently change the wrong number.
 *Ratified:* 2026-10-07.
-*Revisit:* **soon.** Real policies routinely have several `procedure` sub-limits, which this makes uncorrectable. The path needs a way to address one row (an id or a position).
+*Revisit:* resolved by D-41 (address a row by its position).
 
 ### D-31 · The claim state machine
 Ratifies the graph that `CONTRACTS.md` §3 carried as a mock assumption:
@@ -423,6 +423,15 @@ New: `GET /api/v1/household` returns `{ "id", "name", "city_tier" }`; `PATCH /ap
 
 *Why:* a tier, not a city name: the reference data has figures per tier, and a free-text city would need a mapping nobody has checked.
 *Ratified:* 2026-10-15. Additive.
+
+### D-41 · A list row is corrected by its position
+Extends D-30. `PATCH /policies/{id}/coverage-profile/fields/{field_path}` also accepts `sub_limits.<position>.cap_amount` and `waiting_periods.<position>.months`, where `<position>` is the 0-based index of the row in that list exactly as `GET /policies/{id}` returns it (plain digits only). A position always names one row, so it never gives `ambiguous_field_path`. A position past the end of the list is `422` on `field_path`.
+
+The category / kind form (`sub_limits.room_rent.cap_amount`) still works and is still `409 ambiguous_field_path` when two rows share it; that error's message now says to use a position. The web client sends positions for every list row.
+
+*Why:* closes D-30's revisit. Positions are what D-37 already uses for the same lists, so a client addresses a row the same way everywhere.
+*Ratified:* 2026-10-16. Additive.
+*Revisit:* if rows get stable ids (D-37's revisit), address by id instead.
 
 ---
 

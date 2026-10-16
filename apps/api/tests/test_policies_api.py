@@ -210,6 +210,11 @@ def _patch(shared: SimpleNamespace, field_path: str, value, user_confirmed=True)
         "waiting_periods.maternity.months",
         "exclusions.0.text",
         "sub_limits.room_rent.cap_amount.extra",
+        "sub_limits.3.cap_amount",  # only positions 0..2 exist
+        "sub_limits.-1.cap_amount",
+        "sub_limits.1.0.cap_amount",
+        "waiting_periods.9.months",
+        "sub_limits.0.months",
     ],
 )
 def test_unknown_field_path_is_422(shared: SimpleNamespace, field_path: str) -> None:
@@ -331,3 +336,34 @@ def test_a_field_the_parser_missed_can_be_filled_in_by_the_user(shared: SimpleNa
     assert field == {"value": 24.0, "confidence": "low", "provenance": None, "user_confirmed": True}
     row = _profile_row(shared)
     assert row.intimation_deadline_hours_original_value is None, "the record still shows the parser found nothing"
+
+
+def test_a_position_addresses_one_row_even_when_categories_repeat(shared: SimpleNamespace) -> None:
+    # Positions 1 and 2 are both "procedure" caps: by category that is a 409, by position it is exact (D-41).
+    response = _patch(shared, "sub_limits.2.cap_amount", 6_500_000)
+
+    assert response.status_code == 200, response.text
+    sub_limits = response.json()["coverage_profile"]["sub_limits"]
+    assert [(s["label"], s["cap_amount"]["value"], s["cap_amount"]["user_confirmed"]) for s in sub_limits][1:] == [
+        ("Cataract", 4_000_000, False),
+        ("Hernia", 6_500_000, True),
+    ]
+    original = shared.db.execute(
+        "SELECT cap_amount_original_value FROM sub_limit s JOIN coverage_profile c ON c.id = s.coverage_profile_id "
+        "WHERE c.policy_id = :p ORDER BY position",
+        p=shared.policy_id,
+    )
+    assert original[2].cap_amount_original_value == 6_000_000
+
+
+def test_a_waiting_period_can_be_addressed_by_position(shared: SimpleNamespace) -> None:
+    response = _patch(shared, "waiting_periods.0.months", 30)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["coverage_profile"]["waiting_periods"][0]["months"]["value"] == 30.0
+
+
+def test_the_ambiguous_409_says_to_use_a_position(shared: SimpleNamespace) -> None:
+    response = _patch(shared, "sub_limits.procedure.cap_amount", 1)
+
+    assert response.status_code == 409 and "position" in response.json()["error"]["message"]

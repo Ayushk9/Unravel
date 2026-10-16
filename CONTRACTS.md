@@ -73,7 +73,7 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 7 | `GET /policies` | — | `Policy[]` (identity fields nullable, D-25; `first_inception_date`, D-39) | 401 | Sync | No (full array) | — |
 | 8 | `POST /policies` | `{ source_document_id }` | `Policy` | 401, 409, 422 | Sync | — | — |
 | 9 | `GET /policies/{id}` | — | `Policy` (embeds `coverage_profile`; identity fields nullable, D-25) | 401, 404 | Sync | — | — |
-| 10 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }` | `Policy` | 401, 404, 409 (profile not ready, or path matches several rows, D-30), 422 | Sync | — | — |
+| 10 | `PATCH /policies/{id}/coverage-profile/fields/{field_path}` | `{ value, user_confirmed }`; list rows addressed by position, e.g. `sub_limits.2.cap_amount` (D-41) | `Policy` | 401, 404, 409 (profile not ready, or a category path matches several rows, D-30), 422 | Sync | — | — |
 | 11 | `POST /policies/{id}/questions` | `{ question }` | 202 `JobAccepted` (kind `answer_question`) | 401, 404 | **Job**, 3–6s | — | — |
 | 12 | `GET /members` | — | `Member[]` | 401 | Sync | No (full array) | — |
 | 13 | `GET /claims` | — | `Claim[]` (with `omitted_deadlines`, D-33) | 401 | Sync | No (full array, D-31) | — |
