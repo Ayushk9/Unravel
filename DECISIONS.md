@@ -814,3 +814,28 @@ it" for `packages/contracts-ts`). What changed:
 Not done: a browser check of these screens (no browser control here; see the
 summary for what to click), and `docs/android-fixtures/` are a 2026-10-14
 snapshot of the mocks, from before these fields existed.
+
+
+## Backend Phase 6 (Engine C: policy Q&A)
+
+### Decided with Ayush before building (plan, 2026-10-16)
+
+- Unsupported sentences are removed from `answer`; `verification` counts checked and removed sentences (D-42). The removed text is stored in `policy_question.verification` for evaluation, never sent.
+- Evaluation runs on the real 48-page Star Comprehensive wording, not the 3-page demo schedule (which would make recall@5 near-trivial). The demo policy still gets clauses so it can answer live.
+- Cache key: document SHA-256 + normalised question + prompt version + model, 24 h; amends D-19; no `X-Cache` header.
+- A number from the user's own question may appear in an answer sentence; any other number must be in a supporting clause. Computed numbers always fail.
+
+### Ambiguities decided conservatively
+
+- **A policy that isn't fully indexed is 409**, not a partial search: if any chunk lacks a vector, the clause that matters might be the missing one. If reversed (search what is indexed), only the check in `POST /policies/{id}/questions` changes.
+- **Indexing failure does not fail the parse.** The policy is usable without vectors except for Q&A; a warning is added to `document.warnings` and `scripts/index_chunks.py` retries. If no model server is configured, indexing is skipped without a warning.
+- **A missing judge verdict counts as unsupported**, and numbers are re-checked against only the clauses judged supportive.
+- **Numbers written as words are not read** by the number check; the answer prompt asks for digits. A clause that says "thirty days" therefore cannot vouch for "30 days", and the sentence is removed. Safe direction; it may cost answers on policies that spell numbers out (the Star free-look clause does).
+- **The model's abstention reason is never shown**; a fixed sentence is used instead.
+- **Answer generation sees the original question** (digits made ASCII); only retrieval uses the English rewrite of a Hindi or Marathi question.
+- **The evaluation household** (`01920000-...-0ea`) is created in the real database by `scripts/evaluate_qa.py`, with no login attached.
+
+### Model and cost notes
+
+- BGE-M3 (dense, 1024-d, CLS pooling, normalised) and bge-reranker-v2-m3 run through the `transformers` and `torch` already installed for Engine A; no new library. First run downloads about 4.5 GB to `~/.cache/huggingface`.
+- `MODEL_DEVICE` defaults to `cpu`; `mps` (Apple GPU) is available on this Mac.

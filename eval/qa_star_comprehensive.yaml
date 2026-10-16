@@ -1,0 +1,134 @@
+# Policy Q&A evaluation set (Phase 6, D-42).
+#
+# Policy: Star Comprehensive Insurance Policy wording, 48 pages
+#   engines/document/samples/Policy_Star_Comprehensive_Insurance_Policy_V_21_3a414ab104.pdf
+#
+# DRAFT. The questions and expected pages were written by Claude from the
+# parsed text (engines/document/out/.../text_items.json), not from the PDF.
+# Ayush checks each one against the PDF by eye, corrects pages, and then sets
+# checked_by_ayush: true. scripts/evaluate_qa.py refuses to run before that.
+#
+# expected_pages: the page(s) where the governing clause is printed. Retrieval
+# counts as a hit (recall@5) if any of the 5 clauses it keeps is on one of them.
+# answerable: false marks the 5 questions this policy does not answer; the
+# right result for those is an abstention.
+
+checked_by_ayush: false
+policy_pdf: engines/document/samples/Policy_Star_Comprehensive_Insurance_Policy_V_21_3a414ab104.pdf
+
+questions:
+  - id: q01
+    language: en
+    question: What kind of hospital room does the policy pay for?
+    answerable: true
+    expected_pages: [9]
+    clause: "Room (Private Single A/C room), Boarding and Nursing Expenses as provided by the Hospital / Nursing Home."
+  - id: q02
+    language: en
+    question: How long is the waiting period for pre-existing diseases?
+    answerable: true
+    expected_pages: [30, 31]
+    clause: '"...excluded until the expiry of 36 months of continuous coverage after the date of inception of the first policy..." (p31; p30 has the exclusion heading)'
+  - id: q03
+    language: en
+    question: How long must I wait before the listed specific diseases and surgeries are covered?
+    answerable: true
+    expected_pages: [30, 31]
+    clause: '"...excluded until the expiry of 24 months of continuous coverage after the date of inception of the first policy..." (p31)'
+  - id: q04
+    language: en
+    question: Is an illness treated in the first 30 days after the policy starts covered?
+    answerable: true
+    expected_pages: [32]
+    clause: "Expenses related to the treatment of any illness within 30 days from the first policy commencement date shall be excluded except claims arising due to an accident"
+  - id: q05
+    language: en
+    question: For how many days before hospitalisation are medical expenses covered?
+    answerable: true
+    expected_pages: [11]
+    clause: "Medical expenses incurred for a period not exceeding 60 days prior to the date of hospitalization are payable..."
+  - id: q06
+    language: en
+    question: How long after discharge are post-hospitalisation expenses covered?
+    answerable: true
+    expected_pages: [11]
+    clause: "Medical expenses incurred for a period up to 90 days from the date of discharge..."
+  - id: q07
+    language: en
+    question: Does this policy have a co-payment, and who does it apply to?
+    answerable: true
+    expected_pages: [39]
+    clause: "...co-payment of 10% of each and every claim amount ... for Insured Persons whose age at the time of entry is 61 years and above."
+  - id: q08
+    language: en
+    question: How much will the policy pay for an air ambulance?
+    answerable: true
+    expected_pages: [11]
+    clause: "...air ambulance service up to Rs.2,50,000/- per hospitalization not exceeding Rs.5,00,000/- per Policy Period..."
+  - id: q09
+    language: en
+    question: Is cosmetic or plastic surgery covered?
+    answerable: true
+    expected_pages: [33]
+    clause: "Cosmetic or plastic Surgery - Code Excl 08: Expenses for cosmetic or plastic surgery ... unless for reconstruction following an Accident, Burn(s) or Cancer..."
+  - id: q10
+    language: en
+    question: How soon must I inform the insurer after an emergency hospitalisation?
+    answerable: true
+    expected_pages: [37, 38]
+    clause: '"In case of emergency hospitalization information to be given within 24 hours after hospitalization" (p37); same rule in the claims table (p38)'
+  - id: q11
+    language: en
+    question: What is the free look period?
+    answerable: true
+    expected_pages: [42]
+    clause: "...free look period of thirty days from date of receipt of the policy document..."
+  - id: q12
+    language: en
+    question: If my sum insured gets used up during the year, is it restored?
+    answerable: true
+    expected_pages: [13]
+    clause: "There shall be automatic restoration of the Basic Sum Insured by 100% immediately upon exhaustion ... once during the Policy Period."
+
+  # Hindi and Marathi. Answers come back in English (D-42).
+  - id: q13
+    language: hi
+    question: पहले से मौजूद बीमारियों के लिए प्रतीक्षा अवधि कितनी है?
+    english: How long is the waiting period for pre-existing diseases?
+    answerable: true
+    expected_pages: [30, 31]
+  - id: q14
+    language: hi
+    question: अगर मैं ₹१२,००० प्रति दिन का कमरा लूँ तो क्या होगा?
+    english: What happens if I take a ₹12,000 per day room?
+    answerable: true
+    expected_pages: [9]
+    clause: '"Room (Private Single A/C room)..." and the p9 note that expenses varying with room rent are considered in proportion'
+  - id: q15
+    language: mr
+    question: आपत्कालीन परिस्थितीत रुग्णालयात दाखल झाल्यावर विमा कंपनीला किती वेळात कळवावे लागते?
+    english: In an emergency, how soon after admission must the insurer be told?
+    answerable: true
+    expected_pages: [37, 38]
+
+  # Not answered by this policy wording: the right result is an abstention.
+  - id: q16
+    language: en
+    question: Will this policy pay for repairs to my car after an accident?
+    answerable: false
+  - id: q17
+    language: en
+    question: What was this insurer's claim settlement ratio last year?
+    answerable: false
+  - id: q18
+    language: en
+    question: How much premium will I pay next year?
+    answerable: false
+  - id: q19
+    language: en
+    question: Does the policy cover lost luggage on an international trip?
+    answerable: false
+  - id: q20
+    language: en
+    question: Can I claim for my pet dog's veterinary treatment?
+    answerable: false

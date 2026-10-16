@@ -33,5 +33,12 @@ python-dateutil==2.9.0.post0
 pypdfium2==5.13.0
 google-genai==2.20.0
 
+# Policy Q&A models (BGE-M3 and bge-reranker-v2-m3), run only inside the model
+# server process (app/models_server/process.py), never imported by the API itself.
+# Both were already installed as Engine A (Docling) dependencies; pinned here at
+# those same versions.
+torch==2.13.0
+transformers==5.8.1
+
 # Tests
 pytest==9.1.1

@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -77,6 +79,59 @@ def _citation(clause: Clause, document_id: UUID) -> dict[str, Any]:
     }
 
 
+@dataclass
+class AnswerOutcome:
+    result: dict[str, Any]
+    cache_hit: bool
+    timings: dict[str, float]
+    # For policy_question: script, search_query, retrieved, generated, verification.
+    record: dict[str, Any]
+
+
+Progress = Callable[[tuple[str, int]], Awaitable[None]]
+
+
+async def _no_progress(_: tuple[str, int]) -> None:
+    return None
+
+
+async def answer_question(
+    *,
+    session_factory: SessionFactory,
+    models: Models,
+    llm: QaLlm,
+    cache: QaCache,
+    gemini_model: str,
+    household_id: UUID,
+    document_id: UUID,
+    document_hash: str,
+    question: str,
+    progress: Progress = _no_progress,
+) -> AnswerOutcome:
+    """The whole pipeline for one question, with no job attached. The job below and scripts/evaluate_qa.py both call it.
+
+    Raises ModelServerError or LlmError when a model can't answer.
+    """
+    started = time.perf_counter()
+    timings: dict[str, float] = {}
+    script = "devanagari" if has_devanagari(question) else "latin"
+    normalised = normalise_question(question)
+    key = answer_key(document_hash, normalised, PROMPT_VERSION, gemini_model)
+    record: dict[str, Any] = {"script": script, "search_query": None, "retrieved": None, "generated": None, "verification": None}
+
+    cached = cache.get(key)
+    if cached is not None:
+        timings["total"] = round(time.perf_counter() - started, 3)
+        return AnswerOutcome(result=cached, cache_hit=True, timings=timings, record=record)
+
+    result = await _answer(
+        session_factory, models, llm, cache, gemini_model, household_id, question, normalised, script, document_id, timings, record, progress
+    )
+    cache.set(key, result)
+    timings["total"] = round(time.perf_counter() - started, 3)
+    return AnswerOutcome(result=result, cache_hit=False, timings=timings, record=record)
+
+
 async def run_answer_question(
     job: ClaimedJob,
     *,
@@ -86,8 +141,6 @@ async def run_answer_question(
     cache: QaCache,
     gemini_model: str,
 ) -> None:
-    started = time.perf_counter()
-    timings: dict[str, float] = {}
     policy_id = UUID(job.payload["policy_id"])
     question: str = job.payload["question"]
 
@@ -100,50 +153,50 @@ async def run_answer_question(
         # The file's hash identifies its contents; the id is a fallback for rows made without one (seeded demo data).
         document_hash = document.sha256 or f"document:{document.id}"
 
-    script = "devanagari" if has_devanagari(question) else "latin"
-    normalised = normalise_question(question)
-    key = answer_key(document_hash, normalised, PROMPT_VERSION, gemini_model)
-    record: dict[str, Any] = {"script": script, "search_query": None, "retrieved": None, "generated": None, "verification": None}
-
-    cached = cache.get(key)
-    if cached is not None:
-        timings["total"] = round(time.perf_counter() - started, 3)
-        await _finish(session_factory, job, policy_id, question, cached, cache_hit=True, timings=timings, record=record)
-        return
+    async def progress(step: tuple[str, int]) -> None:
+        await set_progress(session_factory, job.id, *step)
 
     try:
-        result = await _answer(
-            job, session_factory, models, llm, cache, gemini_model, question, normalised, script, document_id, timings, record
+        outcome = await answer_question(
+            session_factory=session_factory,
+            models=models,
+            llm=llm,
+            cache=cache,
+            gemini_model=gemini_model,
+            household_id=job.household_id,
+            document_id=document_id,
+            document_hash=document_hash,
+            question=question,
+            progress=progress,
         )
     except ModelServerError as exc:
         raise JobFailure("models_unavailable", MODELS_UNAVAILABLE, retryable=True, detail=str(exc)) from exc
     except LlmError as exc:
         raise JobFailure("llm_unavailable", LLM_UNAVAILABLE, retryable=True, detail=str(exc)) from exc
 
-    cache.set(key, result)
-    timings["total"] = round(time.perf_counter() - started, 3)
-    await _finish(session_factory, job, policy_id, question, result, cache_hit=False, timings=timings, record=record)
+    await _finish(session_factory, job, policy_id, question, outcome)
 
 
 async def _answer(
-    job: ClaimedJob,
     session_factory: SessionFactory,
     models: Models,
     llm: QaLlm,
     cache: QaCache,
     gemini_model: str,
+    household_id: UUID,
     question: str,
     normalised: str,
     script: str,
     document_id: UUID,
     timings: dict[str, float],
     record: dict[str, Any],
+    progress: Progress,
 ) -> dict[str, Any]:
     # Devanagari digits as ASCII everywhere below, so "₹१२,०००" is the number 12,000.
     asked = ascii_digits(question)
 
     # --- retrieving ---
-    await set_progress(session_factory, job.id, *RETRIEVING)
+    await progress(RETRIEVING)
     t = time.perf_counter()
     search_query = asked
     if script == "devanagari":
@@ -155,7 +208,7 @@ async def _answer(
 
     t = time.perf_counter()
     async with session_factory() as session:
-        retrieved = await retrieve(session, models, household_id=job.household_id, document_id=document_id, query=search_query)
+        retrieved = await retrieve(session, models, household_id=household_id, document_id=document_id, query=search_query)
     timings["retrieve_and_rerank"] = round(time.perf_counter() - t, 3)
     record["retrieved"] = retrieved.trace
     if not retrieved.clauses:
@@ -166,7 +219,7 @@ async def _answer(
     prompts = [ClausePrompt(id=short, page=c.page, text=c.text) for short, c in by_short_id.items()]
 
     # --- generating ---
-    await set_progress(session_factory, job.id, *GENERATING)
+    await progress(GENERATING)
     t = time.perf_counter()
     generated = await llm.answer(asked, prompts)
     timings["generate"] = round(time.perf_counter() - t, 3)
@@ -178,7 +231,7 @@ async def _answer(
         return _abstention(NOT_ANSWERED)
 
     # --- verifying ---
-    await set_progress(session_factory, job.id, *VERIFYING)
+    await progress(VERIFYING)
     t = time.perf_counter()
     chunk_text = {short: c.text for short, c in by_short_id.items()}
     sentences = [Sentence(s.text, tuple(dict.fromkeys(s.chunk_ids))) for s in generated.sentences]
@@ -209,17 +262,7 @@ async def _answer(
     }
 
 
-async def _finish(
-    session_factory: SessionFactory,
-    job: ClaimedJob,
-    policy_id: UUID,
-    question: str,
-    result: dict[str, Any],
-    *,
-    cache_hit: bool,
-    timings: dict[str, float],
-    record: dict[str, Any],
-) -> None:
+async def _finish(session_factory: SessionFactory, job: ClaimedJob, policy_id: UUID, question: str, outcome: AnswerOutcome) -> None:
     """The question log row and the job's success, in one transaction."""
     async with session_factory() as session, session.begin():
         job_row = await session.get(Job, job.id, with_for_update=True)
@@ -231,22 +274,23 @@ async def _finish(
                 policy_id=policy_id,
                 job_id=job.id,
                 question=question,
-                cache_hit=cache_hit,
-                result=result,
-                timings=timings,
-                **record,
+                cache_hit=outcome.cache_hit,
+                result=outcome.result,
+                timings=outcome.timings,
+                **outcome.record,
             )
         )
         job_row.status = "succeeded"
         job_row.progress = {"step": "done", "percent": 100}
-        job_row.result = result
+        job_row.result = outcome.result
         job_row.finished_at = func.now()
+    result = outcome.result
     logger.info(
         "Answered question. job_id=%s cache_hit=%s abstained=%s checked=%s removed=%s timings=%s",
         job.id,
-        cache_hit,
+        outcome.cache_hit,
         result["abstained"],
         result["verification"]["sentences_checked"],
         result["verification"]["sentences_removed"],
-        timings,
+        outcome.timings,
     )

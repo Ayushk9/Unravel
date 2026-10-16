@@ -16,6 +16,10 @@ The demo policy has a small generated PDF schedule, stored with the local
 storage backend, so every provenance link opens a real page and highlights
 the line the value came from. All names are fictional.
 
+The schedule's lines are also stored as clauses (document_chunk), one per
+printed line with its real bbox, so the demo policy can answer questions. They
+are embedded by scripts/index_chunks.py, which needs the Q&A models.
+
 If the dev household has not chosen a city tier, it is set to "metro" so the
 room-rent alert can be seen (Rs 5,000 cap below the unverified Rs 6,000
 estimate). A tier the household already chose is left alone.
@@ -44,7 +48,8 @@ from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
-from app.db.models import Claim, ClaimEvent, Document, Household, Member, Policy, policy_member  # noqa: E402
+from app.core.ids import new_id  # noqa: E402
+from app.db.models import Claim, ClaimEvent, Document, DocumentChunk, Household, Member, Policy, policy_member  # noqa: E402
 from app.db.session import create_engine, create_session_factory  # noqa: E402
 from app.services.policy_writer import store_extraction  # noqa: E402
 from app.storage.base import build_object_path  # noqa: E402
@@ -265,6 +270,19 @@ async def seed_policy(session: AsyncSession, settings) -> UUID:
     return policy_id
 
 
+async def seed_chunks(session: AsyncSession) -> int:
+    """One clause per printed line of the schedule, if the document has none yet. Returns how many were written."""
+    existing = await session.scalar(select(DocumentChunk.id).where(DocumentChunk.document_id == DOCUMENT_ID).limit(1))
+    if existing is not None:
+        return 0
+    lines = _layout()
+    session.add_all(
+        DocumentChunk(id=new_id(), document_id=DOCUMENT_ID, position=position, page=line.page, text=line.text, bbox=list(line.bbox))
+        for position, line in enumerate(lines)
+    )
+    return len(lines)
+
+
 async def seed_claims(session: AsyncSession, policy_id: UUID) -> list[str]:
     created = []
     for demo in CLAIMS:
@@ -296,6 +314,7 @@ async def main() -> None:
         if missing:
             raise SystemExit(f"Run scripts/seed.py first: members missing: {missing}")
         policy_id = await seed_policy(session, settings)
+        chunks = await seed_chunks(session)
         created = await seed_claims(session, policy_id)
         household = await session.get(Household, HOUSEHOLD_ID)
         set_tier = household.city_tier is None
@@ -304,6 +323,7 @@ async def main() -> None:
         tier = household.city_tier
     await engine.dispose()
     print(f"Demo policy {policy_id} ({POLICY_NUMBER}).")
+    print(f"Clauses for Q&A: {chunks} written" + ("; now run scripts/index_chunks.py to embed them." if chunks else " (already there)."))
     print(f"Household city tier: {tier}" + (" (set now)" if set_tier else " (already chosen; left alone)"))
     print("Created claims:" if created else "All four demo claims already existed; nothing written.")
     for line in created:

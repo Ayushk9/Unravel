@@ -15,8 +15,8 @@ Read before starting work in these areas:
 Four engines compose nine features.
 
 - Engine A, document understanding: `engines/document/`. Finished. Public API is `parse_and_extract(file_path, document_kind) -> ExtractionResult`.
-- Engine B, deterministic rules and eligibility: not built yet.
-- Engine C, hybrid retrieval and citation-verified generation: not built yet.
+- Engine B, deterministic rules and eligibility: `engines/rules/`.
+- Engine C, hybrid retrieval and citation-verified generation: `engines/retrieval/` (pure) + `apps/api/app/qa/` (I/O). Feature 1, policy Q&A.
 - Engine D, data layer (multi-insurer schema, claim state machine): `apps/api/`.
 
 ## The two governing rules
@@ -83,6 +83,7 @@ Stack is fixed: Python 3.12, FastAPI, SQLAlchemy 2.0 async, Alembic (one linear 
 - Protected routes depend on `get_current_household` and scope every query to `household.household_id`.
 - **Claims.** A claim has no status column: its state is the latest row of `claim_event`, read through the `claim_current_state` view. `claim_event` is append-only and the database enforces it with triggers (`apps/api/app/db/claim_event_ddl.py`); never add code that updates or deletes an event. Transitions are defined only in `apps/api/app/claims/state_machine.py`. Deadlines are never stored: they are computed on read by pure functions that take `today` as a parameter, from rules in `apps/api/app/rules/deadline_rules.yaml`. No regulatory number may appear in Python code.
 - **Engine B (`engines/rules/`) is a pure library**, like Engine A: no FastAPI, no database, no network, no LLM, and no clock (`today` is always a parameter). The API loads rows and builds its typed inputs in `apps/api/app/rules_bridge.py`; all judging happens in the engine. No rule may output a score, probability or percentage. A rule never guesses: a missing input gives `unknown` with the missing fact. Whether an illness matches a listed condition or exclusion comes only from the user's selection. Waiting periods count from `policy.first_inception_date` if the user gave it, else `policy.start_date` (`engines/rules/dates.waiting_clock`, D-39). Every rule is registered in `engines/rules/registry.py`; after changing one, regenerate `docs/RULES.md` (a test fails if it is stale). Reference figures live in `engines/rules/reference/typical_costs.yaml`, `verified: false` until Ayush checks them.
+- **Engine C (Q&A).** `engines/retrieval/` is pure (rank fusion, the number check, sentence verification); `apps/api/app/qa/` does the I/O. A sentence reaches the user only if every number in it is in a cited clause (or the user's question) and a second model call judged a cited clause to support it; unsupported sentences are removed and only counted (D-42). Abstention text is always our own fixed sentence, never the model's. Retrieval SQL is always filtered to the policy's own document, the caller's household and `deleted_at IS NULL`. BGE-M3 and the reranker live in one long-lived spawned process (`app/models_server/`); the API process never imports torch. Questions run in their own runner lane. Bump `PROMPT_VERSION` in `app/qa/llm.py` whenever a prompt or schema changes.
 - **Jobs.** The `job` table is the queue; no job state may live only in memory. Jobs are claimed with `FOR UPDATE SKIP LOCKED` (`apps/api/app/jobs/queue.py`). `BackgroundTasks` only wakes the runner; correctness never depends on it.
 - **Engine A runs in a spawned child process per job, never a thread** (`apps/api/app/jobs/worker_process.py`), so a hung parse can be terminated on timeout. The API process must not import Docling. Do not change Engine A's public signature.
 - A job must never stay `running`: every failure path ends in `failed` with a readable sentence in `job.error` and `document.parse_error`, never a stack trace. Startup fails jobs left `running`.
@@ -119,6 +120,11 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 - `cd apps/api && ../../.venv/bin/python scripts/seed.py`: seed the dev household (idempotent)
 - `cd engines/document && .venv/bin/python -m pytest`: Engine A tests
 - `cd engines/rules && ../../.venv/bin/python -m pytest`: Engine B tests (root venv)
+- `cd engines/retrieval && ../../.venv/bin/python -m pytest`: Engine C tests (root venv)
+- `cd apps/api && ../../.venv/bin/python scripts/index_chunks.py [document_id]`: embed chunks that have no vector yet (backfill / retry)
+- `cd apps/api && ../../.venv/bin/python scripts/measure_model_server.py`: model load time and warm embed+rerank time (first run downloads ~4.5 GB)
+- `cd apps/api && ../../.venv/bin/python scripts/measure_qa_latency.py`: cold / warm / cache-hit question latency per stage
+- `cd apps/api && ../../.venv/bin/python scripts/evaluate_qa.py`: Q&A evaluation on `eval/qa_star_comprehensive.yaml` (refuses to run until Ayush has checked it)
 - `.venv/bin/python engines/rules/scripts/generate_rules_doc.py`: regenerate `docs/RULES.md` from the rule registry
 - `cd apps/api && ../../.venv/bin/python scripts/seed_demo_claims.py`: the demo policy and four claims, one per eligibility band (permanent: the event log is append-only)
 
