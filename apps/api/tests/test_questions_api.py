@@ -129,7 +129,7 @@ def test_a_sentence_with_a_number_not_in_its_clause_is_removed(world: SimpleName
 
     assert "10,000" not in result["answer"] and "Rs 5,000" in result["answer"]
     assert result["verification"]["sentences_removed"] == 1
-    removed = world.db.scalar("SELECT verification FROM policy_question ORDER BY created_at DESC LIMIT 1")["removed"]
+    removed = world.db.scalar("SELECT verification FROM policy_question WHERE policy_id = :p ORDER BY created_at DESC LIMIT 1", p=world.policy_id)["removed"]
     assert removed[0]["text"].startswith("Room rent is covered up to ₹10,000") and "number" in removed[0]["reason"]
     assert world.llm.calls.count("judge") == 1, "one judge call for all pairs"
 
@@ -163,7 +163,7 @@ def test_a_cache_hit_makes_no_model_call_of_any_kind(world: SimpleNamespace) -> 
     assert second["status"] == "succeeded", second["error"]
     assert second["result"] == first
     assert world.models.calls == [], "no embedding or reranking either"
-    hits = world.db.execute("SELECT cache_hit FROM policy_question ORDER BY created_at")
+    hits = world.db.execute("SELECT cache_hit FROM policy_question WHERE policy_id = :p ORDER BY created_at", p=world.policy_id)
     assert [row.cache_hit for row in hits] == [False, True]
 
 
@@ -173,7 +173,7 @@ def test_hindi_question_is_rewritten_for_search_only_and_stored_as_asked(world: 
     job = _ask(world, question)
 
     assert job["status"] == "succeeded"
-    row = world.db.execute("SELECT question, script, search_query FROM policy_question ORDER BY created_at DESC LIMIT 1")[0]
+    row = world.db.execute("SELECT question, script, search_query FROM policy_question WHERE policy_id = :p ORDER BY created_at DESC LIMIT 1", p=world.policy_id)[0]
     assert row.question == question and row.script == "devanagari"
     assert row.search_query == "room rent limit per day"
     assert world.llm.calls.count("rewrite") == 1

@@ -127,7 +127,13 @@ class GeminiQaLlm:
         )
 
     async def _generate(self, contents: list[str], schema: type[BaseModel]) -> BaseModel:
-        config = self._types.GenerateContentConfig(response_mime_type="application/json", response_schema=schema, temperature=0.0)
+        config = self._types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            temperature=0.0,
+            # No tools are ever offered; switch the SDK's tool-calling loop off explicitly.
+            automatic_function_calling=self._types.AutomaticFunctionCallingConfig(disable=True),
+        )
         try:
             response = await asyncio.wait_for(
                 self._client.aio.models.generate_content(model=self._model, contents=contents, config=config), self._timeout
