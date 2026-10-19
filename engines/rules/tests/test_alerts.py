@@ -131,3 +131,23 @@ def test_room_rent_alert_skips_with_a_reason(tier, limits, reason: str) -> None:
 
     skipped = {s.kind: s.reason for s in outcome.skipped}
     assert reason in skipped["room_rent_below_market"]
+
+
+def test_a_reference_without_a_url_is_shown_as_having_no_source() -> None:
+    # Both reference entries are working figures with no URL: their `document`
+    # text describes the figure, it is not a source, so it is not shown as one.
+    outcome = compute_alerts(alert_input(profile(sum_insured=50_000_000, sub_limits=[room_rent(500_000)]), members=4, city_tier="metro"), REFERENCE, TODAY)
+
+    estimates = [a for a in outcome.alerts if a.kind in ("low_sum_insured", "room_rent_below_market")]
+    assert len(estimates) == 2
+    assert {a.reference_source for a in estimates} == {"none yet, estimate only"}
+
+
+def test_a_reference_with_a_url_is_shown_by_its_document() -> None:
+    sourced = REFERENCE.model_copy(
+        update={"low_sum_insured_source": REFERENCE.low_sum_insured_source.model_copy(update={"document": "A published report", "url": "https://example.org/report"})}
+    )
+    outcome = compute_alerts(alert_input(profile(sum_insured=50_000_000), members=4), sourced, TODAY)
+
+    (alert,) = [a for a in outcome.alerts if a.kind == "low_sum_insured"]
+    assert alert.reference_source == "A published report"

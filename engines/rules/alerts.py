@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,6 +42,15 @@ class ReferenceSource(_Ref):
     section: str | None
     url: str | None
     verified: bool
+
+    # What an alert shows as its source when there is no published source to
+    # point at. The `document` text then only describes a working figure; it
+    # is not a source and must not be shown as one.
+    NO_SOURCE: ClassVar[str] = "none yet, estimate only"
+
+    def shown_as(self) -> str:
+        """The alert's `reference_source`: the document only when it has a URL a reader could check."""
+        return self.document if self.url else self.NO_SOURCE
 
 
 class SumInsuredBand(_Ref):
@@ -211,7 +221,7 @@ def _low_sum_insured(data: AlertInput, profile: CoverageProfile, reference: Refe
                 "smaller cover. This figure is an estimate that has not been checked against a published source."
             ),
             suggested_action="Consider whether a top-up or super top-up policy would suit you.",
-            reference_source=source.document,
+            reference_source=source.shown_as(),
             triggers_on=None,
             verified=source.verified,
             provenance=sum_insured.provenance,
@@ -250,7 +260,7 @@ def _room_rent_below_market(data: AlertInput, profile: CoverageProfile, referenc
                 "bill. This figure is an estimate that has not been checked against a published source."
             ),
             suggested_action="Before a planned admission, ask the hospital for a room within your cap, or check what the difference would cost you.",
-            reference_source=source.document,
+            reference_source=source.shown_as(),
             triggers_on=None,
             verified=source.verified,
             provenance=found.clause.provenance,
