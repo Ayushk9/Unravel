@@ -872,3 +872,13 @@ Measured round trip to the Supabase pooler from the demo Mac: about 170-200 ms, 
 - **Gemini fallback:** `GEMINI_FALLBACK_MODEL=gemini-3.7-flash`, chosen because it was listed and answering on 2026-10-19 while `gemini-3.8-flash` had used its free daily quota (20 requests per model per day). A 429 that says to wait more than 60 s goes straight to the fallback.
 - **The Q&A test fixture cleans up after itself:** it deletes every household created during the test (cascading to documents, clauses, jobs and question rows) and asserts none of its question rows remain.
 - **Observed instability:** the ₹12,000 room question on the Star policy produced a verified answer once and an abstention an hour later (same clauses, temperature 0, different model on the fallback). Abstention is the safe failure, but a cached abstention is what a demo would show.
+
+### Phase 6 Part B: voice input on the ask screen (approved `apps/web` edit)
+
+Approved by Ayush in the Phase 6 brief ("Edit only the ask-screen components"). What changed:
+
+- `src/components/VoiceInput.tsx` (new): the browser's Web Speech API (`SpeechRecognition`, or `webkitSpeechRecognition` in Chrome and Safari). It is hidden where neither exists, and typing always works. Languages are en-IN, hi-IN and mr-IN, and the choice is remembered in `localStorage` inside try/catch (a per-browser convenience only). It shows "Listening…" and the interim words. The final transcript replaces the text in the question box with Devanagari digits made ASCII, and is **never submitted**. It always shows "Voice is converted to text by your browser's speech service." There are short messages for `no-speech`, `not-allowed`, `network`, `audio-capture`, `service-not-allowed` and `language-not-supported`. TypeScript's DOM types lack the recognizer itself, so its few members are declared in the component.
+- `src/pages/PolicyAsk.tsx`: the mic is under the question box. The document viewer loads the cited document through `GET /documents/{id}/file` instead of the sample PDF. A failed job shows its `error` sentence with a retry. When `verification.sentences_removed > 0` it says "N statement(s) were left out because we couldn't confirm them in your policy" (decided with Ayush: the removed text is never shown).
+- `packages/contracts-ts`: `QuestionAnswerResult.verification` (D-42), required, as the server always sends it. The mock Q&A answers include it.
+
+No network code outside `client.ts`: the browser's speech service is the browser's own connection, which is what the disclosure line is for.

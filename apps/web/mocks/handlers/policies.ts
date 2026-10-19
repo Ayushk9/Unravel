@@ -28,6 +28,7 @@ db.registerJobResolver("answer_question", (params): QuestionAnswerResult => {
       citations: [],
       abstained: true,
       missing_context: "Your policy documents don't answer this. The clause may be in a document you haven't uploaded.",
+      verification: { sentences_checked: 0, sentences_removed: 0 },
     };
   }
 
@@ -51,6 +52,7 @@ db.registerJobResolver("answer_question", (params): QuestionAnswerResult => {
       ],
       abstained: false,
       missing_context: null,
+      verification: { sentences_checked: 1, sentences_removed: 0 },
     };
   }
 
@@ -62,6 +64,7 @@ db.registerJobResolver("answer_question", (params): QuestionAnswerResult => {
         citations: [],
         abstained: true,
         missing_context: "Your policy documents don't say whether this procedure is excluded. The clause may be in a document you haven't uploaded.",
+        verification: { sentences_checked: 0, sentences_removed: 0 },
       };
     }
     return {
@@ -77,6 +80,7 @@ db.registerJobResolver("answer_question", (params): QuestionAnswerResult => {
       ],
       abstained: false,
       missing_context: null,
+      verification: { sentences_checked: 1, sentences_removed: 0 },
     };
   }
 
@@ -95,6 +99,7 @@ db.registerJobResolver("answer_question", (params): QuestionAnswerResult => {
     ],
     abstained: false,
     missing_context: null,
+    verification: { sentences_checked: 1, sentences_removed: 0 },
   };
 });
 

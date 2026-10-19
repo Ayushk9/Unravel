@@ -426,11 +426,14 @@ export interface ParseDocumentResult {
   policy_id: UUID | null;
 }
 
+// D-42: `answer` is sentences each followed by [[n]] markers into `citations`.
+// Only sentences that passed verification are in it; `verification` counts the rest.
 export interface QuestionAnswerResult {
   answer: string;
   citations: Citation[];
   abstained: boolean;
   missing_context: string | null;
+  verification: { sentences_checked: number; sentences_removed: number };
 }
 
 // --- Request bodies ---

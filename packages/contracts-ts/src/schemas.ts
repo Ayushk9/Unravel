@@ -402,4 +402,6 @@ export const questionAnswerResultSchema = z.object({
   citations: z.array(citationSchema),
   abstained: z.boolean(),
   missing_context: z.string().nullable(),
+  // D-42: how many generated sentences were checked, and how many were left out.
+  verification: z.object({ sentences_checked: z.number().int(), sentences_removed: z.number().int() }),
 });
