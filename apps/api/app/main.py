@@ -135,7 +135,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
-        allow_methods=["GET", "POST", "PATCH", "DELETE"],
+        # Every method a route uses; tests/test_error_envelope.py checks this against app.routes.
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         # Range lets the PDF viewer ask for part of a file.
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "Range"],
         # Headers the browser lets the web app's JavaScript read. The last

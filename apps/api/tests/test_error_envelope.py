@@ -6,6 +6,7 @@ import logging
 from uuid import UUID
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 ENVELOPE_KEYS = {"code", "message", "field_errors", "request_id", "retryable"}
@@ -155,6 +156,26 @@ def test_preflight_allows_the_headers_the_web_app_sends(client: TestClient) -> N
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == WEB_ORIGIN
+
+
+def test_preflight_allows_every_method_a_route_uses(app: FastAPI, client: TestClient) -> None:
+    # Derived from the app's routes, so a new PUT or PATCH endpoint cannot be
+    # added without the browser being allowed to call it. The OpenAPI schema is
+    # the app's own flat list of every path and method, however routers nest.
+    used = {
+        (method.upper(), path)
+        for path, operations in app.openapi()["paths"].items()
+        for method in operations
+        if method in ("get", "post", "put", "patch", "delete")
+    }
+    assert {method for method, _ in used} >= {"GET", "POST", "PUT", "PATCH", "DELETE"}
+
+    refused = []
+    for method, path in sorted(used):
+        response = client.options(path, headers={"Origin": WEB_ORIGIN, "Access-Control-Request-Method": method})
+        if response.status_code != 200 or method not in response.headers.get("access-control-allow-methods", ""):
+            refused.append(f"{method} {path}")
+    assert refused == []
 
 
 def test_unknown_origin_gets_no_cors_permission(client: TestClient) -> None:
