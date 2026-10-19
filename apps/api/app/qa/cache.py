@@ -1,7 +1,11 @@
 """The Q&A answer cache: one JSON file per key, kept for 24 hours (D-42).
 
-Key = SHA-256 of (document hash, normalised question, prompt version, model).
+Key = SHA-256 of (document id, document hash, normalised question, prompt version, model).
 
+  document id          a cached answer names its document and clause ids in its
+                       citations, so it may only be served to that same document.
+                       The same PDF uploaded twice, or by another household, is a
+                       different document and never receives the other's answer.
   document hash        a different policy file, or a re-uploaded changed one, misses
   normalised question  "Room rent?" and "room   rent?" hit the same entry
   prompt version       changing a prompt or a schema invalidates old answers
@@ -33,8 +37,8 @@ def _digest(*parts: str) -> str:
     return digest.hexdigest()
 
 
-def answer_key(document_hash: str, normalised_question: str, prompt_version: str, model: str) -> str:
-    return "answer-" + _digest(document_hash, normalised_question, prompt_version, model)
+def answer_key(document_id: str, document_hash: str, normalised_question: str, prompt_version: str, model: str) -> str:
+    return "answer-" + _digest(document_id, document_hash, normalised_question, prompt_version, model)
 
 
 def rewrite_key(normalised_question: str, prompt_version: str, model: str) -> str:

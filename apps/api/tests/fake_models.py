@@ -15,7 +15,7 @@ import zlib
 from collections.abc import Callable
 
 from app.models_server.client import ModelServerError
-from app.qa.llm import AnswerSentence, ClausePrompt, GeneratedAnswer
+from app.qa.llm import Answered, AnswerSentence, ClausePrompt, GeneratedAnswer
 from engines.retrieval.quantities import missing_numbers
 
 DIMENSIONS = 1024
@@ -86,15 +86,17 @@ class FakeQaLlm:
             raise AssertionError(f"a Gemini call ({name}) was made when none was allowed")
         self.calls.append(name)
 
-    async def rewrite(self, question: str) -> str:
-        self._record("rewrite")
-        return self._rewrite(question)
+    model = "fake-model"
 
-    async def answer(self, question: str, clauses: list[ClausePrompt]) -> GeneratedAnswer:
+    async def rewrite(self, question: str) -> Answered[str]:
+        self._record("rewrite")
+        return Answered(self._rewrite(question), self.model)
+
+    async def answer(self, question: str, clauses: list[ClausePrompt]) -> Answered[GeneratedAnswer]:
         self._record("answer")
         self.last_answer_question = question
-        return self._answer(question, clauses)
+        return Answered(self._answer(question, clauses), self.model)
 
-    async def judge(self, pairs: list[tuple[str, ClausePrompt]]) -> list[bool]:
+    async def judge(self, pairs: list[tuple[str, ClausePrompt]]) -> Answered[list[bool]]:
         self._record("judge")
-        return self._judge(pairs)
+        return Answered(self._judge(pairs), self.model)

@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Claim, ClaimEvent, Household, Member, Policy
-from app.services.policy_reader import build_coverage_profile, waiting_clock_start
+from app.services.policy_reader import build_coverage_profile, coverage_terms, load_policies
 from engines.rules.models import AlertInput, ClaimFacts, EligibilityInput, PolicyFacts
 
 
@@ -22,14 +22,14 @@ def policy_facts(policy: Policy) -> PolicyFacts:
 
 
 async def eligibility_input(session: AsyncSession, claim: Claim) -> EligibilityInput:
-    policy = await session.get(Policy, claim.policy_id)
-    assert policy is not None  # foreign key
+    # The claim was found in this household, and so is its policy (foreign key, same household).
+    [policy] = await load_policies(session, claim.household_id, policy_id=claim.policy_id, options=coverage_terms())
     intimated_at = await session.scalar(
         select(ClaimEvent.occurred_at).where(ClaimEvent.claim_id == claim.id, ClaimEvent.to_state == "intimated").order_by(ClaimEvent.seq).limit(1)
     )
     return EligibilityInput(
         policy=policy_facts(policy),
-        coverage_profile=await build_coverage_profile(session, policy.id, waiting_clock_start(policy)),
+        coverage_profile=build_coverage_profile(policy),
         claim=ClaimFacts(
             claim_id=claim.id,
             admitted_on=claim.admitted_on,
@@ -45,17 +45,16 @@ async def eligibility_input(session: AsyncSession, claim: Claim) -> EligibilityI
 
 
 async def alert_inputs(session: AsyncSession, household_id) -> list[AlertInput]:
-    city_tier = await session.scalar(select(Household.city_tier).where(Household.id == household_id))
-    members = await session.scalar(select(func.count()).select_from(Member).where(Member.household_id == household_id)) or 0
-    policies = await session.scalars(select(Policy).where(Policy.household_id == household_id).order_by(Policy.id))
-    inputs = []
-    for policy in policies:
-        inputs.append(
-            AlertInput(
-                policy=policy_facts(policy),
-                coverage_profile=await build_coverage_profile(session, policy.id, waiting_clock_start(policy)),
-                household_member_count=members,
-                household_city_tier=city_tier,
-            )
+    # The household's kind of city and its member count in one query, then
+    # every policy's terms in a fixed number more (policy_reader.load_policies).
+    member_count = select(func.count()).select_from(Member).where(Member.household_id == Household.id).scalar_subquery()
+    city_tier, members = (await session.execute(select(Household.city_tier, member_count).where(Household.id == household_id))).one()
+    return [
+        AlertInput(
+            policy=policy_facts(policy),
+            coverage_profile=build_coverage_profile(policy),
+            household_member_count=members,
+            household_city_tier=city_tier,
         )
-    return inputs
+        for policy in await load_policies(session, household_id, options=coverage_terms())
+    ]

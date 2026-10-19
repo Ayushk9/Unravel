@@ -6,6 +6,7 @@ need is not in tests/fake_workers.build_policy_result.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
@@ -51,14 +52,25 @@ def _make_policy(db: Database, household_id: UUID, *, indexed: bool = True) -> t
 
 
 @pytest.fixture
-def world(database: Database, tmp_path: Path) -> SimpleNamespace:
+def world(database: Database, tmp_path: Path) -> Iterator[SimpleNamespace]:
+    """A fresh household with an indexed policy. Everything the test creates is deleted afterwards.
+
+    Cleanup removes every household created during the test (including the
+    "other household" some tests make), and with them, by ON DELETE CASCADE,
+    their documents, clauses, policies, jobs and policy_question rows. The
+    next test therefore starts with none of this test's rows in the schema.
+    """
+    started_at = database.scalar("SELECT clock_timestamp()")
     household_id = database.create_household()
     api = ApiTester(database, household_id)
     policy_id, document_id = _make_policy(database, household_id)
     models, llm, cache = FakeModels(), FakeQaLlm(), QaCache(tmp_path / "qa")
     api.use_worker(fake_workers_succeed(), models=models, qa_llm=llm, qa_cache=cache)
-    return SimpleNamespace(api=api, db=database, household_id=household_id, policy_id=policy_id, document_id=document_id,
-                           models=models, llm=llm, cache=cache)
+    yield SimpleNamespace(api=api, db=database, household_id=household_id, policy_id=policy_id, document_id=document_id,
+                          models=models, llm=llm, cache=cache)
+    api.finish_jobs()
+    database.execute("DELETE FROM household WHERE created_at >= :t", t=started_at)
+    assert database.scalar("SELECT count(*) FROM policy_question WHERE household_id = :h", h=household_id) == 0
 
 
 def fake_workers_succeed():
@@ -277,3 +289,21 @@ def test_indexing_failure_does_not_fail_the_parse_and_is_recorded(world: SimpleN
     assert parsed["status"] == "succeeded"
     warnings = world.db.scalar("SELECT warnings FROM document WHERE id = :d", d=parsed["result"]["document_id"])
     assert any("Not indexed for questions yet" in w for w in warnings)
+
+
+def test_the_same_file_in_another_household_never_gets_this_documents_cached_answer(world: SimpleNamespace) -> None:
+    # Another household uploads the identical file: same SHA-256, different document.
+    other_household = world.db.create_household()
+    other_policy, other_document = _make_policy(world.db, other_household)
+    sha = "same-file-sha256"
+    world.db.execute("UPDATE document SET sha256 = :s WHERE id IN (:a, :b)", s=sha, a=world.document_id, b=other_document)
+    first = _ask(world)["result"]  # cached under this document's key, with the shared hash
+
+    with world.api.acting_as(other_household):
+        response = world.api.post(f"/policies/{other_policy}/questions", json={"question": "What is the room rent limit?"})
+        world.api.finish_jobs()
+        job = world.api.get(f"/jobs/{response.json()['job_id']}").json()
+
+    cited = {c["provenance"]["document_id"] for c in job["result"]["citations"]}
+    assert cited == {str(other_document)}, "its citations point at its own document only"
+    assert {c["id"] for c in job["result"]["citations"]}.isdisjoint({c["id"] for c in first["citations"]})

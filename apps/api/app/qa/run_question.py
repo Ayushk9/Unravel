@@ -52,6 +52,7 @@ NOT_CONFIRMED = "We couldn't confirm an answer to this in your policy's text, so
 
 MODELS_UNAVAILABLE = "The search models aren't available right now. Please try again in a moment."
 LLM_UNAVAILABLE = "We couldn't get an answer right now. Please try again in a moment."
+LLM_BUSY = "The answering service is busy right now. Please try again in a minute."
 
 
 def _abstention(missing_context: str, checked: int = 0, removed: int = 0) -> dict[str, Any]:
@@ -116,18 +117,25 @@ async def answer_question(
     timings: dict[str, float] = {}
     script = "devanagari" if has_devanagari(question) else "latin"
     normalised = normalise_question(question)
-    key = answer_key(document_hash, normalised, PROMPT_VERSION, gemini_model)
-    record: dict[str, Any] = {"script": script, "search_query": None, "retrieved": None, "generated": None, "verification": None}
+    key = answer_key(str(document_id), document_hash, normalised, PROMPT_VERSION, gemini_model)
+    record: dict[str, Any] = {
+        "script": script, "search_query": None, "retrieved": None, "generated": None, "verification": None,
+        # Which model actually answered each call: the primary, or the fallback (app/qa/llm.py).
+        "models": {},
+    }
 
     cached = cache.get(key)
-    if cached is not None:
+    # A cache entry is {"result": ..., "models": ...}. Anything else is an older format: a miss.
+    if isinstance(cached, dict) and "result" in cached:
+        record["models"] = cached.get("models") or {}
         timings["total"] = round(time.perf_counter() - started, 3)
-        return AnswerOutcome(result=cached, cache_hit=True, timings=timings, record=record)
+        return AnswerOutcome(result=cached["result"], cache_hit=True, timings=timings, record=record)
 
     result = await _answer(
         session_factory, models, llm, cache, gemini_model, household_id, question, normalised, script, document_id, timings, record, progress
     )
-    cache.set(key, result)
+    # The models that answered are stored with the answer, so a cache hit still says who wrote it.
+    cache.set(key, {"result": result, "models": record["models"]})
     timings["total"] = round(time.perf_counter() - started, 3)
     return AnswerOutcome(result=result, cache_hit=False, timings=timings, record=record)
 
@@ -172,7 +180,8 @@ async def run_answer_question(
     except ModelServerError as exc:
         raise JobFailure("models_unavailable", MODELS_UNAVAILABLE, retryable=True, detail=str(exc)) from exc
     except LlmError as exc:
-        raise JobFailure("llm_unavailable", LLM_UNAVAILABLE, retryable=True, detail=str(exc)) from exc
+        message = LLM_BUSY if exc.code in ("overloaded", "rate_limited", "timeout") else LLM_UNAVAILABLE
+        raise JobFailure(f"llm_{exc.code}", message, retryable=exc.retryable, detail=str(exc)) from exc
 
     await _finish(session_factory, job, policy_id, question, outcome)
 
@@ -201,8 +210,12 @@ async def _answer(
     search_query = asked
     if script == "devanagari":
         rewrite_cache_key = rewrite_key(normalised, PROMPT_VERSION, gemini_model)
-        search_query = cache.get(rewrite_cache_key) or await llm.rewrite(asked)
-        cache.set(rewrite_cache_key, search_query)
+        search_query = cache.get(rewrite_cache_key)
+        if not isinstance(search_query, str):
+            rewritten = await llm.rewrite(asked)
+            search_query = rewritten.value
+            record["models"]["rewrite"] = rewritten.model
+            cache.set(rewrite_cache_key, search_query)
         timings["rewrite"] = round(time.perf_counter() - t, 3)
     record["search_query"] = search_query
 
@@ -210,6 +223,7 @@ async def _answer(
     async with session_factory() as session:
         retrieved = await retrieve(session, models, household_id=household_id, document_id=document_id, query=search_query)
     timings["retrieve_and_rerank"] = round(time.perf_counter() - t, 3)
+    timings.update({f"retrieve.{name}": seconds for name, seconds in retrieved.timings.items()})
     record["retrieved"] = retrieved.trace
     if not retrieved.clauses:
         return _abstention(NOTHING_FOUND)
@@ -221,12 +235,14 @@ async def _answer(
     # --- generating ---
     await progress(GENERATING)
     t = time.perf_counter()
-    generated = await llm.answer(asked, prompts)
+    answered = await llm.answer(asked, prompts)
+    generated = answered.value
+    record["models"]["answer"] = answered.model
     timings["generate"] = round(time.perf_counter() - t, 3)
     record["generated"] = generated.model_dump()
     problem = generated_answer_problems(generated, set(by_short_id))
     if problem:
-        raise LlmError(f"unusable answer: {problem}")
+        raise LlmError(f"unusable answer: {problem}", code="bad_answer", retryable=True)
     if generated.abstain:
         return _abstention(NOT_ANSWERED)
 
@@ -236,12 +252,19 @@ async def _answer(
     chunk_text = {short: c.text for short, c in by_short_id.items()}
     sentences = [Sentence(s.text, tuple(dict.fromkeys(s.chunk_ids))) for s in generated.sentences]
     candidates, removed_early = precheck(sentences, chunk_text, asked)
+    timings["verify.number_check"] = round(time.perf_counter() - t, 4)
 
     pairs = [(index, chunk_id) for index, s in enumerate(candidates) for chunk_id in s.chunk_ids]
     prompt_by_id = {p.id: p for p in prompts}
-    judged = await llm.judge([(candidates[index].text, prompt_by_id[chunk_id]) for index, chunk_id in pairs])
-    verdicts = dict(zip(pairs, judged, strict=True))
+    t_judge = time.perf_counter()
+    judged_answer = await llm.judge([(candidates[index].text, prompt_by_id[chunk_id]) for index, chunk_id in pairs])
+    timings["verify.support_judge"] = round(time.perf_counter() - t_judge, 3)
+    if pairs:
+        record["models"]["judge"] = judged_answer.model
+    verdicts = dict(zip(pairs, judged_answer.value, strict=True))
+    t_decide = time.perf_counter()
     outcome = decide(candidates, verdicts, chunk_text, asked, removed_early)
+    timings["verify.decide"] = round(time.perf_counter() - t_decide, 4)
     timings["verify"] = round(time.perf_counter() - t, 3)
 
     record["verification"] = {

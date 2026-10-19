@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Table, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.ids import new_id
 from app.db.base import Base, one_of
+
+if TYPE_CHECKING:
+    from app.db.models.coverage import CoverageProfile
+    from app.db.models.household import Member
+    from app.db.models.insurer import Insurer
 
 POLICY_TYPES = ("individual", "family_floater", "group_employer", "top_up", "other")
 
@@ -35,6 +41,13 @@ class Policy(Base):
     first_inception_date: Mapped[date | None] = mapped_column(Date)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Read-only links used to load several policies with a fixed number of
+    # queries (app/services/policy_reader.py). See CoverageProfile for why they
+    # are viewonly and lazy="raise".
+    insurer: Mapped[Insurer | None] = relationship(viewonly=True, lazy="raise")
+    members: Mapped[list[Member]] = relationship(secondary="policy_member", viewonly=True, lazy="raise", order_by="Member.id")
+    coverage_profile: Mapped[CoverageProfile | None] = relationship(viewonly=True, lazy="raise")
 
 
 # Which members a policy covers. A plain link table: one row per (policy, member).

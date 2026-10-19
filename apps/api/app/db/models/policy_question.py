@@ -44,6 +44,8 @@ class PolicyQuestion(Base):
     verification: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     # Exactly what the job returned (D-42).
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    # Seconds per stage: {rewrite, retrieve, rerank, generate, verify, total}.
+    # Which model answered each call: {"answer": ..., "judge": ..., "rewrite": ...}. Shows when the fallback was used.
+    models: Mapped[dict[str, str] | None] = mapped_column(JSONB)
+    # Seconds per stage: {rewrite, retrieve.*, generate, verify.*, total}.
     timings: Mapped[dict[str, float] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

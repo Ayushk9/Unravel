@@ -117,7 +117,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         storage=app.state.storage,
         settings=settings,
         models=app.state.model_server,
-        qa_llm=GeminiQaLlm(api_key=settings.gemini_api_key, model=settings.gemini_model, timeout_seconds=settings.qa_llm_timeout_seconds),
+        qa_llm=GeminiQaLlm(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model,
+            fallback_model=settings.gemini_fallback_model,
+            timeout_seconds=settings.qa_llm_timeout_seconds,
+        ),
     )
 
     # Middleware wraps the app in layers, and the LAST one added is the

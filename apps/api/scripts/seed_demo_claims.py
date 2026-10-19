@@ -1,4 +1,11 @@
-"""Seed one demo policy and four demo claims, one for each eligibility band.
+"""Seed a SYNTHETIC TEST FIXTURE: one policy and four claims, one for each eligibility band.
+
+SYNTHETIC. Claude wrote this policy by hand: a fictional insurer ("Kavach"),
+a generated 3-page schedule, 14 printed lines plus a title (15 clauses). It
+exists so the eligibility bands and the clause viewer can be tested with known
+numbers. It is NOT a real policy: keep it out of the demo and out of any
+headline metric (Q&A latency, retrieval quality). The Q&A evaluation target is
+the real Star Comprehensive wording (eval/qa_star_comprehensive.yaml).
 
 For the web app and the Android developer: open each claim's Eligibility
 tab and see a different verdict, each with its arithmetic and its clause.
@@ -66,6 +73,8 @@ MEMBER = {
     "Lakshmi": UUID("01920000-0000-7000-8000-000000000014"),
 }
 POLICY_NUMBER = "KHA/FAM/2024/DEMO-0001"
+# Shown wherever the policy appears, so nobody mistakes it for a real one.
+PRODUCT_NAME = "Kavach Family Health Plan (synthetic test fixture)"
 DOCUMENT_ID = UUID("01920000-0000-7000-8000-0000000000e1")
 FILE_NAME = "demo-policy-schedule.pdf"
 
@@ -261,7 +270,7 @@ async def seed_policy(session: AsyncSession, settings) -> UUID:
     policy = await session.get(Policy, policy_id)
     policy.insurer_id = INSURER_ID
     policy.policy_number = POLICY_NUMBER
-    policy.product_name = "Kavach Family Health Plan (demo)"
+    policy.product_name = PRODUCT_NAME
     policy.policy_type = "family_floater"
     policy.start_date = date(2024, 3, 14)
     policy.end_date = date(2027, 3, 13)
@@ -316,6 +325,10 @@ async def main() -> None:
         policy_id = await seed_policy(session, settings)
         chunks = await seed_chunks(session)
         created = await seed_claims(session, policy_id)
+        # Rows seeded before the fixture was labelled get the label too.
+        fixture = await session.get(Policy, policy_id)
+        if fixture is not None and fixture.product_name != PRODUCT_NAME:
+            fixture.product_name = PRODUCT_NAME
         household = await session.get(Household, HOUSEHOLD_ID)
         set_tier = household.city_tier is None
         if set_tier:

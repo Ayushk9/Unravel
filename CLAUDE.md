@@ -123,10 +123,12 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 - `cd engines/retrieval && ../../.venv/bin/python -m pytest`: Engine C tests (root venv)
 - `cd apps/api && ../../.venv/bin/python scripts/index_chunks.py [document_id]`: embed chunks that have no vector yet (backfill / retry)
 - `cd apps/api && ../../.venv/bin/python scripts/measure_model_server.py`: model load time and warm embed+rerank time (first run downloads ~4.5 GB)
-- `cd apps/api && ../../.venv/bin/python scripts/measure_qa_latency.py`: cold / warm / cache-hit question latency per stage
+- `cd apps/api && ../../.venv/bin/python scripts/measure_qa_latency.py [policy_id]`: cold / warm / cache-hit question latency per stage (real policy, never the synthetic fixture)
+- `cd apps/api && ../../.venv/bin/python scripts/profile_question.py [--search-only] [policy_id]`: per-stage and per-statement timing and database round-trip count for one question
+- `cd apps/api && ../../.venv/bin/python scripts/warm_demo_cache.py [--check]`: answer the demo questions once so they are cached (24 h); `--check` proves they are answered with no model call
 - `cd apps/api && ../../.venv/bin/python scripts/evaluate_qa.py`: Q&A evaluation on `eval/qa_star_comprehensive.yaml` (refuses to run until Ayush has checked it)
 - `.venv/bin/python engines/rules/scripts/generate_rules_doc.py`: regenerate `docs/RULES.md` from the rule registry
-- `cd apps/api && ../../.venv/bin/python scripts/seed_demo_claims.py`: the demo policy and four claims, one per eligibility band (permanent: the event log is append-only)
+- `cd apps/api && ../../.venv/bin/python scripts/seed_demo_claims.py`: a SYNTHETIC test-fixture policy (fictional insurer) and four claims, one per eligibility band (permanent: the event log is append-only). Not for the Q&A demo or metrics
 
 ## Frontend conventions
 

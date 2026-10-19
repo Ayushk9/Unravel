@@ -839,3 +839,36 @@ snapshot of the mocks, from before these fields existed.
 
 - BGE-M3 (dense, 1024-d, CLS pooling, normalised) and bge-reranker-v2-m3 run through the `transformers` and `torch` already installed for Engine A; no new library. First run downloads about 4.5 GB to `~/.cache/huggingface`.
 - `MODEL_DEVICE` defaults to `cpu`; `mps` (Apple GPU) is available on this Mac.
+
+
+## Read endpoints: fewer database round trips (2026-10-19)
+
+Measured round trip to the Supabase pooler from the demo Mac: about 170-200 ms, so query count dominates read latency.
+
+| Endpoint | Queries before | Queries after | Median over HTTP before | after |
+| --- | --- | --- | --- | --- |
+| `GET /members` | 2 | 2 (no N+1 to remove) | 1.05 s | 1.06 s |
+| `GET /policies` | 1 + 6 per policy (13 for 2) | 6, any number of policies | 3.00 s | 1.84 s |
+| `GET /alerts` | 3 + 4 per policy (12 for 2) | 6, any number of policies | 2.97 s | 1.95 s |
+
+(Counts include the household lookup from the token. `tests/test_read_queries.py` checks the count does not grow with policies.)
+
+### Ambiguities decided conservatively
+
+- **Read-only ORM relationships** (`Policy.insurer / members / coverage_profile`, `CoverageProfile.sub_limits / waiting_periods / exclusions`) were added so the loader can use `joinedload` / `selectinload`. They are `viewonly=True` (rows are still written only through their own tables, so no write path changes) and `lazy="raise"` (an attribute that was not loaded up front raises instead of silently costing a round trip). No schema change; `alembic check` is clean. If reversed, `policy_reader.load_policies` would batch the child tables by hand with `IN (...)` queries.
+- **Building a `Policy` no longer queries.** `policy_reader.load_policies` does all the loading; `build_policy` / `build_coverage_profile` only read loaded rows. The PATCH routes reload the policy after commit with `populate_existing`, so the response is what was stored.
+- **An alert whose reference figure has no source URL shows `reference_source: "none yet, estimate only"`**, set in Engine B (`ReferenceSource.shown_as`), not in the web client. The reference file's `document` text ("Working figure based on common guidance...") describes the figure; it is not a source, and showing it after "Source:" implied one existed. Doing it server-side means both clients get it with no `apps/web` change; the field's type is unchanged. When an entry gets a `url`, its `document` is shown again.
+
+### Not done (needs a decision)
+
+- **`pool_pre_ping` costs about 4 round trips (~700 ms) on every request** with the asyncpg driver (BEGIN, prepare, ping, ROLLBACK before the real transaction). Measured on `GET /members`: 1.36 s with it, 0.64 s without. It is kept for now because it protects against Supabase closing idle connections; replacing it (for example, pinging only connections idle for more than a minute) affects every endpoint and the job runner, so it waits for Ayush.
+
+
+### Phase 6 follow-up (2026-10-19)
+
+- **The 15-clause "demo policy" is a synthetic test fixture** written by Claude (`scripts/seed_demo_claims.py`: fictional insurer, generated 3-page PDF). It is now labelled so (`product_name` "... (synthetic test fixture)"), kept out of the Q&A demo and out of headline metrics. The latency, profiling and cache warm-up scripts use the dev household's real uploaded Star policy (`app/qa/demo_policy.py`); the evaluation target is the Star Comprehensive wording. Latency figures reported on 2026-10-16 for the "demo policy" were measured on this fixture and are superseded. The four eligibility demo claims (Phase 5) still sit on this fixture.
+- **Cache key now includes the document id** (found by an independent review): before, the same file in two households would have shared an answer whose citations named the first document.
+- **Search is one SQL statement** (dense and keyword ranks in CTEs, clauses returned by the same statement): 5 round trips per search became 3 (BEGIN, the statement, ROLLBACK). Postgres executes it in about 2 ms; nearly all remaining time is network (one round trip to Supabase's Tokyo region is about 160 ms) and opening/pinging connections (`pool_pre_ping`). Changing pool behaviour is left to Ayush.
+- **Gemini fallback:** `GEMINI_FALLBACK_MODEL=gemini-3.7-flash`, chosen because it was listed and answering on 2026-10-19 while `gemini-3.8-flash` had used its free daily quota (20 requests per model per day). A 429 that says to wait more than 60 s goes straight to the fallback.
+- **The Q&A test fixture cleans up after itself:** it deletes every household created during the test (cascading to documents, clauses, jobs and question rows) and asserts none of its question rows remain.
+- **Observed instability:** the ₹12,000 room question on the Star policy produced a verified answer once and an abstention an hour later (same clauses, temperature 0, different model on the fallback). Abstention is the safe failure, but a cached abstention is what a demo would show.

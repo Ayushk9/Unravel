@@ -23,7 +23,7 @@ from uuid import UUID
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, Double, ForeignKey, Integer, Text, false, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.ids import new_id
 from app.db.base import CONFIDENCE_VALUES, Base, one_of
@@ -74,6 +74,15 @@ class CoverageProfile(Base):
 
     extraction_completeness: Mapped[float] = mapped_column(Double)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Read-only links to the profile's rows, so a list of policies can load all
+    # its rows in one query per table (selectinload) instead of three queries
+    # per policy. viewonly: rows are still written through their own tables.
+    # lazy="raise": reading one that was not loaded up front is an error, never
+    # a hidden extra round trip to the database.
+    sub_limits: Mapped[list[SubLimit]] = relationship(viewonly=True, lazy="raise", order_by="SubLimit.position")
+    waiting_periods: Mapped[list[WaitingPeriod]] = relationship(viewonly=True, lazy="raise", order_by="WaitingPeriod.position")
+    exclusions: Mapped[list[Exclusion]] = relationship(viewonly=True, lazy="raise", order_by="Exclusion.position")
 
 
 class SubLimit(Base):

@@ -116,7 +116,8 @@ async def main() -> None:
     server = ModelServer(embed_model=settings.embedding_model, rerank_model=settings.rerank_model, device=settings.model_device,
                          load_timeout_seconds=settings.model_load_timeout_seconds, request_timeout_seconds=settings.model_request_timeout_seconds)
     server.start()
-    llm = GeminiQaLlm(api_key=settings.gemini_api_key, model=settings.gemini_model, timeout_seconds=settings.qa_llm_timeout_seconds)
+    llm = GeminiQaLlm(api_key=settings.gemini_api_key, model=settings.gemini_model, fallback_model=settings.gemini_fallback_model,
+                      timeout_seconds=settings.qa_llm_timeout_seconds)
     rows = []
     try:
         document_id, sha256 = await ensure_policy(session_factory, settings, server, REPO / spec["policy_pdf"])

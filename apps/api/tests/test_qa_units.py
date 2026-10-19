@@ -26,12 +26,19 @@ def test_cache_round_trip_and_expiry(tmp_path: Path) -> None:
 
 
 def test_cache_keys_change_with_every_part() -> None:
-    base = answer_key("doc", "room rent?", "qa-v1", "gemini")
+    base = answer_key("id", "hash", "room rent?", "qa-v1", "gemini")
 
-    assert base == answer_key("doc", "room rent?", "qa-v1", "gemini")
-    assert len({base, answer_key("doc2", "room rent?", "qa-v1", "gemini"), answer_key("doc", "icu?", "qa-v1", "gemini"),
-                answer_key("doc", "room rent?", "qa-v2", "gemini"), answer_key("doc", "room rent?", "qa-v1", "other")}) == 5
-    assert rewrite_key("q", "qa-v1", "m") != answer_key("", "q", "qa-v1", "m")
+    assert base == answer_key("id", "hash", "room rent?", "qa-v1", "gemini")
+    variants = {
+        base,
+        answer_key("id2", "hash", "room rent?", "qa-v1", "gemini"),  # same file, another document (another upload or household)
+        answer_key("id", "hash2", "room rent?", "qa-v1", "gemini"),
+        answer_key("id", "hash", "icu?", "qa-v1", "gemini"),
+        answer_key("id", "hash", "room rent?", "qa-v2", "gemini"),
+        answer_key("id", "hash", "room rent?", "qa-v1", "other"),
+    }
+    assert len(variants) == 6
+    assert rewrite_key("q", "qa-v1", "m") != answer_key("", "", "q", "qa-v1", "m")
 
 
 def test_answer_shape_problems() -> None:

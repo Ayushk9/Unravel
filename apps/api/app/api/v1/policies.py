@@ -29,7 +29,7 @@ from app.schemas.errors import FieldError
 from app.schemas.policies import FieldCorrectionRequest, Policy, PolicyDatesUpdate
 from app.services.field_correction import correct_field, find_profile
 from app.services.policy_dates import apply_dates
-from app.services.policy_reader import build_policy, find_policy_row, list_policy_rows
+from app.services.policy_reader import build_policy, find_policy_row, load_policies, load_policy
 
 router = APIRouter()
 
@@ -44,8 +44,8 @@ async def list_policies(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[Policy]:
     """A full array, not paginated: a household has a handful of policies (API_DECISIONS section 5)."""
-    rows = await list_policy_rows(session, household.household_id)
-    return [await build_policy(session, row) for row in rows]
+    # A fixed number of queries however many policies there are (policy_reader.load_policies).
+    return [build_policy(row) for row in await load_policies(session, household.household_id)]
 
 
 @router.get("/policies/{policy_id}")
@@ -54,10 +54,17 @@ async def get_policy(
     household: Annotated[CurrentHousehold, Depends(get_current_household)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Policy:
-    row = await find_policy_row(session, household.household_id, policy_id)
+    row = await load_policy(session, household.household_id, policy_id)
     if row is None:
         raise _policy_not_found()
-    return await build_policy(session, row)
+    return build_policy(row)
+
+
+async def _reloaded(session: AsyncSession, household_id: UUID, policy_id: UUID) -> Policy:
+    """The policy as stored, after a change was committed."""
+    row = await load_policy(session, household_id, policy_id)
+    assert row is not None  # it was found before the change, and nothing deletes it
+    return build_policy(row)
 
 
 @router.patch("/policies/{policy_id}")
@@ -73,7 +80,7 @@ async def update_policy_dates(
         raise _policy_not_found()
     apply_dates(row, body, india_date(datetime.now(timezone.utc)))
     await session.commit()
-    return await build_policy(session, row)
+    return await _reloaded(session, household.household_id, policy_id)
 
 
 # `:path` lets the parameter contain dots and be matched whole; the service
@@ -111,7 +118,7 @@ async def correct_policy_field(
 
     await correct_field(session, profile, field_path, body.value)
     await session.commit()
-    return await build_policy(session, row)
+    return await _reloaded(session, household.household_id, policy_id)
 
 
 @router.post("/policies/{policy_id}/questions", status_code=202)
