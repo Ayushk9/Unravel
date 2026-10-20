@@ -1,4 +1,4 @@
-"""PATCH /policies/{id} (D-39) and GET/PATCH /household (D-40), against a real Postgres (temporary schema)."""
+"""PATCH /policies/{id} (D-39, D-46) and GET/PATCH /household (D-40), against a real Postgres (temporary schema)."""
 
 from __future__ import annotations
 
@@ -93,7 +93,8 @@ def test_a_change_is_checked_against_the_dates_already_held(world: SimpleNamespa
 def test_an_empty_body_is_422(world: SimpleNamespace) -> None:
     response = _dates(world)
 
-    assert response.status_code == 422 and set(_field_errors(response)) == set(DATES_NONE)
+    assert response.status_code == 422
+    assert set(_field_errors(response)) == set(DATES_NONE) | {"insurer_name", "product_name", "policy_number"}
 
 
 def test_first_inception_today_is_accepted(world: SimpleNamespace) -> None:
@@ -102,6 +103,37 @@ def test_first_inception_today_is_accepted(world: SimpleNamespace) -> None:
     response = _dates(world, first_inception_date=today.isoformat(), start_date=(today + timedelta(days=1)).isoformat())
 
     assert response.status_code == 200, response.text
+
+
+# --- identity entered by the user (D-46) ---
+
+STAR = {"insurer_name": "Star Health and Allied Insurance Co. Ltd.", "product_name": "Star Comprehensive Insurance Policy", "policy_number": "SAMPLE-0001"}
+
+
+def test_identity_fields_are_stored_trimmed_and_marked_as_entered_by_the_user(world: SimpleNamespace) -> None:
+    response = _dates(world, **{key: f"  {value}  " for key, value in STAR.items()})
+
+    assert response.status_code == 200, response.text
+    policy = response.json()
+    assert {key: policy[key] for key in STAR} == STAR
+    assert policy["insurer"] is None, "the shared insurer table is never written from user input"
+    assert policy["user_entered_fields"] == ["insurer_name", "product_name", "policy_number"]
+    assert world.db.scalar("SELECT count(*) FROM insurer WHERE name = :n", n=STAR["insurer_name"]) == 0
+
+
+def test_dates_are_marked_too_and_clearing_a_field_unmarks_it(world: SimpleNamespace) -> None:
+    _dates(world, policy_number="SAMPLE-0001", start_date="2024-03-14")
+
+    policy = _dates(world, policy_number=None).json()
+
+    assert policy["policy_number"] is None
+    assert policy["user_entered_fields"] == ["start_date"]
+
+
+@pytest.mark.parametrize("value", ["", "   ", "x" * 201, 123])
+def test_a_blank_overlong_or_non_text_identity_value_is_422(world: SimpleNamespace, value: object) -> None:
+    response = _dates(world, insurer_name=value)
+    assert response.status_code == 422 and "insurer_name" in {f.split(".")[-1] for f in _field_errors(response)}
 
 
 def test_another_households_policy_is_404(world: SimpleNamespace) -> None:
