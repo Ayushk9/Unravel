@@ -1,0 +1,21 @@
+# Ombudsman figures that are NOT yet known well enough to show anyone.
+#
+# award_ceiling: the largest amount the Insurance Ombudsman can award.
+# Sources conflict (API_DECISIONS.md section 8: one figure in some sources,
+# a higher one in others), so the value is deliberately null and unverified.
+#
+# NOTHING READS THIS VALUE INTO A LETTER, A SCREEN OR AN API RESPONSE.
+# tests/test_grievance_rules.py fails if any of them mentions a ceiling.
+# It stays null until Ayush checks the Insurance Ombudsman Rules, 2017 as
+# amended, fills in `value` (integer paise) and `source.url`, and sets
+# `verified: true`. Even then, showing it to users is a separate change.
+
+version: 1
+
+award_ceiling:
+  value: null      # integer paise once verified
+  verified: false
+  source:
+    document: Insurance Ombudsman Rules, 2017 (as amended)
+    section: Rule on the limit of an award (rule number to be confirmed)
+    url: null      # TODO(Ayush): add the official URL
