@@ -103,6 +103,7 @@ Run these and show the actual output:
 - `cd engines/document && .venv/bin/python -m pytest` (84 passed; the count must not change)
 - `cd apps/api && ../../.venv/bin/python -m pytest`
 - `cd apps/api && ../../.venv/bin/python -m alembic upgrade head`, then `downgrade -1`, then `upgrade head`, then `check`
+- Startup routine and the HTTP checks below: `tests/test_startup_routine.py` (temporary schema), or `curl` against a server Ayush started. **Never build the app against `apps/api/.env` to check it**: its startup routine writes to the dev database.
 - `curl /api/v1/health` returns `{"status":"ok"}`
 - `curl /api/v1/nonexistent` returns the error envelope, not `{"detail": ...}`
 - A request with no `Authorization` header to a protected route returns the 401 envelope
@@ -127,6 +128,8 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 - `cd apps/api && ../../.venv/bin/python scripts/measure_qa_latency.py [policy_id]`: cold / warm / cache-hit question latency per stage (real policy, never the synthetic fixture)
 - `cd apps/api && ../../.venv/bin/python scripts/profile_question.py [--search-only] [policy_id]`: per-stage and per-statement timing and database round-trip count for one question
 - `cd apps/api && ../../.venv/bin/python scripts/warm_demo_cache.py [--check]`: answer the demo questions once so they are cached (24 h); `--check` proves they are answered with no model call
+- `cd apps/api && ../../.venv/bin/python scripts/make_sample_documents.py`: write the fictional sample claim PDFs to `apps/api/sample_documents/` (no network)
+- `cd apps/api && ../../.venv/bin/python scripts/upload_sample_documents.py`: attach them to the four demo claims through a running server (one Gemini classification call per new document)
 - `cd apps/api && ../../.venv/bin/python scripts/draft_grievance.py <claim_id> [rung]`: draft one grievance letter with the real models and print it, with each paragraph's verification and the evidence checklist (2 Gemini calls; stored in `grievance_draft`)
 - `cd apps/api && ../../.venv/bin/python scripts/evaluate_qa.py`: Q&A evaluation on `eval/qa_star_comprehensive.yaml` (refuses to run until Ayush has checked it)
 - `.venv/bin/python engines/rules/scripts/generate_rules_doc.py`: regenerate `docs/RULES.md` from the rule registry
@@ -141,7 +144,7 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 - API JSON is `snake_case` in both directions. Do not transform casing.
 - Money is integer paise. Rupee formatting exists only inside `<Money>`, using `Intl.NumberFormat('en-IN')`.
 - Every screen implements five states: loading (skeletons, not spinners), empty, error with a working retry, degraded/low-confidence, abstained.
-- Stack is fixed: React 18 + Vite, React Router v6, TanStack Query v5, Tailwind, shadcn/ui, lucide, Recharts, MSW, react-hook-form + zod, react-pdf, date-fns, Vitest. Do not add libraries outside this list without asking.
+- Stack is fixed: React 18 + Vite, React Router v6, TanStack Query v5, Tailwind, shadcn/ui, lucide, Recharts, MSW, react-hook-form + zod, react-pdf, date-fns, Vitest (with jsdom and Testing Library for render tests, approved 2026-10-20). Do not add libraries outside this list without asking.
 
 ### Frontend commands
 
