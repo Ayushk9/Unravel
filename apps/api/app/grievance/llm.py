@@ -21,10 +21,21 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
-from app.qa.llm import Answered, ClausePrompt, GeminiQaLlm, Verdicts
+from app.qa.llm import Answered, CallOptions, ClausePrompt, GeminiQaLlm, Verdicts
 
-# Bump when a prompt or schema below changes. Stored with every draft.
-GRIEVANCE_PROMPT_VERSION = "grievance-v1"
+# Bump when a prompt, schema or call option below changes. Stored with every draft.
+GRIEVANCE_PROMPT_VERSION = "grievance-v2"
+
+# Why these limits (diagnosed 2026-10-20; DECISIONS.md, Phase 7 Stage B):
+# - The draft is composition from at most 6 given clauses under strict citation
+#   rules. Some reasoning helps it choose honest grounds and keep to the rules,
+#   so LOW, not MINIMAL; unbounded thinking is what made the call run past its timeout.
+# - The judge gives one supported/unsupported verdict per pair: entailment
+#   against a single clause, which needs no deliberation. MINIMAL.
+# - Output caps: 5 paragraphs of at most 1,200 characters is about 1,500
+#   tokens of JSON, so 2,048; a list of verdicts fits well inside 1,024.
+DRAFT_OPTIONS = CallOptions(thinking_level="LOW", max_output_tokens=2048)
+JUDGE_OPTIONS = CallOptions(thinking_level="MINIMAL", max_output_tokens=1024)
 
 MAX_PARAGRAPHS = 5
 
@@ -96,10 +107,15 @@ def _clause_listing(clauses: list[ClausePrompt]) -> str:
     return "\n\n".join(f"[{c.id}] (page {c.page})\n{c.text}" for c in clauses)
 
 
+def draft_contents(rung_description: str, facts: str, clauses: list[ClausePrompt]) -> list[str]:
+    """Exactly what the draft call sends. scripts/diagnose_draft_call.py sends the same."""
+    prompt = DRAFT_PROMPT.format(rung_description=rung_description, max_paragraphs=MAX_PARAGRAPHS)
+    return [prompt, f"CLAIM FACTS:\n{facts}", f"POLICY CLAUSES:\n{_clause_listing(clauses)}"]
+
+
 class GeminiGrievanceLlm(GeminiQaLlm):
     async def draft(self, rung_description: str, facts: str, clauses: list[ClausePrompt]) -> Answered[GeneratedDraft]:
-        prompt = DRAFT_PROMPT.format(rung_description=rung_description, max_paragraphs=MAX_PARAGRAPHS)
-        result, model = await self._generate([prompt, f"CLAIM FACTS:\n{facts}", f"POLICY CLAUSES:\n{_clause_listing(clauses)}"], GeneratedDraft)
+        result, model = await self._generate(draft_contents(rung_description, facts, clauses), GeneratedDraft, DRAFT_OPTIONS)
         assert isinstance(result, GeneratedDraft)
         return Answered(result, model)
 
@@ -110,7 +126,7 @@ class GeminiGrievanceLlm(GeminiQaLlm):
         listing = "\n\n".join(
             f"PAIR {i}\nPARAGRAPH: {paragraph}\nCLAUSE (page {clause.page}): {clause.text}" for i, (paragraph, clause) in enumerate(pairs)
         )
-        result, model = await self._generate([JUDGE_PROMPT, f"CLAIM FACTS:\n{facts}", listing], Verdicts)
+        result, model = await self._generate([JUDGE_PROMPT, f"CLAIM FACTS:\n{facts}", listing], Verdicts, JUDGE_OPTIONS)
         assert isinstance(result, Verdicts)
         supported = {v.pair for v in result.verdicts if v.verdict == "supported"}
         return Answered([i in supported for i in range(len(pairs))], model)
