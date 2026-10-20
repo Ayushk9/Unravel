@@ -17,17 +17,15 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.claims.completeness import AttachedDocument, compute_completeness
+from app.claims.completeness import compute_completeness
 from app.claims.deadlines import india_date
 from app.claims.events import append_event, create_claim
-from app.claims.reader import build_claims, find_claim_row, list_claim_rows
+from app.claims.reader import build_claims, find_claim_row, list_claim_rows, load_attached_documents
 from app.core.auth import CurrentHousehold, get_current_household
 from app.core.errors import ApiError
 from app.db.models import Claim as ClaimRow
-from app.db.models import Document
 from app.db.session import get_session
 from app.rules.loader import load_required_documents
 from app.claims.facts import save_facts
@@ -121,23 +119,5 @@ async def claim_completeness(
 ) -> CompletenessReport:
     """Which of the documents this kind of claim usually needs are present, and which are missing."""
     row = await _owned_claim(session, household, claim_id)
-    documents = await session.scalars(
-        select(Document)
-        .where(
-            Document.claim_id == row.id,
-            Document.household_id == household.household_id,
-            Document.deleted_at.is_(None),
-            # A document still being read has no type yet.
-            Document.parse_status == "parsed",
-        )
-        .order_by(Document.id)
-    )
-    attached = [
-        AttachedDocument(
-            document_type=document.detected_type_value,
-            confidence=document.detected_type_confidence,
-            user_confirmed=document.detected_type_user_confirmed,
-        )
-        for document in documents
-    ]
+    attached = await load_attached_documents(session, household.household_id, row.id)
     return compute_completeness(row.id, row.claim_type, row.admission_type, attached, load_required_documents())
