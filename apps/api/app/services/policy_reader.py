@@ -104,6 +104,8 @@ def build_policy(row: PolicyRow) -> Policy:
         start_date=row.start_date,
         end_date=row.end_date,
         first_inception_date=row.first_inception_date,
+        insurer_name=row.insurer_name,
+        user_entered_fields=list(row.user_entered_fields or ()),
         policy_type=row.policy_type or "other",
         members=[Member.model_validate(member) for member in row.members],
         coverage_profile=build_coverage_profile(row),
