@@ -1,0 +1,40 @@
+# Insurance Ombudsman awards shown as precedent (Feature 2's ombudsman_precedent,
+# and GET /api/v1/ombudsman-awards).
+#
+# ONLY AYUSH ADDS ENTRIES HERE, each copied from a published award he has read.
+# Nothing in this file may be invented, paraphrased from memory or generated.
+# An entry is served only when `checked_by_ayush: true`; anything else is
+# loaded, validated and ignored (engines/rules/precedent.py).
+#
+# Fields of an award
+#   case_reference    the award's reference exactly as published
+#   insurer_name      the insurer named in the award
+#   decided_on        date of the award, YYYY-MM-DD
+#   denial_ground     the ground the insurer relied on, as ONE of these tags
+#                     (the ids of the eligibility checks in engines/rules/registry.py):
+#                       coverage_profile, initial_waiting_period, ped_waiting_period,
+#                       disease_specific_waiting_period, permanent_exclusions,
+#                       room_rent_sub_limit, claim_intimation, sum_insured_adequacy
+#                     A claim is shown an award when one of its checks with this id
+#                     failed or is at risk. Matching is by tag only: no keywords, no model.
+#   outcome           upheld | overturned | partially_allowed | unknown
+#                     (upheld = the insurer's decision stood)
+#   summary           two or three plain sentences: what was denied and what the Ombudsman decided
+#   external_url      link to the published award, or null. Never a guessed URL.
+#   checked_by_ayush  true once Ayush has read the award and checked every field above
+#
+# Template (copy, remove the leading "# ", fill in, then set checked_by_ayush: true):
+#
+# - case_reference: "<as published>"
+#   insurer_name: "<insurer>"
+#   decided_on: 2025-01-31
+#   denial_ground: ped_waiting_period
+#   outcome: overturned
+#   summary: >-
+#     <What the insurer denied and why. What the Ombudsman decided and why.>
+#   external_url: null
+#   checked_by_ayush: false
+
+version: 1
+
+awards: []
