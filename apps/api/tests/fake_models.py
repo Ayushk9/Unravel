@@ -15,6 +15,7 @@ import zlib
 from collections.abc import Callable
 
 from app.models_server.client import ModelServerError
+from app.grievance.llm import GeneratedDraft, GeneratedParagraph
 from app.qa.llm import Answered, AnswerSentence, ClausePrompt, GeneratedAnswer
 from engines.retrieval.quantities import missing_numbers
 
@@ -99,4 +100,36 @@ class FakeQaLlm:
 
     async def judge(self, pairs: list[tuple[str, ClausePrompt]]) -> Answered[list[bool]]:
         self._record("judge")
+        return Answered(self._judge(pairs), self.model)
+
+
+def draft_from_first_clause(rung_description: str, facts: str, clauses: list[ClausePrompt]) -> GeneratedDraft:
+    """The default fake draft: one paragraph quoting the first clause."""
+    first = clauses[0]
+    return GeneratedDraft(abstain=False, paragraphs=[GeneratedParagraph(text=f"My policy says: {first.text}", chunk_ids=[first.id])])
+
+
+class FakeGrievanceLlm:
+    """Stands in for Gemini in grievance tests. Records every call; forbid_calls makes any call fail the test."""
+
+    model = "fake-model"
+
+    def __init__(
+        self,
+        *,
+        draft: Callable[[str, str, list[ClausePrompt]], GeneratedDraft] = draft_from_first_clause,
+        judge: Callable[[list[tuple[str, ClausePrompt]]], list[bool]] = judge_by_numbers_and_words,
+        fail_with: Exception | None = None,
+    ) -> None:
+        self._draft, self._judge, self.fail_with = draft, judge, fail_with
+        self.calls: list[str] = []
+
+    async def draft(self, rung_description: str, facts: str, clauses: list[ClausePrompt]) -> Answered[GeneratedDraft]:
+        self.calls.append("draft")
+        if self.fail_with:
+            raise self.fail_with
+        return Answered(self._draft(rung_description, facts, clauses), self.model)
+
+    async def judge_paragraphs(self, facts: str, pairs: list[tuple[str, ClausePrompt]]) -> Answered[list[bool]]:
+        self.calls.append("judge")
         return Answered(self._judge(pairs), self.model)
