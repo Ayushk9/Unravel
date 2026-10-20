@@ -1,6 +1,37 @@
-"""Seed a SYNTHETIC TEST FIXTURE: one policy and four claims, one for each eligibility band.
+"""Seed the four eligibility demo claims on the real Star policy, plus the SYNTHETIC TEST FIXTURE policy.
 
-SYNTHETIC. Claude wrote this policy by hand: a fictional insurer ("Kavach"),
+THE CLAIMS are on the dev household's real uploaded policy (the Star
+Comprehensive wording; app/qa/demo_policy.find_real_policy), not on the
+fixture, so the demo's verdicts rest on a real policy's extracted terms.
+
+The Star wording has no schedule page, so it states no policy dates (D-25).
+They are entered here as user-supplied values, through the same validation as
+PATCH /policies/{id} (D-39), and only if the policy has no dates yet:
+
+    start 1 Jan 2026, end 31 Dec 2026, continuous cover since 1 Nov 2024
+
+These are demo values, not facts about any real person's policy. Waiting
+periods count from the first inception date (D-39).
+
+Claim facts go through the same code as PUT /claims/{id}/facts (D-37). Claims
+seeded earlier on the fixture are moved to the Star policy (the claim row is
+updated; its event log, which is append-only, is unchanged).
+
+    Claim               Band                       Why (waiting clock from 1 Nov 2024)
+    Vikram, emergency   likely_eligible            appendicitis, not pre-existing, nothing listed applies
+    Ananya, planned     at_risk                    knee arthroscopy is on the 24-month list (p30), which
+                                                   ends 1 Nov 2026; admitted 1 Sep 2026. The period was
+                                                   extracted at medium confidence, so: at risk
+    Lakshmi, planned    likely_ineligible          pre-existing diabetes, admitted 2 Apr 2026; the 36-month
+                        (at_risk until confirmed)  PED period (p31) ends 1 Nov 2027. Only a HIGH-confidence
+                                                   failure is likely_ineligible (D-36): it becomes so once a
+                                                   person confirms waiting period #3 on the policy screen.
+                                                   This script deliberately does not confirm it.
+    Ishaan, emergency   insufficient_information   whether the illness is pre-existing is not answered
+
+THE FIXTURE (below) is kept for tests of the clause viewer and Q&A scripts.
+
+Fixture: SYNTHETIC. Claude wrote this policy by hand: a fictional insurer ("Kavach"),
 a generated 3-page schedule, 14 printed lines plus a title (15 clauses). It
 exists so the eligibility bands and the clause viewer can be tested with known
 numbers. It is NOT a real policy: keep it out of the demo and out of any
@@ -30,13 +61,6 @@ are embedded by scripts/index_chunks.py, which needs the Q&A models.
 If the dev household has not chosen a city tier, it is set to "metro" so the
 room-rent alert can be seen (Rs 5,000 cap below the unverified Rs 6,000
 estimate). A tier the household already chose is left alone.
-
-    Claim                     Band                       Why
-    Vikram, emergency         likely_eligible            every check satisfied
-    Ananya, planned           at_risk                    room rent Rs 8,000/day over a Rs 5,000/day cap
-    Lakshmi, planned          likely_ineligible          the panel scenario: PED, admitted 2 Apr 2026,
-                                                         48-month period from 14 Mar 2024 ends 14 Mar 2028
-    Ishaan, emergency         insufficient_information   whether the illness is pre-existing is not answered
 """
 
 from __future__ import annotations
@@ -54,10 +78,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
+from app.claims.deadlines import india_date  # noqa: E402
+from app.claims.facts import save_facts  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.core.ids import new_id  # noqa: E402
 from app.db.models import Claim, ClaimEvent, Document, DocumentChunk, Household, Member, Policy, policy_member  # noqa: E402
 from app.db.session import create_engine, create_session_factory  # noqa: E402
+from app.qa.demo_policy import find_real_policy  # noqa: E402
+from app.schemas.claims import ClaimFacts  # noqa: E402
+from app.schemas.policies import PolicyDatesUpdate  # noqa: E402
+from app.services.policy_dates import apply_dates  # noqa: E402
 from app.services.policy_writer import store_extraction  # noqa: E402
 from app.storage.base import build_object_path  # noqa: E402
 from app.storage.factory import create_storage  # noqa: E402
@@ -211,6 +241,12 @@ class DemoClaim:
 
 NONE_APPLY = {"matched_waiting_periods": [], "matched_exclusions": []}
 
+# The Star policy's dates, as the user would type them from a schedule (D-39). Demo values.
+STAR_DATES = PolicyDatesUpdate(start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), first_inception_date=date(2024, 11, 1))
+# Positions in the Star policy's waiting_periods, as GET /policies/{id} returns them:
+# 0 initial, 1 disease_specific (the listed conditions, p30-31), 2 pre_existing, 3 maternity.
+STAR_LISTED_CONDITIONS = 1
+
 CLAIMS = (
     DemoClaim(
         UUID("01920000-0000-7000-8000-0000000000f1"), "likely_eligible", "Vikram", "emergency", "Navjeevan Multispeciality Hospital, Pune",
@@ -222,7 +258,8 @@ CLAIMS = (
     DemoClaim(
         UUID("01920000-0000-7000-8000-0000000000f2"), "at_risk", "Ananya", "planned", "Shubhankar Hospital, Pune",
         date(2026, 9, 1), date(2026, 9, 3), 9_500_000,
-        {"diagnosis": "Planned knee arthroscopy", "condition_is_pre_existing": False, "first_diagnosed_on": date(2026, 7, 20), "planned_room_rent_per_day": 800_000, **NONE_APPLY},
+        {"diagnosis": "Planned knee arthroscopy", "condition_is_pre_existing": False, "first_diagnosed_on": date(2026, 7, 20), "planned_room_rent_per_day": 800_000,
+         "matched_waiting_periods": [STAR_LISTED_CONDITIONS], "matched_exclusions": []},
         (("intimated", ist(date(2026, 8, 28)), "Pre-authorisation request sent before admission"),),
     ),
     DemoClaim(
@@ -292,39 +329,59 @@ async def seed_chunks(session: AsyncSession) -> int:
     return len(lines)
 
 
-async def seed_claims(session: AsyncSession, policy_id: UUID) -> list[str]:
-    created = []
+async def seed_star_dates(session: AsyncSession, star: Policy) -> str:
+    """Enter the Star policy's dates (D-39), unless the user has already entered any."""
+    if (star.start_date, star.end_date, star.first_inception_date) == (STAR_DATES.start_date, STAR_DATES.end_date, STAR_DATES.first_inception_date):
+        return "already entered"
+    if any((star.start_date, star.end_date, star.first_inception_date)):
+        return "left alone: different dates were already entered, so the bands below may differ"
+    apply_dates(star, STAR_DATES, india_date(datetime.now(INDIA)))
+    await session.commit()
+    return "entered now"
+
+
+async def seed_claims(session: AsyncSession, star: Policy) -> list[str]:
+    """Each demo claim on the Star policy, with its facts. Creates, moves or updates; never writes an event twice."""
+    done = []
+    today = india_date(datetime.now(INDIA))
     for demo in CLAIMS:
-        if await session.get(Claim, demo.id) is not None:
-            continue
-        session.add(
-            Claim(
-                id=demo.id, household_id=HOUSEHOLD_ID, policy_id=policy_id, member_id=MEMBER[demo.member],
+        claim = await session.get(Claim, demo.id)
+        if claim is None:
+            claim = Claim(
+                id=demo.id, household_id=HOUSEHOLD_ID, policy_id=star.id, member_id=MEMBER[demo.member],
                 claim_type="reimbursement", admission_type=demo.admission_type, hospital_name=demo.hospital,
                 admitted_on=demo.admitted_on, discharged_on=demo.discharged_on, claimed_amount=demo.claimed_amount,
-                **demo.facts,
             )
-        )
+            session.add(claim)
+            await session.flush()
+            previous = None
+            for seq, (state, occurred_at, note) in enumerate(demo.events, start=1):
+                session.add(ClaimEvent(id=uuid4(), claim_id=demo.id, seq=seq, from_state=previous, to_state=state,
+                                       occurred_at=occurred_at, note=note, source="user"))
+                previous = state
+            action = "created"
+        elif claim.policy_id != star.id:
+            claim.policy_id = star.id  # the claim row only; its events are append-only and stay as they are
+            action = "moved to the Star policy"
+        else:
+            action = "facts updated"
         await session.flush()
-        previous = None
-        for seq, (state, occurred_at, note) in enumerate(demo.events, start=1):
-            session.add(ClaimEvent(id=uuid4(), claim_id=demo.id, seq=seq, from_state=previous, to_state=state,
-                                   occurred_at=occurred_at, note=note, source="user"))
-            previous = state
-        created.append(f"{demo.member} -> {demo.band}")
-    return created
+        # The same checks and writes as PUT /claims/{id}/facts; it commits.
+        await save_facts(session, claim, ClaimFacts(**demo.facts), today)
+        done.append(f"{demo.member} -> {demo.band}: {action}")
+    return done
 
 
 async def main() -> None:
     settings = get_settings()
     engine = create_engine(settings.database_url)
-    async with create_session_factory(engine)() as session, session.begin():
+    factory = create_session_factory(engine)
+    async with factory() as session, session.begin():
         missing = [name for name, member_id in MEMBER.items() if await session.get(Member, member_id) is None]
         if missing:
             raise SystemExit(f"Run scripts/seed.py first: members missing: {missing}")
         policy_id = await seed_policy(session, settings)
         chunks = await seed_chunks(session)
-        created = await seed_claims(session, policy_id)
         # Rows seeded before the fixture was labelled get the label too.
         fixture = await session.get(Policy, policy_id)
         if fixture is not None and fixture.product_name != PRODUCT_NAME:
@@ -334,15 +391,18 @@ async def main() -> None:
         if set_tier:
             household.city_tier = "metro"
         tier = household.city_tier
+    # The claims: their own session, because the facts code commits as it goes.
+    async with factory() as session:
+        star = await find_real_policy(session)
+        dates = await seed_star_dates(session, star)
+        claims = await seed_claims(session, star)
     await engine.dispose()
-    print(f"Demo policy {policy_id} ({POLICY_NUMBER}).")
-    print(f"Clauses for Q&A: {chunks} written" + ("; now run scripts/index_chunks.py to embed them." if chunks else " (already there)."))
+    print(f"Fixture policy {policy_id} ({POLICY_NUMBER}); clauses: {chunks} written" + (" (run scripts/index_chunks.py)" if chunks else ""))
     print(f"Household city tier: {tier}" + (" (set now)" if set_tier else " (already chosen; left alone)"))
-    print("Created claims:" if created else "All four demo claims already existed; nothing written.")
-    for line in created:
+    print(f"Demo claims are on the Star policy {star.id}. Its dates: {dates}.")
+    for line in claims:
         print(f"  {line}")
-    for demo in CLAIMS:
-        print(f"  claim {demo.id}  expected band: {demo.band}")
+    print("Lakshmi's claim is at_risk until a person confirms waiting period #3 (36 months, p31) on the policy screen.")
 
 
 if __name__ == "__main__":
