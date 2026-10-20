@@ -1,4 +1,4 @@
-"""Load and validate the two rule files.
+"""Load and validate the rule files.
 
 The files are data, edited by a person. They are validated when loaded, so a
 typo (an unknown state, a misspelt unit, a document type that does not
@@ -21,6 +21,10 @@ from app.db.models.document import DOCUMENT_TYPES
 RULES_DIR = Path(__file__).resolve().parent
 DEADLINE_RULES_FILE = RULES_DIR / "deadline_rules.yaml"
 REQUIRED_DOCUMENTS_FILE = RULES_DIR / "required_documents.yaml"
+GRIEVANCE_RUNGS_FILE = RULES_DIR / "grievance_rungs.yaml"
+OMBUDSMAN_RULES_FILE = RULES_DIR / "ombudsman_rules.yaml"
+
+RUNGS = ("insurer_grievance_cell", "irdai_bima_bharosa", "insurance_ombudsman")
 
 
 class _Rule(BaseModel):
@@ -131,6 +135,72 @@ class RequiredDocuments(_Rule):
         return self.checklists.get(claim_type, {}).get(admission_type)
 
 
+class RungCondition(_Rule):
+    """One claim state in which a rung is offered, and the sentence that says why."""
+
+    state: str
+    reason: str
+    deadline: str | None = None
+    reason_after_due: str | None = None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> RungCondition:
+        if self.state not in STATES:
+            raise ValueError(f"unknown state {self.state!r}")
+        uses_due = "{due}" in self.reason or "{due}" in (self.reason_after_due or "")
+        if uses_due and self.deadline is None:
+            raise ValueError(f"state {self.state}: a reason uses {{due}} but no deadline is named")
+        if self.reason_after_due is not None and self.deadline is None:
+            raise ValueError(f"state {self.state}: reason_after_due needs a deadline")
+        return self
+
+
+class Rung(_Rule):
+    label: str
+    addressee: str
+    when: tuple[RungCondition, ...]
+    unavailable: str
+    source: RuleSource
+    verified: bool
+    version: int = Field(ge=1)
+
+
+class GrievanceRungs(_Rule):
+    version: int = Field(ge=1)
+    rungs: dict[str, Rung]
+
+    @model_validator(mode="after")
+    def _all_rungs(self) -> GrievanceRungs:
+        if tuple(self.rungs) != RUNGS:
+            raise ValueError(f"the file must describe exactly these rungs, in order: {RUNGS}")
+        return self
+
+
+class AwardCeiling(_Rule):
+    value: int | None = Field(default=None, gt=0)
+    verified: bool
+    source: RuleSource
+
+
+class OmbudsmanRules(_Rule):
+    version: int = Field(ge=1)
+    award_ceiling: AwardCeiling
+
+
+def _check_rung_deadlines(rungs: GrievanceRungs, deadlines: DeadlineRules) -> None:
+    """A rung's deadline must be a real rule that is shown in that claim state; otherwise its date never exists."""
+    by_id = {rule.id: rule for rule in deadlines.rules}
+    for name, rung in rungs.rungs.items():
+        for condition in rung.when:
+            if condition.deadline is None:
+                continue
+            rule = by_id.get(condition.deadline)
+            if rule is None:
+                raise ValueError(f"rung {name}: unknown deadline rule {condition.deadline!r}")
+            if condition.state not in rule.active_in or rule.trigger.event is None:
+                raise ValueError(f"rung {name}: deadline {rule.id} is not an event deadline shown in state {condition.state}")
+
+
 def _read(path: Path) -> dict:
     with path.open(encoding="utf-8") as file:
         # safe_load reads plain data only; it cannot be made to run code.
@@ -145,3 +215,15 @@ def load_deadline_rules() -> DeadlineRules:
 @lru_cache
 def load_required_documents() -> RequiredDocuments:
     return RequiredDocuments.model_validate(_read(REQUIRED_DOCUMENTS_FILE))
+
+
+@lru_cache
+def load_grievance_rungs() -> GrievanceRungs:
+    rungs = GrievanceRungs.model_validate(_read(GRIEVANCE_RUNGS_FILE))
+    _check_rung_deadlines(rungs, load_deadline_rules())
+    return rungs
+
+
+@lru_cache
+def load_ombudsman_rules() -> OmbudsmanRules:
+    return OmbudsmanRules.model_validate(_read(OMBUDSMAN_RULES_FILE))
