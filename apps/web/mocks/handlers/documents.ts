@@ -77,6 +77,9 @@ db.registerJobResolver("parse_document", (params): ParseDocumentResult => {
         ...structuredClone(template),
         id: policyId,
         policy_number: `NEW/${genId("pol").toUpperCase()}`,
+        // A fresh upload: nothing typed by the user yet (D-46).
+        insurer_name: null,
+        user_entered_fields: [],
         source_document_id: documentId,
       };
       if (newPolicy.coverage_profile) newPolicy.coverage_profile.policy_id = policyId;
