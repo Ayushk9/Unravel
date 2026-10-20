@@ -51,7 +51,7 @@ is unknown (room rent not given, say) is listed with its missing fact but
 does not by itself stop "likely eligible".
 ```
 
-Ombudsman precedent: always an empty list for now, with the note: "Precedent corpus not yet loaded, so no similar Ombudsman cases are shown."
+Ombudsman precedent: the awards in `engines/rules/reference/ombudsman_awards.yaml` that Ayush has checked (`checked_by_ayush: true`) whose `denial_ground` tag is the id of a check above that failed or is at risk. Exact tag match only: no keywords, no similarity score, no model. With no checked awards the list is empty and the note is: "Precedent corpus not yet loaded, so no similar Ombudsman cases are shown. Past decisions are not a prediction of how your claim will be decided."
 
 ## Gap alerts (Feature 8)
 
