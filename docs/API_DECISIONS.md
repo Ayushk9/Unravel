@@ -372,7 +372,7 @@ The checklist lives in `apps/api/app/rules/required_documents.yaml` and is **`ve
 - `confidence` is the lowest confidence among the check's inputs (a user-confirmed input counts as `high`). It is a three-level label, **never a probability**.
 - `values` holds the dates (`YYYY-MM-DD`), month and day counts and paise amounts the sentence was rendered from.
 - `missing_facts` may list several facts, some resolved by a document outside `DocumentType` (`resolving_document: null`). `missing_fact` and `resolving_document` carry the first entry for older clients.
-- `ombudsman_precedent` is `[]` and the new `ombudsman_precedent_note` says why ("Precedent corpus not yet loaded ...").
+- `ombudsman_precedent` is `[]` and the new `ombudsman_precedent_note` says why ("Precedent corpus not yet loaded ..."). *Amended by D-45:* checked awards on the ground of a failed or at-risk check are listed.
 - Status values stay `satisfied | at_risk | failed | unknown`.
 
 **Band**, in strict precedence: `insufficient_information` if a critical check is unknown; else `likely_ineligible` if a check failed with high confidence; else `at_risk` if a check failed with lower confidence or is at risk; else `likely_eligible`. Critical checks: coverage profile, initial, pre-existing and condition-specific waiting periods, exclusions. A non-critical unknown is listed but does not prevent `likely_eligible`. Checks are ordered missing-facts-first for insufficient information, otherwise worst first.
@@ -475,6 +475,58 @@ Otherwise `202 JobAccepted` with `kind: "answer_question"`. No `Idempotency-Key`
 *Ratified:* 2026-10-16. Additive except the D-19 amendment.
 *Revisit:* when grievance drafting (Feature 7) reuses the marker convention.
 
+### D-43 · Grievance drafts: who writes what, and which rungs fit now
+Specifies the result of `POST /api/v1/claims/{id}/grievance-drafts` (CONTRACTS.md row 20) and adds `GET /api/v1/claims/{id}/grievance-rungs` (row 30).
+
+**`GrievanceDraft` gains** (additive):
+```json
+{
+  "addressee": "The Grievance Redressal Officer, Star Health and Allied Insurance",
+  "header_lines": [{ "label": "Policy number", "value": null }, ...],
+  "closing": "I request you to review this claim ... Enclosures: ... Yours faithfully, ...",
+  "disclaimer": "This is a draft based on your documents, not legal advice. ...",
+  "letter_text": "To, ... (the whole letter as plain text)",
+  "missing_context": null,
+  "generated_at": "2026-10-20T10:00:00+00:00"
+}
+```
+- **Only `paragraphs[].text` is written by a model.** `subject`, `addressee`, `header_lines` (patient, insurer, policy number, plan, hospital, admission and discharge dates, amount claimed from paise, denial date, and the denial reason quoted from the `denied` event's note), the pages cited, `evidence_checklist`, `closing`, `disclaimer` and `letter_text` are built by server code from stored data. A fact that is not recorded is `null` (shown as "not recorded"), never a placeholder that looks real.
+- **Paragraphs cite policy clauses only** (`kind: "policy_clause"`, with page and bbox, D-23). Claim documents are classified, not read (D-34), so there is no text to check a citation of them against; they appear in the evidence checklist and the enclosures instead.
+- **Verification as in D-42, but nothing is removed.** Every paragraph gets the number check (its numbers must be in a cited clause or in the claim facts given to the model) and the support judge. A paragraph that fails either is **kept with `verified: false`** and clients must flag it visibly (product rule 4); `letter_text` prefixes it with a warning line. A verified paragraph keeps only the citations judged to support it; an unverified one keeps all it cited. `citation_precision` = verified paragraphs / all paragraphs.
+- **No paragraph** (nothing retrieved, or the model found no honest ground): `paragraphs: []`, `citation_precision: 0`, `missing_context` is our own sentence, and the header, checklist and closing are still returned; `letter_text` asks the user to write their own reasons. A normal result, not an error.
+- **No `[[n]]` markers** in paragraph text (closes D-42's revisit for grievances): each paragraph carries `citation_ids`, and markers would end up in the copied letter.
+- `progress.step` runs `retrieving`, `drafting`, `verifying`, `done`. Drafts are never cached (D-42). Gemini failures are handled as in D-42 ("The drafting service is busy right now. Please try again in a minute.").
+- No regulatory figure appears in a letter. The Ombudsman's award limit is in `apps/api/app/rules/ombudsman_rules.yaml` with `value: null, verified: false` and is read into no output (§8).
+
+**`GrievanceRungOption`** (`GET /claims/{id}/grievance-rungs`, one per rung in ladder order):
+```json
+{ "rung": "insurance_ombudsman", "label": "Insurance Ombudsman", "available": true,
+  "reason": "Your claim was denied on 2 May 2026. A complaint to the Insurance Ombudsman can be made until 2 May 2027. ... This is based on a rule that has not yet been checked against its source.",
+  "rule_ids": ["ombudsman_filing"], "verified": false }
+```
+Computed on read by a pure function from the claim's state, its events and its deadlines (D-33), with the rungs described in `apps/api/app/rules/grievance_rungs.yaml`. A rung is `verified` only if its own description and the deadline rule it uses are both verified; **as of ratification none is**. An unverified rung is still offered, and marked. An expired window is still offered, saying it "may have passed", because the rule behind it is unchecked.
+
+*Ratified:* 2026-10-20 (Phase 7 plan approval). Additive.
+*Revisit:* when the rung rules are verified; when claim documents are read (they could then be cited).
+
+### D-44 · Errors of `POST /claims/{id}/grievance-drafts`
+Extends row 20, all consistent with D-04 and D-27:
+- `422`: a missing `Idempotency-Key` (field `Idempotency-Key`); a `rung` that is not one of the three, including `"other"` (the escape hatch exists for responses, not requests).
+- `409 idempotency_key_reused`: the same key with a different `rung`. The same key with the same rung replays the first 202.
+- `409 rung_not_available`: the rung does not fit the claim's current state (for example the Ombudsman for a claim that is only `intimated`). `field_errors` has one `{ "field": "rung", "message": "<rung>" }` per rung that is available, like `illegal_transition` (D-31).
+- `409 policy_not_indexed`: the claim's policy has no searchable clauses yet (as D-42).
+
+*Ratified:* 2026-10-20. Additive.
+
+### D-45 · Ombudsman awards: checked by a person, ids, and matching by ground
+- Awards live in `engines/rules/reference/ombudsman_awards.yaml`, **filled only by Ayush from published awards**. An entry is served (by `GET /ombudsman-awards` and as eligibility precedent) only when `checked_by_ayush: true`. It is empty at ratification.
+- `id` is `uuid5(fixed namespace, case_reference)`: stable across restarts, which cursors and links need. A deliberate exception to server-generated UUIDv7 ids (D-11): these are reference rows, not resources a client creates.
+- `denial_ground` in the file is a tag, one of Engine B's eligibility check ids (`ped_waiting_period`, `permanent_exclusions`, ...); an unknown tag stops the file loading. On the wire `denial_ground` is that check's plain title ("Pre-existing disease waiting period"), so the `OmbudsmanAward` shape is unchanged.
+- `ombudsman_precedent` on an eligibility assessment lists the checked awards whose tag is the id of a check that is `failed` or `at_risk` on this claim: an exact match, with no keywords, no similarity score and no model. `ombudsman_precedent_note` is one of three fixed sentences (none loaded / none on this ground / these match), each saying the awards are not a prediction of how the claim will be decided.
+- `GET /ombudsman-awards`: newest `decided_on` first; `cursor` is the id of the last award seen; an unknown cursor is `422` on `cursor`.
+
+*Ratified:* 2026-10-20. Additive.
+
 ---
 
 ## 5. Pagination
@@ -529,7 +581,7 @@ These need verification against primary sources before they appear in any demo, 
 
 | Item | Status | Where it bites |
 | --- | --- | --- |
-| Insurance Ombudsman award monetary ceiling (₹30 lakh vs ₹50 lakh across sources) | **Conflicting** — verify against the Ombudsman Rules as amended | Feature 7 rung selector; any eligibility copy |
+| Insurance Ombudsman award monetary ceiling (₹30 lakh vs ₹50 lakh across sources) | **Conflicting** — verify against the Ombudsman Rules as amended. Held in `apps/api/app/rules/ombudsman_rules.yaml` as `value: null, verified: false`; read into no output (D-43) | Feature 7 rung selector; any eligibility copy |
 | FY25 Council for Insurance Ombudsmen complaint count | **Unverified** | Problem-statement slide; Feature 9 framing |
 | Ombudsman filing window from date of repudiation | **Unverified** | Feature 6 deadline rule — this one is load-bearing |
 | Days of insurer silence before escalation is permitted | **Unverified** | Feature 6 deadline rule |
