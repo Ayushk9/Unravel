@@ -19,7 +19,8 @@ from app.core.errors import ApiError
 from app.db.session import get_session
 from app.rules_bridge import eligibility_input
 from app.schemas.eligibility import EligibilityAssessment, EligibilityCheck, MissingFact
-from engines.rules import assess_eligibility
+from app.api.v1.grievances import award_to_wire
+from engines.rules import assess_eligibility, load_awards, match_precedent
 
 router = APIRouter()
 
@@ -37,6 +38,8 @@ async def claim_eligibility(
     # The clock is read here, at the edge, and handed to the engine.
     now = datetime.now(timezone.utc)
     assessment = assess_eligibility(await eligibility_input(session, claim), india_date(now))
+    # Checked Ombudsman awards on the same ground as a failed or at-risk check: exact tag match, no model (D-45).
+    precedent = match_precedent(assessment.checks, load_awards())
 
     return EligibilityAssessment(
         claim_id=claim.id,
@@ -57,7 +60,7 @@ async def claim_eligibility(
             )
             for check in assessment.checks
         ],
-        ombudsman_precedent=[],
-        ombudsman_precedent_note=assessment.precedent_note,
+        ombudsman_precedent=[award_to_wire(award) for award in precedent.awards],
+        ombudsman_precedent_note=precedent.note,
         generated_at=now,
     )
