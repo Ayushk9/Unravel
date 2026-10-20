@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     model_server_enabled: bool = True
     # One Gemini call's limit inside a question job.
     qa_llm_timeout_seconds: float = Field(default=60, gt=0)
+    # One Gemini call's limit inside a grievance draft: a letter's paragraphs are a longer output than an answer.
+    grievance_llm_timeout_seconds: float = Field(default=120, gt=0)
 
     # Deployed web origins, comma-separated. Never "*".
     cors_allowed_origins: str = ""
