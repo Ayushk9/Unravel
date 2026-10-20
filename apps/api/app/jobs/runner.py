@@ -28,7 +28,7 @@ Jobs run in two lanes, each with its own drain loops:
 
     documents   parse_document (policies and claim documents)
                 at most `max_concurrent_parses` at once
-    questions   answer_question, one at a time
+    questions   answer_question and generate_grievance_draft, one at a time
 
 A question takes seconds and a parse can take minutes; with one lane, a
 question asked while a policy is being read would wait for the whole parse.
@@ -62,15 +62,24 @@ from app.jobs.parse_document import JobFailure, run_parse_document
 from app.jobs.queue import ClaimedJob, SessionFactory, claim_next_job, interrupted_message, mark_failed
 from app.jobs.worker_process import ChildTarget, run_extraction
 from app.models_server.client import Models
+from app.grievance.llm import GrievanceLlm
+from app.grievance.run_draft import run_generate_grievance_draft
 from app.qa.cache import QaCache
 from app.qa.llm import QaLlm
 from app.qa.run_question import run_answer_question
 from app.storage.base import DocumentStorage
 
 DOCUMENT_KINDS = ("parse_document",)
-QUESTION_KINDS = ("answer_question",)
+# Grievance drafts share the questions' lane: both make Gemini calls, and one at a time keeps the quota predictable.
+QUESTION_KINDS = ("answer_question", "generate_grievance_draft")
 
 logger = logging.getLogger("unravel.jobs")
+
+CRASH_MESSAGES = {
+    "parse_document": "Something went wrong on our side while reading this document. Please try again.",
+    "answer_question": "Something went wrong on our side while answering this question. Please try again.",
+    "generate_grievance_draft": "Something went wrong on our side while drafting this letter. Please try again.",
+}
 
 
 class JobRunner:
@@ -88,6 +97,7 @@ class JobRunner:
         models: Models | None = None,
         qa_llm: QaLlm | None = None,
         qa_cache: QaCache | None = None,
+        grievance_llm: GrievanceLlm | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._storage = storage
@@ -97,6 +107,7 @@ class JobRunner:
         self.models = models
         self.qa_llm = qa_llm
         self.qa_cache = qa_cache or QaCache()
+        self.grievance_llm = grievance_llm
         self._lanes: dict[tuple[str, ...], int] = {DOCUMENT_KINDS: settings.max_concurrent_parses, QUESTION_KINDS: 1}
         self._drain_tasks: dict[tuple[str, ...], set[asyncio.Task[None]]] = {kinds: set() for kinds in self._lanes}
         self._wake_requested: dict[tuple[str, ...], bool] = {kinds: False for kinds in self._lanes}
@@ -163,6 +174,12 @@ class JobRunner:
                     cache=self.qa_cache,
                     gemini_model=self._settings.gemini_model,
                 )
+            elif job.kind == "generate_grievance_draft":
+                if self.models is None or self.grievance_llm is None:
+                    raise JobFailure("drafting_unavailable", "Letters can't be drafted on this server right now.", retryable=True)
+                await run_generate_grievance_draft(
+                    job, session_factory=self._session_factory, models=self.models, llm=self.grievance_llm
+                )
             elif job.kind != "parse_document":
                 raise JobFailure("unsupported_job", "This kind of task isn't available yet.", retryable=False)
             elif job.payload.get("document_kind") == "claim_document":
@@ -209,10 +226,6 @@ class JobRunner:
                 self._session_factory,
                 job.id,
                 code="internal_error",
-                message=(
-                    "Something went wrong on our side while answering this question. Please try again."
-                    if job.kind == "answer_question"
-                    else "Something went wrong on our side while reading this document. Please try again."
-                ),
+                message=CRASH_MESSAGES.get(job.kind, CRASH_MESSAGES["parse_document"]),
                 retryable=True,
             )
