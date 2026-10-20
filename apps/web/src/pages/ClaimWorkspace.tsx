@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { FileSignature } from "lucide-react";
 import type { Claim, ClaimState, Policy, Provenance, StoredDocument } from "@/api/types";
 import { ApiError } from "@/api/client";
 import { useAppendClaimEvent, useClaim, useEligibility } from "@/api/endpoints/claims";
@@ -69,7 +70,19 @@ export function ClaimWorkspace() {
             {member ? ` · ${member.full_name}` : ""}
           </p>
         </div>
-        <ClaimStateBadge state={claim.data.current_state} />
+        <div className="flex flex-col items-end gap-2">
+          <ClaimStateBadge state={claim.data.current_state} />
+          {/* Feature 7: a letter is worth drafting once the insurer has said no, or the user has already complained. */}
+          {(claim.data.current_state === "denied" || claim.data.current_state === "escalated") && (
+            <Link
+              to={`/claims/${claim.data.id}/grievance`}
+              className="inline-flex items-center gap-1.5 rounded border border-rule bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-secondary"
+            >
+              <FileSignature className="size-4" aria-hidden="true" />
+              Draft a grievance letter
+            </Link>
+          )}
+        </div>
       </header>
 
       <div role="tablist" aria-label="Claim workspace" className="flex gap-1 border-b border-rule">
