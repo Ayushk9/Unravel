@@ -67,7 +67,10 @@ def render() -> str:
         (BAND_DOC or "").strip(),
         "```",
         "",
-        f"Ombudsman precedent: always an empty list for now, with the note: \"{PRECEDENT_NOTE}\"",
+        "Ombudsman precedent: the awards in `engines/rules/reference/ombudsman_awards.yaml` that Ayush has checked "
+        "(`checked_by_ayush: true`) whose `denial_ground` tag is the id of a check above that failed or is at risk. "
+        "Exact tag match only: no keywords, no similarity score, no model. "
+        f"With no checked awards the list is empty and the note is: \"{PRECEDENT_NOTE}\"",
         "",
         "## Gap alerts (Feature 8)",
         "",
