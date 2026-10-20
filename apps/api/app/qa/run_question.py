@@ -89,6 +89,11 @@ class AnswerOutcome:
     record: dict[str, Any]
 
 
+def written_only_by(models: dict[str, str], primary: str) -> bool:
+    """True when every model call behind an answer was made by `primary` (or no call was made)."""
+    return all(model == primary for model in models.values())
+
+
 Progress = Callable[[tuple[str, int]], Awaitable[None]]
 
 
@@ -134,8 +139,11 @@ async def answer_question(
     result = await _answer(
         session_factory, models, llm, cache, gemini_model, household_id, question, normalised, script, document_id, timings, record, progress
     )
-    # The models that answered are stored with the answer, so a cache hit still says who wrote it.
-    cache.set(key, {"result": result, "models": record["models"]})
+    # The key names the primary model, so only an answer the primary wrote may be stored under it.
+    # An answer that needed the fallback for any call is not cached: the next asking tries the primary again.
+    if written_only_by(record["models"], gemini_model):
+        # The models that answered are stored with the answer, so a cache hit still says who wrote it.
+        cache.set(key, {"result": result, "models": record["models"]})
     timings["total"] = round(time.perf_counter() - started, 3)
     return AnswerOutcome(result=result, cache_hit=False, timings=timings, record=record)
 
@@ -215,7 +223,8 @@ async def _answer(
             rewritten = await llm.rewrite(asked)
             search_query = rewritten.value
             record["models"]["rewrite"] = rewritten.model
-            cache.set(rewrite_cache_key, search_query)
+            if rewritten.model == gemini_model:  # same rule as the answer cache: primary-model output only
+                cache.set(rewrite_cache_key, search_query)
         timings["rewrite"] = round(time.perf_counter() - t, 3)
     record["search_query"] = search_query
 
