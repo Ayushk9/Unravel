@@ -206,6 +206,8 @@ const samplePolicy: Policy = {
   start_date: "2026-01-01",
   end_date: "2027-01-01",
   first_inception_date: null,
+  insurer_name: null,
+  user_entered_fields: ["start_date", "end_date"],
   members: [],
   coverage_profile: {
     policy_id: "policy-sample",
