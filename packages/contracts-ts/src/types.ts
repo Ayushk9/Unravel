@@ -100,6 +100,10 @@ export interface Policy {
   // D-39: the start of cover renewed without a break, entered by the user.
   // Waiting periods count from it when set, otherwise from start_date.
   first_inception_date: ISODate | null;
+  // D-46: the insurer's name as the user typed it. Show insurer.name if set, else this.
+  insurer_name: string | null;
+  // D-46: which of these fields the user typed in. Mark them "Entered by you"; they have no page to point at.
+  user_entered_fields: PolicyUserEnteredField[];
   members: Member[];
   coverage_profile: CoverageProfile | null; // null while parsing
   source_document_id: UUID;
@@ -467,8 +471,13 @@ export interface PolicyCreateRequest {
   source_document_id: UUID;
 }
 
-// D-39: only the keys sent change; a key sent as null clears that date.
-export interface PolicyDatesUpdateRequest {
+export type PolicyUserEnteredField = "insurer_name" | "product_name" | "policy_number" | "start_date" | "end_date" | "first_inception_date";
+
+// D-39, D-46: only the keys sent change; a key sent as null clears it. Text is trimmed, 1–200 characters.
+export interface PolicyUpdateRequest {
+  insurer_name?: string | null;
+  product_name?: string | null;
+  policy_number?: string | null;
   start_date?: ISODate | null;
   end_date?: ISODate | null;
   first_inception_date?: ISODate | null;
