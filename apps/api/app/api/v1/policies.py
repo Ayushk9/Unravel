@@ -2,7 +2,7 @@
 
 GET   /policies                                               CONTRACTS.md row 7
 GET   /policies/{id}                                          CONTRACTS.md row 9
-PATCH /policies/{id}                                          CONTRACTS.md row 27, D-39
+PATCH /policies/{id}                                          CONTRACTS.md row 27, D-39, D-46
 PATCH /policies/{id}/coverage-profile/fields/{field_path}     CONTRACTS.md row 10, D-15
 POST  /policies/{id}/questions                                CONTRACTS.md row 11, D-42
 """
@@ -26,9 +26,9 @@ from app.schemas.jobs import JobAccepted
 from app.schemas.questions import QuestionRequest
 from app.db.session import get_session
 from app.schemas.errors import FieldError
-from app.schemas.policies import FieldCorrectionRequest, Policy, PolicyDatesUpdate
+from app.schemas.policies import FieldCorrectionRequest, Policy, PolicyUpdate
 from app.services.field_correction import correct_field, find_profile
-from app.services.policy_dates import apply_dates
+from app.services.policy_update import apply_policy_update
 from app.services.policy_reader import build_policy, find_policy_row, load_policies, load_policy
 
 router = APIRouter()
@@ -68,17 +68,17 @@ async def _reloaded(session: AsyncSession, household_id: UUID, policy_id: UUID) 
 
 
 @router.patch("/policies/{policy_id}")
-async def update_policy_dates(
+async def update_policy(
     policy_id: UUID,
-    body: PolicyDatesUpdate,
+    body: PolicyUpdate,
     household: Annotated[CurrentHousehold, Depends(get_current_household)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Policy:
-    """Set the dates from the user's policy schedule: start, end, and first inception of continuous cover (D-39)."""
+    """Set what the user copies from their schedule: insurer, product and number (D-46), and the dates (D-39)."""
     row = await find_policy_row(session, household.household_id, policy_id)
     if row is None:
         raise _policy_not_found()
-    apply_dates(row, body, india_date(datetime.now(timezone.utc)))
+    apply_policy_update(row, body, india_date(datetime.now(timezone.utc)))
     await session.commit()
     return await _reloaded(session, household.household_id, policy_id)
 
