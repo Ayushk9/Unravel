@@ -35,10 +35,15 @@ JOB_RETENTION = timedelta(hours=24)
 
 INTERRUPTED_MESSAGE = "This document was being read when the server restarted. Please upload it again."
 INTERRUPTED_QUESTION_MESSAGE = "This question was being answered when the server restarted. Please ask it again."
+INTERRUPTED_DRAFT_MESSAGE = "This letter was being drafted when the server restarted. Please generate it again."
 
 
 def interrupted_message(kind: str) -> str:
-    return INTERRUPTED_QUESTION_MESSAGE if kind == "answer_question" else INTERRUPTED_MESSAGE
+    if kind == "answer_question":
+        return INTERRUPTED_QUESTION_MESSAGE
+    if kind == "generate_grievance_draft":
+        return INTERRUPTED_DRAFT_MESSAGE
+    return INTERRUPTED_MESSAGE
 
 
 @dataclass(frozen=True)
