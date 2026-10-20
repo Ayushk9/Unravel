@@ -154,7 +154,8 @@ async def load_context(session_factory: SessionFactory, household_id: UUID, clai
         if policy is None or document is None or document.deleted_at is not None:
             raise JobFailure("policy_missing", "This claim's policy document is no longer available.", retryable=False)
         # Copied out now: eligibility_input reloads this policy row with other options, which drops `insurer`.
-        insurer_name = policy.insurer.name if policy.insurer else None
+        # The linked reference insurer if there is one, else the name the user entered (D-46).
+        insurer_name = policy.insurer.name if policy.insurer else policy.insurer_name
         policy_number, product_name = policy.policy_number, policy.product_name
         member = await session.get(Member, claim.member_id)
         events = list(await session.scalars(select(ClaimEvent).where(ClaimEvent.claim_id == claim.id).order_by(ClaimEvent.seq)))
