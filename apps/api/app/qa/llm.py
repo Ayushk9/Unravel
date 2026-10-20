@@ -99,6 +99,18 @@ class Answered(Generic[T]):
     model: str
 
 
+@dataclass(frozen=True)
+class CallOptions:
+    """Per-call limits. Both None means the model's defaults.
+
+    thinking_level      how much the model may reason before answering ("MINIMAL", "LOW", ...)
+    max_output_tokens   a hard cap on the answer's length, thinking excluded
+    """
+
+    thinking_level: str | None = None
+    max_output_tokens: int | None = None
+
+
 class QaLlm(Protocol):
     async def rewrite(self, question: str) -> Answered[str]: ...
 
@@ -207,14 +219,22 @@ class GeminiQaLlm:
             api_key=api_key, http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
         )
 
-    async def _once(self, model: str, contents: list[str], schema: type[BaseModel]) -> BaseModel:
-        config = self._types.GenerateContentConfig(
+    def config(self, schema: type[BaseModel], options: CallOptions | None = None) -> Any:
+        """The request config: strict JSON schema, temperature 0, no tools, and any per-call limits."""
+        options = options or CallOptions()
+        return self._types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=schema,
             temperature=0.0,
             # No tools are ever offered; switch the SDK's tool-calling loop off explicitly.
             automatic_function_calling=self._types.AutomaticFunctionCallingConfig(disable=True),
+            # None leaves the model's default (Q&A's calls, unchanged).
+            thinking_config=self._types.ThinkingConfig(thinking_level=options.thinking_level) if options.thinking_level else None,
+            max_output_tokens=options.max_output_tokens,
         )
+
+    async def _once(self, model: str, contents: list[str], schema: type[BaseModel], options: CallOptions | None = None) -> BaseModel:
+        config = self.config(schema, options)
         try:
             response = await asyncio.wait_for(
                 self._client.aio.models.generate_content(model=model, contents=contents, config=config), self._timeout
@@ -232,11 +252,11 @@ class GeminiQaLlm:
             raise LlmError(f"{model}'s answer did not match the required schema", code="bad_answer", retryable=True)
         return schema.model_validate(response.parsed)
 
-    async def _generate(self, contents: list[str], schema: type[BaseModel]) -> tuple[BaseModel, str]:
+    async def _generate(self, contents: list[str], schema: type[BaseModel], options: CallOptions | None = None) -> tuple[BaseModel, str]:
         last: LlmError | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                return await self._once(self._model, contents, schema), self._model
+                return await self._once(self._model, contents, schema, options), self._model
             except LlmError as error:
                 if error.code not in RETRYABLE_STATUS.values():
                     raise
@@ -252,7 +272,7 @@ class GeminiQaLlm:
         if self._fallback is None:
             raise last
         logger.warning("Gemini primary exhausted, trying fallback. primary=%s fallback=%s", self._model, self._fallback)
-        return await self._once(self._fallback, contents, schema), self._fallback
+        return await self._once(self._fallback, contents, schema, options), self._fallback
 
     async def rewrite(self, question: str) -> Answered[str]:
         result, model = await self._generate([REWRITE_PROMPT, f"QUESTION: {question}"], SearchTerms)
