@@ -14,6 +14,10 @@ The pipeline (apps/api/app/qa/run_question.py) calls these in order:
      only A is judged to support it.
   4. assemble(): the surviving sentences, each followed by its [[n]] markers,
      and the ordered list of clauses they cite (D-42).
+
+Grievance drafting (apps/api/app/grievance/run_draft.py) applies the same
+two checks to paragraphs, but keeps every paragraph and only flags the ones
+that fail, in the order they were written: verify_in_order().
 """
 
 from __future__ import annotations
@@ -89,6 +93,27 @@ def decide(
             continue
         outcome.kept.append(Sentence(sentence.text, supported))
     return outcome
+
+
+def verify_in_order(
+    sentences: list[Sentence], verdicts: dict[tuple[int, str], bool], chunk_text: dict[str, str], question: str
+) -> list[Sentence | Removed]:
+    """The checks of precheck() and decide(), one result per sentence, in the order given.
+
+    `verdicts[(i, chunk_id)]` is keyed by the position in `sentences`. A
+    sentence that fails comes back as Removed (with its reason); one that
+    passes comes back as a Sentence citing only the clauses judged to support it.
+    """
+    results: list[Sentence | Removed] = []
+    for index, sentence in enumerate(sentences):
+        candidates, removed = precheck([sentence], chunk_text, question)
+        if removed:
+            results.append(removed[0])
+            continue
+        own = {(0, chunk_id): verdicts.get((index, chunk_id), False) for chunk_id in sentence.chunk_ids}
+        outcome = decide(candidates, own, chunk_text, question, [])
+        results.append(outcome.kept[0] if outcome.kept else outcome.removed[0])
+    return results
 
 
 def assemble(kept: list[Sentence]) -> tuple[str, list[str]]:
