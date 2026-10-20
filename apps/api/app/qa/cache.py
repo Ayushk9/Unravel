@@ -67,3 +67,7 @@ class QaCache:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps({"stored_at": time.time(), "value": value}, ensure_ascii=False), encoding="utf-8")
         temporary.replace(path)  # atomic: a reader never sees half a file
+
+    def delete(self, key: str) -> None:
+        """Forget one entry (scripts/warm_demo_cache.py removes entries it must not keep)."""
+        (self._directory / f"{key}.json").unlink(missing_ok=True)

@@ -62,3 +62,34 @@ def test_vector_literal_round_trip() -> None:
     values = [0.1, -0.25, 1.0]
 
     assert from_vector_literal(to_vector_literal(values)) == values
+
+
+def test_cache_delete_forgets_one_entry(tmp_path: Path) -> None:
+    cache = QaCache(tmp_path)
+    cache.set("a", 1)
+    cache.set("b", 2)
+    cache.delete("a")
+    cache.delete("never-there")  # no error
+
+    assert cache.get("a") is None and cache.get("b") == 2
+
+
+def test_demo_warm_up_keeps_only_primary_answers_that_did_not_abstain() -> None:
+    from scripts.warm_demo_cache import not_cacheable
+
+    answered = {"abstained": False}
+    assert not_cacheable(answered, {"answer": "primary", "judge": "primary"}, "primary") is None
+    assert "fallback" in not_cacheable(answered, {"answer": "primary", "judge": "fallback"}, "primary")
+    assert "fallback" in not_cacheable(answered, {"rewrite": "fallback", "answer": "primary"}, "primary")
+    assert not_cacheable({"abstained": True}, {"answer": "primary"}, "primary") == "abstained"
+
+
+def test_demo_warm_up_holds_writes_until_kept(tmp_path: Path) -> None:
+    from scripts.warm_demo_cache import HeldCache
+
+    cache = QaCache(tmp_path)
+    held = HeldCache(cache)
+    held.set("answer-x", {"result": 1})
+    assert cache.get("answer-x") is None, "nothing written before keep()"
+    held.keep()
+    assert cache.get("answer-x") == {"result": 1}

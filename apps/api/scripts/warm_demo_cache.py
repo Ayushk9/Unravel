@@ -10,6 +10,13 @@ uses (apps/api/.cache/qa), under the same key the API computes, so asking one
 of these questions in the web app is answered from the cache, with no model
 call. Entries last 24 hours (D-42): run this on the morning of the demo.
 
+Only an answer written entirely by the PRIMARY model (GEMINI_MODEL) is cached,
+and never an abstention. A demo answer is pinned for 24 hours, so it must be
+the one the primary model gives; an answer from the fallback model, or an
+abstention, is reported and left out (run the script again later). An entry
+already in the cache that breaks either rule is reported and removed, then the
+question is asked again.
+
 --check runs each question through the real job code (run_answer_question)
 with a Gemini stand-in and a model-server stand-in that FAIL if called. A
 question passes only if its job succeeds from the cache alone.
@@ -48,6 +55,40 @@ DEMO_QUESTIONS = [
     "Is cosmetic surgery covered?",
     "How soon must I inform the insurer after an emergency hospitalisation?",
 ]
+
+
+class HeldCache:
+    """The API cache for reading; writes are held until the script decides to keep them.
+
+    answer_question writes its answer (and a Hindi question's English rewrite)
+    to the cache itself. The script needs to see who answered first, so the
+    writes are held here and only committed by keep().
+    """
+
+    def __init__(self, cache: QaCache) -> None:
+        self._cache = cache
+        self._held: list[tuple[str, object]] = []
+
+    def get(self, key: str):
+        return self._cache.get(key)
+
+    def set(self, key: str, value: object) -> None:
+        self._held.append((key, value))
+
+    def keep(self) -> None:
+        for key, value in self._held:
+            self._cache.set(key, value)
+        self._held.clear()
+
+
+def not_cacheable(result: dict, models: dict[str, str], primary: str) -> str | None:
+    """Why an answer must not be cached for the demo, or None if it may be."""
+    others = sorted({model for model in models.values() if model != primary})
+    if others:
+        return f"answered by {', '.join(others)}, not the primary {primary}"
+    if result["abstained"]:
+        return "abstained"
+    return None
 
 
 class NoCallsAllowed:
@@ -101,15 +142,23 @@ async def main(policy_arg: str | None, check: bool) -> None:
     server.start()
     llm = GeminiQaLlm(api_key=settings.gemini_api_key, model=settings.gemini_model, fallback_model=settings.gemini_fallback_model,
                       timeout_seconds=settings.qa_llm_timeout_seconds)
+    primary = settings.gemini_model
+    abstained = []
     try:
         for question in DEMO_QUESTIONS:
-            key = answer_key(str(document.id), document_hash, normalise_question(question), PROMPT_VERSION, settings.gemini_model)
-            if cache.get(key) is not None:
-                print(f"  already cached: {question}")
-                continue
+            key = answer_key(str(document.id), document_hash, normalise_question(question), PROMPT_VERSION, primary)
+            existing = cache.get(key)
+            if isinstance(existing, dict) and "result" in existing:
+                reason = not_cacheable(existing["result"], existing.get("models") or {}, primary)
+                if reason is None:
+                    print(f"  already cached: {question}")
+                    continue
+                print(f"  REMOVED cached entry ({reason}): {question}")
+                cache.delete(key)
+            held = HeldCache(cache)
             try:
                 outcome = await answer_question(
-                    session_factory=session_factory, models=server, llm=llm, cache=cache, gemini_model=settings.gemini_model,
+                    session_factory=session_factory, models=server, llm=llm, cache=held, gemini_model=primary,
                     household_id=policy.household_id, document_id=document.id, document_hash=document_hash, question=question,
                 )
             except (LlmError, ModelServerError) as error:
@@ -117,10 +166,21 @@ async def main(policy_arg: str | None, check: bool) -> None:
                 print(f"  NOT cached ({getattr(error, 'code', 'models')}): {question}")
                 continue
             result = outcome.result
-            print(f"  cached ({outcome.timings['total']:.1f}s, by {outcome.record['models']}): {question}")
+            reason = not_cacheable(result, outcome.record["models"], primary)
+            if reason is None:
+                held.keep()
+                print(f"  cached ({outcome.timings['total']:.1f}s, by {outcome.record['models']}): {question}")
+            else:
+                print(f"  NOT cached ({reason}): {question}")
+                if result["abstained"]:
+                    abstained.append(question)
             print(f"      abstained={result['abstained']} verification={result['verification']}")
             print(f"      {result['answer'] or result['missing_context']}")
             print(f"      citations: {[c['label'] for c in result['citations']]}")
+        if abstained:
+            print(f"\n{len(abstained)} demo question(s) ABSTAINED and were not cached:")
+            for question in abstained:
+                print(f"  - {question}")
     finally:
         await server.stop()
         await engine.dispose()
