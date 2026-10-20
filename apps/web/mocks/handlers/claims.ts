@@ -9,6 +9,7 @@ import type {
   DocumentType,
   GrievanceDraft,
   GrievanceDraftRequest,
+  GrievanceRungOption,
   JobAccepted,
 } from "@/api/types";
 import * as db from "../db";
@@ -19,53 +20,103 @@ import { computeEligibility } from "../eligibility";
 import { errorResponse, genId, notFound, plainReadDelay, requireAuth } from "../utils";
 import { applyGlobalScenarios, getScenarios } from "../scenarios";
 
-/** Registered once at module load — see documents.ts's parse_document resolver for why this can't be a closure passed to db.createJob. */
+const MOCK_DISCLAIMER = "This is a draft based on your documents, not legal advice. Check every statement before you send it; you send it yourself.";
+const MOCK_UNCONFIRMED = "[NOT CONFIRMED AGAINST YOUR POLICY. Check or remove before sending.]";
+const MOCK_ADDRESSEE: Record<GrievanceDraft["rung"], string> = {
+  insurer_grievance_cell: "The Grievance Redressal Officer, your insurer",
+  irdai_bima_bharosa: "Insurance Regulatory and Development Authority of India (IRDAI), through the Bima Bharosa grievance portal",
+  insurance_ombudsman: "The Insurance Ombudsman (the office covering your area)",
+  other: "Your insurer",
+};
+
+/**
+ * Registered once at module load — see documents.ts's parse_document resolver for why this can't be a closure passed to db.createJob.
+ * Mirrors the real D-43 shape: the header is built from the claim's own fields, and one paragraph is
+ * deliberately unverified so the flagged state (product rule 4) is always on screen in mock mode.
+ */
 db.registerJobResolver("generate_grievance_draft", (params): GrievanceDraft => {
   const { claimId, rung } = params as { claimId: string; rung: GrievanceDraft["rung"] };
   const claim = db.getClaim(claimId);
   const policy = claim ? db.getPolicy(claim.policy_id) : undefined;
   const eligibility = claim && policy ? computeEligibility(claim, policy) : null;
   const pedCheck = eligibility?.checks.find((c) => c.id === "ped_waiting_period");
+  const denied = [...(claim?.events ?? [])].reverse().find((e) => e.to_state === "denied");
+
+  const header_lines = [
+    { label: "Hospital", value: claim?.hospital_name ?? null },
+    { label: "Policy number", value: policy?.policy_number ?? null },
+    { label: "Admitted on", value: claim?.admitted_on ?? null },
+    { label: "Discharged on", value: claim?.discharged_on ?? null },
+    { label: "Claim denied on", value: denied ? denied.occurred_at.slice(0, 10) : null },
+    { label: "Reason for denial, as recorded", value: denied?.note ? `\u201c${denied.note}\u201d` : null },
+  ];
+  const paragraphs = [
+    {
+      text: "I ask you to point me to the exact clause of my policy that the decision relies on, and to explain how it applies to this admission.",
+      citation_ids: pedCheck ? ["cite-policy"] : [],
+      verified: Boolean(pedCheck),
+    },
+    {
+      text: "My policy covers this treatment in full regardless of any waiting period.",
+      citation_ids: pedCheck ? ["cite-policy"] : [],
+      verified: false,
+    },
+  ];
+  const subject = `Request to review the denial of a health insurance claim: ${claim?.hospital_name ?? "the hospital"}`;
+  const closing = "I request you to review this claim and to reply to me in writing.\n\nYours faithfully,\n\n(Your name, signature, address and phone number)";
+  const letter_text = [
+    `To,\n${MOCK_ADDRESSEE[rung]}`,
+    `Subject: ${subject}`,
+    header_lines.map((l) => `${l.label}: ${l.value ?? "not recorded"}`).join("\n"),
+    "Dear Sir or Madam,",
+    ...paragraphs.map((p) => (p.verified ? p.text : `${MOCK_UNCONFIRMED}\n${p.text}`)),
+    closing,
+    `---\n${MOCK_DISCLAIMER}`,
+  ].join("\n\n");
 
   return {
     id: genId("grievance"),
     claim_id: claimId,
     rung,
-    subject: `Grievance regarding denial of claim at ${claim?.hospital_name ?? "the hospital"}`,
-    paragraphs: [
-      {
-        text: `I am writing regarding the denial of my claim for hospitalisation at ${claim?.hospital_name} from ${claim?.admitted_on} to ${claim?.discharged_on}.`,
-        citation_ids: [],
-        verified: true,
-      },
-      {
-        text: pedCheck
-          ? pedCheck.explanation
-          : "The denial ground cited does not, in my assessment, apply to the facts of this admission.",
-        citation_ids: pedCheck ? ["cite-policy"] : [],
-        verified: Boolean(pedCheck),
-      },
-      {
-        // Deliberately unverified — every draft should demonstrate the
-        // "flag unsupported sentences, never silently" rule (product
-        // rule 4), not just the happy path.
-        text: "Similar denials on this ground have previously been overturned by the Insurance Ombudsman.",
-        citation_ids: ["cite-award"],
-        verified: false,
-      },
-    ],
-    citations: [
-      { id: "cite-policy", kind: "policy_clause", label: policy?.product_name ?? "Policy", provenance: pedCheck?.governing_clause ?? null, external_url: null },
-      { id: "cite-award", kind: "ombudsman_award", label: "Similar PED-denial precedent", provenance: null, external_url: null },
-    ],
+    subject,
+    addressee: MOCK_ADDRESSEE[rung],
+    header_lines,
+    paragraphs,
+    citations: pedCheck
+      ? [{ id: "cite-policy", kind: "policy_clause", label: "Page 31", provenance: pedCheck.governing_clause ?? null, external_url: null }]
+      : [],
     evidence_checklist: [
-      { item: "Discharge summary", satisfied: true },
-      { item: "Itemised bill", satisfied: true },
-      { item: "Denial letter", satisfied: true },
+      { item: "Discharge summary attached", satisfied: true },
+      { item: "Itemised hospital bill attached", satisfied: true },
+      { item: "Insurer's denial letter attached", satisfied: false },
     ],
-    citation_precision: 0.67,
+    citation_precision: paragraphs.filter((p) => p.verified).length / paragraphs.length,
+    closing,
+    disclaimer: MOCK_DISCLAIMER,
+    letter_text,
+    missing_context: null,
+    generated_at: new Date().toISOString(),
   };
 });
+
+/** D-43 mock: every rung is offered after a denial or an escalation, marked unverified like the real rule file. */
+function mockRungs(claim: Claim): GrievanceRungOption[] {
+  const open = claim.current_state === "denied" || claim.current_state === "escalated";
+  const note = "This is based on a rule that has not yet been checked against its source.";
+  const rows: [GrievanceRungOption["rung"], string, string][] = [
+    ["insurer_grievance_cell", "Insurer's grievance cell", "Writing to the insurer's grievance cell is usually the first step."],
+    ["irdai_bima_bharosa", "IRDAI Bima Bharosa", "Bima Bharosa usually expects you to have complained to the insurer first."],
+    ["insurance_ombudsman", "Insurance Ombudsman", "The Ombudsman usually expects you to have written to the insurer first."],
+  ];
+  return rows.map(([rung, label, reason]) => ({
+    rung,
+    label,
+    available: open,
+    reason: open ? `${reason} ${note}` : "Available once the claim has been denied, or you have written to the insurer's grievance cell.",
+    rule_ids: [],
+    verified: false,
+  }));
+}
 
 function withComputedDeadlines(claim: Claim): Claim {
   // omitted_deadlines is set here, not read from the stored claim, so claims
@@ -293,6 +344,18 @@ export const claimsHandlers = [
           generated_at: new Date().toISOString(),
         };
     return HttpResponse.json(report);
+  }),
+
+  http.get("*/api/v1/claims/:id/grievance-rungs", async ({ request, params }) => {
+    const authError = requireAuth(request);
+    if (authError) return authError;
+    const scenario = await applyGlobalScenarios();
+    if (scenario.shortCircuit) return scenario.shortCircuit;
+    await plainReadDelay();
+
+    const claim = db.getClaim(params.id as string);
+    if (!claim) return notFound("No claim with that id belongs to your household.");
+    return HttpResponse.json(mockRungs(claim));
   }),
 
   http.post("*/api/v1/claims/:id/grievance-drafts", async ({ request, params }) => {
