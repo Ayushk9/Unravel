@@ -320,15 +320,36 @@ export interface Citation {
   external_url: string | null;
 }
 
+export type GrievanceRung = "insurer_grievance_cell" | "irdai_bima_bharosa" | "insurance_ombudsman" | "other";
+
+// D-43: everything except paragraphs[].text is filled by the server's code from stored data;
+// the model writes the argument paragraphs only.
 export interface GrievanceDraft {
   id: UUID;
   claim_id: UUID;
-  rung: "insurer_grievance_cell" | "irdai_bima_bharosa" | "insurance_ombudsman" | "other";
+  rung: GrievanceRung;
   subject: string;
-  paragraphs: { text: string; citation_ids: string[]; verified: boolean }[];
+  addressee: string; // D-43
+  header_lines: { label: string; value: string | null }[]; // D-43: null renders as "not recorded"
+  paragraphs: { text: string; citation_ids: string[]; verified: boolean }[]; // verified: false must be flagged visibly
   citations: Citation[];
   evidence_checklist: { item: string; satisfied: boolean }[];
-  citation_precision: number; // 0..1, shown in the QA strip
+  citation_precision: number; // 0..1 = verified / all paragraphs; 0 with no paragraphs (missing_context says why)
+  closing: string; // D-43
+  disclaimer: string; // D-43
+  letter_text: string; // D-43: the whole letter as plain text, for "Copy text"
+  missing_context: string | null; // D-43: set when no argument paragraph could be drafted
+  generated_at: ISODateTime; // D-43
+}
+
+// D-43: GET /claims/{id}/grievance-rungs, one per rung in ladder order.
+export interface GrievanceRungOption {
+  rung: GrievanceRung;
+  label: string;
+  available: boolean;
+  reason: string;
+  rule_ids: string[]; // deadline_rules.yaml ids the reason's dates come from
+  verified: boolean; // false: show "based on an unverified rule"
 }
 
 export interface OmbudsmanAward {
@@ -502,5 +523,6 @@ export interface DocumentTypeCorrectionRequest {
 }
 
 export interface GrievanceDraftRequest {
-  rung: GrievanceDraft["rung"];
+  // D-44: "other" is refused with 422; a rung that isn't available is 409 rung_not_available.
+  rung: Exclude<GrievanceRung, "other">;
 }
