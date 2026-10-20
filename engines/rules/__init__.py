@@ -9,6 +9,7 @@ Public API:
 
     assess_eligibility(EligibilityInput, today) -> Assessment     (Feature 2)
     compute_alerts(AlertInput, reference, today) -> AlertsOutcome  (Feature 8)
+    load_awards(), match_precedent(checks, awards) -> Precedent    (Ombudsman precedent)
     RULES                                                          the registry
 
 No score, probability or percentage is produced anywhere. Outcomes are
@@ -23,8 +24,10 @@ from datetime import date
 from engines.rules.alerts import Reference, compute_alerts, load_reference
 from engines.rules.band import decide_band, order_checks
 from engines.rules.models import Assessment, EligibilityInput
+from engines.rules.precedent import NOTE_NONE_LOADED, Award, Precedent, load_awards, match_precedent
 
-PRECEDENT_NOTE = "Precedent corpus not yet loaded, so no similar Ombudsman cases are shown."
+# The note when no awards are given. The API replaces it with match_precedent's note.
+PRECEDENT_NOTE = NOTE_NONE_LOADED
 
 
 def assess_eligibility(data: EligibilityInput, today: date) -> Assessment:
@@ -43,4 +46,14 @@ def assess_eligibility(data: EligibilityInput, today: date) -> Assessment:
     return Assessment(band=band, checks=order_checks(checks, band), precedent_note=PRECEDENT_NOTE)
 
 
-__all__ = ["PRECEDENT_NOTE", "Reference", "assess_eligibility", "compute_alerts", "load_reference"]
+__all__ = [
+    "PRECEDENT_NOTE",
+    "Award",
+    "Precedent",
+    "Reference",
+    "assess_eligibility",
+    "compute_alerts",
+    "load_awards",
+    "load_reference",
+    "match_precedent",
+]
