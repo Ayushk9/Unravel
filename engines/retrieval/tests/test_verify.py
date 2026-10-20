@@ -64,3 +64,21 @@ def test_assemble_numbers_citations_in_order_and_reuses_them() -> None:
 
     assert order == ["c1", "c2"]
     assert text == "Room rent is capped at ₹5,000 per day. [[1]] Pre-existing diseases wait 48 months. [[2]][[1]]"
+
+
+def test_verify_in_order_keeps_every_paragraph_in_place_with_its_result() -> None:
+    from engines.retrieval.verify import NUMBER_REASON, SUPPORT_REASON, Removed, Sentence, verify_in_order
+
+    clauses = {"c1": "Room rent is limited to Rs 5,000 per day.", "c2": "Cataract has a waiting period of 24 months."}
+    paragraphs = [
+        Sentence("The policy caps room rent at Rs 9,000 per day.", ("c1",)),  # number not in the clause
+        Sentence("The policy caps room rent at Rs 5,000 per day.", ("c1", "c2")),  # c2 judged unsupported, dropped
+        Sentence("Cataract is excluded.", ("c2",)),  # judged unsupported
+    ]
+    verdicts = {(1, "c1"): True, (1, "c2"): False, (2, "c2"): False}
+
+    results = verify_in_order(paragraphs, verdicts, clauses, question="")
+
+    assert isinstance(results[0], Removed) and results[0].reason == NUMBER_REASON
+    assert results[1] == Sentence("The policy caps room rent at Rs 5,000 per day.", ("c1",))
+    assert isinstance(results[2], Removed) and results[2].reason == SUPPORT_REASON
