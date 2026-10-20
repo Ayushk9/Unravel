@@ -5,7 +5,7 @@ import type { Provenance } from "@/api/types";
 import { useDocumentFile } from "@/api/endpoints/documents";
 import { usePolicy } from "@/api/endpoints/policies";
 import { insurerLabel, policyNumberLabel, productLabel } from "@/lib/policyLabels";
-import { PolicyDatesForm } from "@/components/PolicyDatesForm";
+import { PolicyDetailsForm } from "@/components/PolicyDetailsForm";
 import {
   DocumentViewer,
   ErrorState,
@@ -66,8 +66,8 @@ export function PolicyDetail() {
         </header>
 
         <section className="flex flex-col gap-2">
-          <h2 className="font-serif text-lg font-semibold text-foreground">Policy dates</h2>
-          <PolicyDatesForm policy={policy.data} />
+          <h2 className="font-serif text-lg font-semibold text-foreground">Policy details</h2>
+          <PolicyDetailsForm policy={policy.data} />
         </section>
 
         {!profile ? (
