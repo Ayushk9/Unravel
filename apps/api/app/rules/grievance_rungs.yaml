@@ -14,7 +14,9 @@
 # Fields of a rung
 #   label         short name shown in the rung selector
 #   addressee     who the letter is addressed to; {insurer} is the policy's
-#                 insurer, or "your insurer" when it is not recorded
+#                 insurer (the linked reference insurer, else the name the user
+#                 entered), or "your insurer" when neither is recorded.
+#                 Never an address, email or phone number.
 #   when          the claim states in which the rung is offered, in order. Each has
 #                   state      a claim state (app/claims/state_machine.py)
 #                   reason     one sentence: why this rung fits now
@@ -33,7 +35,8 @@ version: 1
 rungs:
   insurer_grievance_cell:
     label: Insurer's grievance cell
-    addressee: "The Grievance Redressal Officer, {insurer}"
+    # Never an address, email or phone number (tests/test_grievance_units.py checks).
+    addressee: "Grievance Redressal Officer, {insurer}"
     when:
       - state: denied
         reason: Your claim was denied on {event_date}. Writing to the insurer's grievance cell is usually the first step in asking for the decision to be reviewed.
