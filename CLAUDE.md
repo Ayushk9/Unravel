@@ -128,7 +128,7 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 - `cd apps/api && ../../.venv/bin/python scripts/warm_demo_cache.py [--check]`: answer the demo questions once so they are cached (24 h); `--check` proves they are answered with no model call
 - `cd apps/api && ../../.venv/bin/python scripts/evaluate_qa.py`: Q&A evaluation on `eval/qa_star_comprehensive.yaml` (refuses to run until Ayush has checked it)
 - `.venv/bin/python engines/rules/scripts/generate_rules_doc.py`: regenerate `docs/RULES.md` from the rule registry
-- `cd apps/api && ../../.venv/bin/python scripts/seed_demo_claims.py`: a SYNTHETIC test-fixture policy (fictional insurer) and four claims, one per eligibility band (permanent: the event log is append-only). Not for the Q&A demo or metrics
+- `cd apps/api && ../../.venv/bin/python scripts/seed_demo_claims.py`: four demo claims on the real Star policy, one per eligibility band, with demo policy dates entered as user values (permanent: the event log is append-only); also the SYNTHETIC test-fixture policy (fictional insurer), which is not for the Q&A demo or metrics. The PED claim is `likely_ineligible` only once a person confirms the policy's 36-month PED period
 
 ## Frontend conventions
 
