@@ -227,6 +227,7 @@ class ApiTester:
         models: Any = None,
         qa_llm: Any = None,
         qa_cache: Any = None,
+        grievance_llm: Any = None,
         **settings_overrides: Any,
     ) -> None:
         settings = self.settings.model_copy(update=settings_overrides)
@@ -239,6 +240,7 @@ class ApiTester:
             models=models,
             qa_llm=qa_llm,
             qa_cache=qa_cache,
+            grievance_llm=grievance_llm,
         )
 
     def hold_jobs(self) -> None:
