@@ -8,6 +8,7 @@ from uuid import UUID
 
 from app.schemas.base import ApiModel
 from app.schemas.documents import DocumentType
+from app.schemas.grievances import OmbudsmanAward
 from contracts.models import Provenance
 
 Status = Literal["satisfied", "at_risk", "failed", "unknown"]
@@ -40,8 +41,8 @@ class EligibilityAssessment(ApiModel):
     claim_id: UUID
     band: Band
     checks: list[EligibilityCheck]
-    # Always empty for now, with the reason in ombudsman_precedent_note.
-    ombudsman_precedent: list[dict]
+    # Checked awards on the same ground as a failed or at-risk check (D-45); the note says why when empty.
+    ombudsman_precedent: list[OmbudsmanAward]
     ombudsman_precedent_note: str | None
     generated_at: datetime
 
