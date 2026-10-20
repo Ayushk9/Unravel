@@ -25,6 +25,7 @@ from app.db.session import create_engine, create_session_factory
 from app.jobs.queue import delete_expired_jobs, recover_interrupted_jobs
 from app.jobs.runner import JobRunner
 from app.models_server.client import ModelServer
+from app.grievance.llm import GeminiGrievanceLlm
 from app.qa.llm import GeminiQaLlm
 from app.storage.base import remove_stale_temporary_files
 from app.storage.factory import create_storage
@@ -122,6 +123,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             model=settings.gemini_model,
             fallback_model=settings.gemini_fallback_model,
             timeout_seconds=settings.qa_llm_timeout_seconds,
+        ),
+        # Grievance drafting (Feature 7): the same Gemini settings, retries and fallback.
+        grievance_llm=GeminiGrievanceLlm(
+            api_key=settings.gemini_api_key,
+            model=settings.gemini_model,
+            fallback_model=settings.gemini_fallback_model,
+            timeout_seconds=settings.grievance_llm_timeout_seconds,
         ),
     )
 
