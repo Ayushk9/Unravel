@@ -11,6 +11,7 @@ import { PolicyAsk } from "@/pages/PolicyAsk";
 import { ClaimList } from "@/pages/ClaimList";
 import { ClaimNew } from "@/pages/ClaimNew";
 import { ClaimWorkspace } from "@/pages/ClaimWorkspace";
+import { ClaimGrievance } from "@/pages/ClaimGrievance";
 import { Alerts } from "@/pages/Alerts";
 import { Settings } from "@/pages/Settings";
 
@@ -35,7 +36,7 @@ const appShellChildren: RouteObject[] = [
   { path: "claims", element: <ClaimList /> },
   { path: "claims/new", element: <ClaimNew /> },
   { path: "claims/:id", element: <ClaimWorkspace /> },
-  { path: "claims/:id/grievance", element: <PlaceholderScreen title="Grievance drafting" phase="Phase 5" /> },
+  { path: "claims/:id/grievance", element: <ClaimGrievance /> },
   { path: "alerts", element: <Alerts /> },
   { path: "insurers", element: <PlaceholderScreen title="Insurer benchmarking" phase="Phase 6" /> },
   { path: "settings", element: <Settings /> },
