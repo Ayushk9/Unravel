@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Table, Text, func
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.ids import new_id
@@ -39,6 +40,11 @@ class Policy(Base):
     # The start of cover renewed without a break, which may be years before
     # start_date. Only the user can give it (D-39); waiting periods count from it.
     first_inception_date: Mapped[date | None] = mapped_column(Date)
+    # The insurer's name as the user typed it (D-46). Kept here, not in the
+    # shared `insurer` table, which only we write.
+    insurer_name: Mapped[str | None] = mapped_column(Text)
+    # Which identity fields and dates the user typed in themselves (D-46).
+    user_entered_fields: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
