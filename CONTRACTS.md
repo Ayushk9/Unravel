@@ -83,9 +83,9 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 17 | `POST /claims/{id}/eligibility` | — | `EligibilityAssessment` (with `confidence`, `values`, `missing_facts`, `ombudsman_precedent_note`, D-36) | 401, 404 | Sync | — | — |
 | 18 | `POST /claims/{id}/completeness` | — | `CompletenessReport` (with `required_details`, `verified`, D-35) | 401, 404 | Sync | — | — |
 | 19 | `POST /claims/{id}/bill-validation` | — | `BillValidationReport` | 401, 404, **409** (bill not parsed yet) | Sync | — | — |
-| 20 | `POST /claims/{id}/grievance-drafts` | `{ rung }` | 202 `JobAccepted` (kind `generate_grievance_draft`) | 401, 404 | **Job**, 20–30s | — | **Required** |
+| 20 | `POST /claims/{id}/grievance-drafts` | `{ rung }` (one of the three rungs; `other` is refused, D-44) | 202 `JobAccepted` (kind `generate_grievance_draft`); result `GrievanceDraft` with the D-43 fields | 401, 404, 409 (`idempotency_key_reused`, `rung_not_available` with available rungs in `field_errors`, `policy_not_indexed`; D-44), 422 (missing key, bad rung) | **Job**, seconds to a minute; never cached (D-42) | — | **Required** |
 | 21 | `GET /alerts` | — | `Alert[]` (with `verified`, `provenance`, D-38; computed on read) | 401 | Sync | No (full array) | — |
-| 22 | `GET /ombudsman-awards` | `?cursor&limit` | `Collection<OmbudsmanAward>` | 401 | Sync | Cursor | — |
+| 22 | `GET /ombudsman-awards` | `?cursor&limit` | `Collection<OmbudsmanAward>`: only awards Ayush has checked; empty until he adds them (D-45) | 401, 422 (unknown cursor) | Sync | Cursor | — |
 | 23 | `GET /insurers/benchmarks` | — | `InsurerBenchmark[]` | 401 | Sync | No (full array) | — |
 | 24 | `GET /jobs/{job_id}` | — | `Job<TResult>` | 401, 404 | Sync (this is what gets polled) | — | — |
 | 25 | `GET /documents/{id}/file` | — | `{ url, expires_at }`: signed URL valid 5 min (D-26) | 401, 404 | Sync | — | — |
@@ -93,6 +93,7 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 27 | `PATCH /policies/{id}` | `{ start_date?, end_date?, first_inception_date? }`: only keys sent change; `null` clears (D-39) | `Policy` | 401, 404, 422 (dates contradict, inception in the future, empty body) | Sync | — | — |
 | 28 | `GET /household` | — | `Household { id, name, city_tier }` (D-40) | 401 | Sync | — | — |
 | 29 | `PATCH /household` | `{ city_tier: "metro" \| "tier_2" \| "other" \| null }` (D-40) | `Household` | 401, 422 | Sync | — | — |
+| 30 | `GET /claims/{id}/grievance-rungs` | — | `GrievanceRungOption[]`, one per rung in ladder order (D-43) | 401, 404 | Sync | No (full array) | — |
 
 29 endpoints. `#1` (`health`) is infra, not part of a vertical slice. `#3`'s
 `claim_id` filter and all of `#5` are Phase 4 additions, not in the ratified
