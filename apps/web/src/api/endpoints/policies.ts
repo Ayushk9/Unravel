@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import type { FieldCorrectionRequest, PolicyCreateRequest, PolicyDatesUpdateRequest, QuestionRequest } from "@/api/types";
+import type { FieldCorrectionRequest, PolicyCreateRequest, PolicyUpdateRequest, QuestionRequest } from "@/api/types";
 import { apiFetch } from "@/api/client";
 import { queryKeys } from "@/api/queryKeys";
 import { jobAcceptedSchema, policySchema } from "@/api/schemas";
@@ -37,10 +37,11 @@ export function useCreatePolicy() {
  * D-39: set the dates from the policy schedule. Only the keys sent change; null clears one.
  * Alerts and every claim's eligibility depend on these dates, so both are refetched.
  */
-export function useUpdatePolicyDates(policyId: string) {
+/** D-39, D-46: the user's own entries from their schedule (identity and dates). Only the keys sent change. */
+export function useUpdatePolicy(policyId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: PolicyDatesUpdateRequest) => apiFetch(`/policies/${policyId}`, { method: "PATCH", body, schema: policySchema }),
+    mutationFn: (body: PolicyUpdateRequest) => apiFetch(`/policies/${policyId}`, { method: "PATCH", body, schema: policySchema }),
     onSuccess: (policy) => {
       queryClient.setQueryData(queryKeys.policies.detail(policyId), policy);
       void queryClient.invalidateQueries({ queryKey: queryKeys.policies.list() });
