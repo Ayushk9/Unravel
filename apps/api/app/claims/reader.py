@@ -19,10 +19,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.claims.completeness import AttachedDocument
 from app.claims.deadlines import ClaimFacts, EventFact, compute_deadlines
 from app.db.models import Claim as ClaimRow
 from app.db.models import ClaimEvent as ClaimEventRow
-from app.db.models import CoverageProfile, claim_current_state
+from app.db.models import CoverageProfile, Document, claim_current_state
 from app.rules.loader import load_deadline_rules
 from app.schemas.claims import Claim, ClaimEvent
 from app.schemas.claims import ClaimFacts as WireClaimFacts
@@ -43,6 +44,29 @@ def facts_of(row: ClaimRow) -> WireClaimFacts:
 async def find_claim_row(session: AsyncSession, household_id: UUID, claim_id: UUID) -> ClaimRow | None:
     """The claim, only if it belongs to this household (D-10)."""
     return await session.scalar(select(ClaimRow).where(ClaimRow.id == claim_id, ClaimRow.household_id == household_id))
+
+
+async def load_attached_documents(session: AsyncSession, household_id: UUID, claim_id: UUID) -> list[AttachedDocument]:
+    """The claim's documents that count for completeness: not deleted, and already classified."""
+    documents = await session.scalars(
+        select(Document)
+        .where(
+            Document.claim_id == claim_id,
+            Document.household_id == household_id,
+            Document.deleted_at.is_(None),
+            # A document still being read has no type yet.
+            Document.parse_status == "parsed",
+        )
+        .order_by(Document.id)
+    )
+    return [
+        AttachedDocument(
+            document_type=document.detected_type_value,
+            confidence=document.detected_type_confidence,
+            user_confirmed=document.detected_type_user_confirmed,
+        )
+        for document in documents
+    ]
 
 
 async def list_claim_rows(session: AsyncSession, household_id: UUID) -> list[ClaimRow]:
