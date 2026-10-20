@@ -350,7 +350,7 @@ const jobs = new Map<string, JobRecord>(persisted?.jobs ?? []);
 const JOB_STEPS: Record<JobKind, string[]> = {
   parse_document: ["classifying_pages", "extracting_tables", "structuring_coverage_profile"],
   answer_question: ["retrieving_clauses", "reranking", "generating_answer"],
-  generate_grievance_draft: ["assembling_evidence", "drafting_paragraphs", "verifying_citations"],
+  generate_grievance_draft: ["retrieving", "drafting", "verifying"],
 };
 
 export function createJob(kind: JobKind, durationMsRange: [number, number], params: Record<string, unknown>): Job<unknown> {
