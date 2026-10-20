@@ -72,7 +72,9 @@ async def main(claim_id: UUID, rung: str) -> None:
     draft = outcome.result
     print("\nLETTER\n" + "=" * 72 + f"\n{draft.letter_text}\n" + "=" * 72)
     print("\nPARAGRAPHS")
-    for index, (paragraph, check) in enumerate(zip(draft.paragraphs, outcome.record["verification"]["paragraphs"], strict=True), 1):
+    # An abstained draft (no clauses, or no honest ground) has no verification record and no paragraphs.
+    checks = (outcome.record["verification"] or {}).get("paragraphs", [])
+    for index, (paragraph, check) in enumerate(zip(draft.paragraphs, checks, strict=True), 1):
         pages = sorted({c.provenance.page for c in draft.citations if c.id in paragraph.citation_ids and c.provenance})
         print(f"  {index}. verified={paragraph.verified} pages={pages} reason={check['reason']} {check['detail'] or ''}")
     print(f"  citation_precision={draft.citation_precision:.2f} missing_context={draft.missing_context}")
