@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
+
+from pydantic import StringConstraints
 
 from app.schemas.base import ApiModel
 from app.schemas.household import Insurer, Member
 from contracts.models import CoverageProfile
 
 PolicyType = Literal["individual", "family_floater", "group_employer", "top_up", "other"]
+# The fields of a policy the user can type in themselves (D-39, D-46).
+UserEnteredField = Literal["insurer_name", "product_name", "policy_number", "start_date", "end_date", "first_inception_date"]
+# A name or number as typed: trimmed, then 1 to 200 characters.
+EnteredText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
 class Policy(ApiModel):
@@ -26,6 +32,13 @@ class Policy(ApiModel):
     # The start of cover renewed without a break, given by the user (D-39).
     # Waiting periods are counted from it when it is set.
     first_inception_date: date | None
+    # The insurer's name as the user typed it (D-46). `insurer` above is the
+    # shared reference row, linked only by us; a client shows insurer.name if
+    # set, else this.
+    insurer_name: str | None
+    # Which of the fields above the user typed in themselves (D-46). They are
+    # plain values with no page to point at; clients mark them "Entered by you".
+    user_entered_fields: list[UserEnteredField]
     # Never null: an unknown type is sent as the enum's escape hatch, "other".
     policy_type: PolicyType
     members: list[Member]
@@ -42,14 +55,17 @@ class FieldCorrectionRequest(ApiModel):
     user_confirmed: bool
 
 
-class PolicyDatesUpdate(ApiModel):
-    """Body of PATCH /policies/{id} (D-39): the dates printed on the user's schedule.
+class PolicyUpdate(ApiModel):
+    """Body of PATCH /policies/{id} (D-39, D-46): what the user copies from their policy schedule.
 
     Only the keys present in the body are changed; a key sent as null clears
-    that date. A key left out keeps its current value. That is why each field
-    has a default: the route reads `model_fields_set` to tell "left out" from "null".
+    that value. A key left out keeps its current value. That is why each field
+    has a default: the service reads `model_fields_set` to tell "left out" from "null".
     """
 
+    insurer_name: EnteredText | None = None
+    product_name: EnteredText | None = None
+    policy_number: EnteredText | None = None
     start_date: date | None = None
     end_date: date | None = None
     first_inception_date: date | None = None
