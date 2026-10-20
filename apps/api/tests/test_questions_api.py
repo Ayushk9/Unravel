@@ -65,7 +65,8 @@ def world(database: Database, tmp_path: Path) -> Iterator[SimpleNamespace]:
     api = ApiTester(database, household_id)
     policy_id, document_id = _make_policy(database, household_id)
     models, llm, cache = FakeModels(), FakeQaLlm(), QaCache(tmp_path / "qa")
-    api.use_worker(fake_workers_succeed(), models=models, qa_llm=llm, qa_cache=cache)
+    # The worker's primary model is the fake's name: only answers the primary wrote are cached.
+    api.use_worker(fake_workers_succeed(), models=models, qa_llm=llm, qa_cache=cache, gemini_model=FakeQaLlm.model)
     yield SimpleNamespace(api=api, db=database, household_id=household_id, policy_id=policy_id, document_id=document_id,
                           models=models, llm=llm, cache=cache)
     api.finish_jobs()
@@ -260,7 +261,7 @@ def test_an_answer_citing_an_unknown_clause_fails_rather_than_being_trusted(worl
 def test_parse_job_indexes_the_new_policy(world: SimpleNamespace) -> None:
     from tests import fake_workers
 
-    world.api.use_worker(fake_workers.succeed, models=FakeModels(), qa_llm=world.llm, qa_cache=world.cache)
+    world.api.use_worker(fake_workers.succeed, models=FakeModels(), qa_llm=world.llm, qa_cache=world.cache, gemini_model=FakeQaLlm.model)
     parsed = world.api.upload_and_parse()
 
     counts = world.db.execute(
@@ -283,7 +284,7 @@ def test_parse_without_models_still_succeeds_and_questions_wait_for_indexing(wor
 def test_indexing_failure_does_not_fail_the_parse_and_is_recorded(world: SimpleNamespace) -> None:
     from tests import fake_workers
 
-    world.api.use_worker(fake_workers.succeed, models=FakeModels(fail=True), qa_llm=world.llm, qa_cache=world.cache)
+    world.api.use_worker(fake_workers.succeed, models=FakeModels(fail=True), qa_llm=world.llm, qa_cache=world.cache, gemini_model=FakeQaLlm.model)
     parsed = world.api.upload_and_parse()
 
     assert parsed["status"] == "succeeded"
