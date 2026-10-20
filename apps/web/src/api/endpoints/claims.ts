@@ -8,6 +8,7 @@ import {
   claimSchema,
   completenessReportSchema,
   eligibilityAssessmentSchema,
+  grievanceRungOptionSchema,
   jobAcceptedSchema,
 } from "@/api/schemas";
 
@@ -108,7 +109,16 @@ export interface RequestGrievanceDraftInput extends GrievanceDraftRequest {
   idempotencyKey: string;
 }
 
-/** D-07 job + D-13 idempotency key required. */
+/** D-43: which rungs a letter makes sense for now, each with its reason and whether the rule behind it is verified. */
+export function useGrievanceRungs(claimId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.claims.grievanceRungs(claimId ?? "none"),
+    queryFn: () => apiFetch(`/claims/${claimId}/grievance-rungs`, { schema: z.array(grievanceRungOptionSchema) }),
+    enabled: claimId !== null,
+  });
+}
+
+/** D-07 job + D-13 idempotency key required. Poll the result with useJobPolling + grievanceDraftSchema; drafts are never cached (D-42). */
 export function useRequestGrievanceDraft(claimId: string) {
   return useMutation({
     mutationFn: ({ idempotencyKey, ...body }: RequestGrievanceDraftInput) =>
