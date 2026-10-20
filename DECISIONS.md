@@ -965,3 +965,39 @@ Ayush allowed at most two live generations. Both were run for Lakshmi's claim (`
 - `apps/api/app/rules/ombudsman_rules.yaml`: the Ombudsman award limit, `value: null`. Sources conflict (§8). It is read into no output; `tests/test_grievance_units.py` fails if any output mentions it.
 - `engines/rules/reference/ombudsman_awards.yaml` is empty. Awards are Ayush's to add, each with `checked_by_ayush: true`.
 
+## Phase 7 decisions, Stage A (2026-10-20): identity fields, sample documents, render tests, startup checks
+
+Decided by Ayush after Phase 7 (his answers to the plan's questions): Gemini work waits for a teammate's key. Do the timeout diagnosis and the one live draft first, then upload and classify the sample documents. Store a typed insurer name as a separate text field. Make the sample documents exactly as briefed.
+
+### Fifth approved `apps/web` edit, and two dev dependencies
+
+- **Policy details form** (approved in the brief): `src/components/PolicyDatesForm.tsx` became `PolicyDetailsForm.tsx`.
+  - It edits the insurer, product, policy number and the three dates, and sends only the fields that changed.
+  - Each value the user entered shows "Entered by you" (from `user_entered_fields`).
+  - The policy page's section is now "Policy details". `lib/policyLabels.insurerLabel` falls back to `insurer_name`.
+  - The hook `useUpdatePolicyDates` became `useUpdatePolicy`.
+  - The mock's PATCH handles the new keys. Mock policies saved in sessionStorage before this get the two new fields filled in when loaded.
+- **`jsdom`, `@testing-library/react` and `@testing-library/dom`** (approved). The last is the required peer of the second.
+  - The render tests use a per-file `// @vitest-environment jsdom` comment, so no Vitest config file was added.
+  - `src/pages/ClaimGrievance.test.tsx` covers the grievance screen's five states, the exact unverified-paragraph sentence, the count strip (no percentage) and Copy text.
+  - `apiFetch` is replaced per path, and each answer is parsed by its real zod schema, so the fixtures are checked against the contract too. The PDF viewer is stubbed, because jsdom has no canvas.
+  - `npm install` reported existing audit advisories; nothing was changed for them.
+
+### Ambiguities decided conservatively
+
+- **The typed insurer name never creates a row in the shared `insurer` table** (Ayush's choice). `Policy.insurer` stays the reference link; `insurer_name` is the user's text.
+- **The form sends only changed fields**, so a value is never re-saved as "entered by you" just because the form was opened and saved.
+- **Sample documents** (`scripts/make_sample_documents.py` → `apps/api/sample_documents/`, committed because they are fictional and reproduce the demo):
+  - Every page is stamped "SAMPLE DOCUMENT - FICTIONAL PATIENT" at the top and bottom.
+  - Dates, amounts, hospitals and diagnoses come from `seed_demo_claims.CLAIMS`. Bill lines add up exactly to the claimed amount.
+  - There are no addresses, phone numbers, e-mails or registration numbers.
+  - **The denial letters come from "Sample Insurer - Claims Department (fictional)" and quote the policy number SAMPLE-0001; they do not carry Star Health's name as letterhead.** A document styled as a real company's letter is a risk even with a stamp; classification only needs the content of a denial letter. If reversed, the letterhead would name the insurer.
+  - **Vikram, Ananya and Ishaan have denial letters although their event logs show no denial** (as briefed). Their letters are dated 14 days after discharge; Lakshmi's uses her denial event's date. It doesn't affect completeness (`denial_letter` is not on any checklist) or eligibility.
+  - Ishaan's payment receipt is left out, so 15 files. Every claim will still also show the investigation report and ID proof as missing: the reimbursement checklist requires them and no sample was made (a fake ID proof would not be made at all).
+- **A small new PDF writer** (`scripts/sample_pdf.py`) instead of moving the seed's. The seed's writer is tied to its fixture's bounding-box layout (the clause provenance); moving it risked that.
+- **`scripts/upload_sample_documents.py`** (Stage B) uploads through `POST /documents` to a server Ayush has started. It skips a file already attached to its claim, so it is safe to re-run after the 24-hour idempotency window.
+
+### Startup checks run only on the test database
+
+On 2026-10-20 the health, 404 and 401 checks were run by building the app in-process against `apps/api/.env`. That ran the startup routine on the **dev** database, which failed two `answer_question` jobs stuck in `running` since 19 Oct, 12:10 UTC (never started). The next server restart would have failed them anyway, but it was an unplanned write. From now on these checks run through `tests/test_startup_routine.py`, which runs the real startup routine and the three checks in the temporary test schema, or against a server Ayush started.
+
