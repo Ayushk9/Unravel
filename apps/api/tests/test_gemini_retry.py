@@ -134,3 +134,37 @@ def test_a_short_retry_delay_is_still_retried() -> None:
 
     assert run(llm.rewrite("q")).model == "main-model"
     assert len(waits) == 1
+
+
+class ConfigRecorder(FakeClient):
+    """Records the config each call was sent with."""
+
+    def __init__(self, script: list) -> None:
+        super().__init__(script)
+        self.configs: list = []
+        generate = self._generate
+
+        async def recording(*, model: str, contents, config):
+            self.configs.append(config)
+            return await generate(model=model, contents=contents, config=config)
+
+        self.aio = SimpleNamespace(models=SimpleNamespace(generate_content=recording))
+
+
+def test_grievance_calls_cap_thinking_and_output_while_qa_keeps_the_defaults() -> None:
+    from app.grievance.llm import GeminiGrievanceLlm, GeneratedDraft
+    from app.qa.llm import ClausePrompt, Verdict, Verdicts
+
+    clause = ClausePrompt(id="c1", page=9, text="Room rent is limited to Rs 5,000 per day.")
+    client = ConfigRecorder([GeneratedDraft(abstain=True), Verdicts(verdicts=[Verdict(pair=0, verdict="supported")]), OK])
+    llm = GeminiGrievanceLlm(api_key="x", model="main-model", timeout_seconds=5, client=client)
+
+    run(llm.draft("a letter", "facts", [clause]))
+    run(llm.judge_paragraphs("facts", [("A paragraph.", clause)]))
+    run(llm.rewrite("q"))  # a Q&A call on the same client
+
+    draft, judge, qa = client.configs
+    assert (draft.thinking_config.thinking_level, draft.max_output_tokens) == ("LOW", 2048)
+    assert (judge.thinking_config.thinking_level, judge.max_output_tokens) == ("MINIMAL", 1024)
+    assert (qa.thinking_config, qa.max_output_tokens) == (None, None), "Q&A is unchanged"
+    assert all(config.temperature == 0.0 for config in client.configs)
