@@ -97,6 +97,15 @@ export const policySchema = z.object({
   start_date: isoDateSchema.nullable(),
   end_date: isoDateSchema.nullable(),
   first_inception_date: isoDateSchema.nullable(),
+  insurer_name: z.string().nullable(),
+  // An unknown field name is dropped rather than failing the whole policy (D-06).
+  user_entered_fields: z
+    .array(z.enum(["insurer_name", "product_name", "policy_number", "start_date", "end_date", "first_inception_date"]).or(z.string()))
+    .transform((fields) =>
+      fields.filter((f): f is "insurer_name" | "product_name" | "policy_number" | "start_date" | "end_date" | "first_inception_date" =>
+        ["insurer_name", "product_name", "policy_number", "start_date", "end_date", "first_inception_date"].includes(f),
+      ),
+    ),
   members: z.array(memberSchema),
   coverage_profile: coverageProfileSchema.nullable(),
   source_document_id: uuidSchema,
