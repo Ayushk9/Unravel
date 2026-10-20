@@ -9,7 +9,7 @@
  * starts fresh, matching "resets on reload" for a genuinely new session.
  */
 import type { JsonBodyType } from "msw";
-import type { Claim, ClaimEvent, ClaimFacts, ClaimState, CoverageProfile, Household, Job, JobKind, Policy, PolicyDatesUpdateRequest, StoredDocument } from "@/api/types";
+import type { Claim, ClaimEvent, ClaimFacts, ClaimState, CoverageProfile, Household, Job, JobKind, Policy, PolicyUpdateRequest, StoredDocument } from "@/api/types";
 import { addMonthsIso, todayIst } from "./dateMath";
 import * as fixtures from "./fixtures";
 import { genId } from "./utils";
@@ -97,7 +97,12 @@ export function softDeleteDocument(id: string): StoredDocument | undefined {
 }
 
 // --- policies ---
-let policies: Policy[] = persisted ? persisted.policies : clone(fixtures.policies);
+// Policies saved to sessionStorage before D-46 lack its two fields; fill them so they still parse.
+let policies: Policy[] = (persisted ? persisted.policies : clone(fixtures.policies)).map((p) => ({
+  ...p,
+  insurer_name: p.insurer_name ?? null,
+  user_entered_fields: p.user_entered_fields ?? [],
+}));
 
 export function listPolicies(): Policy[] {
   return policies;
@@ -180,16 +185,24 @@ export function patchCoverageField(
   return { ok: false, reason: "unknown_field" };
 }
 
-/** D-39: same checks as the backend (apps/api/app/services/policy_dates.py). Returns field errors, or the updated policy. */
-export function updatePolicyDates(
+/** D-39, D-46: same checks as the backend (apps/api/app/services/policy_update.py). Returns field errors, or the updated policy. */
+export function updatePolicy(
   policyId: string,
-  body: PolicyDatesUpdateRequest,
+  body: PolicyUpdateRequest,
 ): { ok: true; policy: Policy } | { ok: false; reason: "policy_not_found" } | { ok: false; reason: "invalid"; fieldErrors: { field: string; message: string }[] } {
   const policy = getPolicy(policyId);
   if (!policy) return { ok: false, reason: "policy_not_found" };
+  const textKeys = ["insurer_name", "product_name", "policy_number"] as const;
   const keys = ["start_date", "end_date", "first_inception_date"] as const;
-  if (!keys.some((k) => k in body)) {
-    return { ok: false, reason: "invalid", fieldErrors: keys.map((k) => ({ field: k, message: "Not sent." })) };
+  const sent = [...textKeys, ...keys].filter((k) => k in body);
+  if (sent.length === 0) {
+    return { ok: false, reason: "invalid", fieldErrors: [...textKeys, ...keys].map((k) => ({ field: k, message: "Not sent." })) };
+  }
+  for (const key of textKeys) {
+    const value = body[key];
+    if (key in body && value !== null && (typeof value !== "string" || value.trim().length === 0 || value.trim().length > 200)) {
+      return { ok: false, reason: "invalid", fieldErrors: [{ field: key, message: "Must be 1 to 200 characters." }] };
+    }
   }
   const next = {
     start_date: "start_date" in body ? (body.start_date ?? null) : policy.start_date,
@@ -205,6 +218,15 @@ export function updatePolicyDates(
   if (errors.length > 0) return { ok: false, reason: "invalid", fieldErrors: errors };
 
   Object.assign(policy, next);
+  for (const key of textKeys) {
+    if (key in body) policy[key] = body[key]?.trim() ?? null;
+  }
+  const entered = new Set(policy.user_entered_fields);
+  for (const key of sent) {
+    if (body[key] === null) entered.delete(key);
+    else entered.add(key);
+  }
+  policy.user_entered_fields = (["insurer_name", "product_name", "policy_number", ...keys] as const).filter((k) => entered.has(k));
   // Waiting-period dates are derived from the clock start, as on the server.
   const clockStart = next.first_inception_date ?? next.start_date;
   for (const period of policy.coverage_profile?.waiting_periods ?? []) {
