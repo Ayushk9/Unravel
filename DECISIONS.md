@@ -902,3 +902,66 @@ No network code outside `client.ts`: the browser's speech service is the browser
 - **Star policy dates** were entered through `apply_dates` (the PATCH /policies code) as demo values: start 2026-01-01, end 2026-12-31, first inception 2024-11-01. They were chosen to fit the existing admission dates, which can't change because they are in the events. They are only entered when the policy has no dates.
 - **Ananya's claim** is matched to the 24-month listed-conditions period (position 1): knee arthroscopy is on that list in the PDF (p30, p32: "Arthroscopy and Arthroplasty / Joint Replacement").
 - **Lakshmi's PED claim is `at_risk` until a person confirms** the 36-month PED period (waiting period #3, p31) on the policy screen; it is then `likely_ineligible` (D-36 needs a high-confidence failure). Ayush's choice: the seed script does not mark it confirmed, because a script-made "user confirmed" would corrupt the extraction-accuracy evaluation data. Verified in memory that the confirmation flips the band.
+
+
+## Backend Phase 7 (Feature 7: grievance drafting, Ombudsman awards)
+
+### Decided with Ayush before building (plan approved 2026-10-20)
+
+The contract could not carry the brief as written; these additions were approved with the plan and ratified as D-43 to D-45:
+
+- `GrievanceDraft` gains `addressee`, `header_lines`, `closing`, `disclaimer`, `letter_text`, `missing_context`, `generated_at`. Only paragraph text comes from the model.
+- New `GET /claims/{id}/grievance-rungs` (row 30) instead of a field on `Claim`, which every screen reads.
+- Row 20's errors: 422 (missing key, bad rung including `other`), 409 `idempotency_key_reused`, `rung_not_available`, `policy_not_indexed`.
+- Paragraphs cite policy clauses only: claim documents are classified, not read, so a citation of one could not be verified.
+- No `[[n]]` markers in paragraphs (`citation_ids` already exists; markers would end up in the copied letter).
+- Award ids are `uuid5(namespace, case_reference)`; award grounds are Engine B check ids.
+
+### Fourth approved `apps/web` edit
+
+Approved by Ayush in the Phase 7 brief ("I explicitly approve this apps/web change"). What changed:
+
+- `src/pages/ClaimGrievance.tsx` (new) replaces the `PlaceholderScreen` at `claims/:id/grievance`. It has:
+  - a rung selector showing each rung's reason, with "Based on an unverified rule" on unverified rungs and unavailable rungs disabled;
+  - a Generate button that makes a new Idempotency-Key per click, with job progress by step;
+  - the letter: addressee, subject, header ("not recorded" for null), and paragraphs with citation chips that open the PDF viewer at the clause;
+  - unverified paragraphs with an amber left border, an icon and "We couldn't confirm this against your documents. Check or remove it before sending.";
+  - a strip showing "N of M paragraphs confirmed" (a count, not a percentage), Copy text (copies the server's `letter_text`), the evidence checklist, and the disclaimer at the top and in the letter.
+- States: skeleton, error with retry (rung load, start, job failure), empty (no rung fits yet, with each rung's reason), degraded (some paragraphs unverified) and abstained (`missing_context`, using `AbstentionCard`).
+- `src/lib/grievance.ts` (new) holds the page's two pure helpers (default rung, confirmation count), tested in `src/lib/grievance.test.ts` with the contract schemas.
+- `src/pages/ClaimWorkspace.tsx`: a "Draft a grievance letter" link in the header when the claim is `denied` or `escalated`.
+- `src/api/endpoints/claims.ts` (`useGrievanceRungs`), `src/api/queryKeys.ts`, `src/router.tsx`.
+- `mocks/handlers/claims.ts`: the mock draft has the D-43 shape and builds its header from the claim. Its old paragraph claiming that "similar denials ... have previously been overturned by the Insurance Ombudsman" (an invented precedent) is gone; the deliberately unverified paragraph is now a plain overstatement about the policy. There is also a mock rungs handler, and `mocks/db.ts` uses the real step names.
+- `packages/contracts-ts`: the D-43 fields, `GrievanceRungOption`, `GrievanceDraftRequest.rung` excluding `other`.
+
+### Ambiguities decided conservatively
+
+- **Grievance drafts run in the questions lane**, one job at a time, because both use Gemini; this keeps quota use predictable. If reversed, a draft and a question could run at once.
+- **Search queries** are the recorded denial reason plus the title of each failed or at-risk check, or a fixed "claim settlement procedure" query when there are neither (a delay grievance). Results are merged round-robin, up to 6 clauses.
+- **The number check's allowed sources for a paragraph** are its cited clauses plus the claim facts given to the model (the denial note, the diagnosis and the rules' explanations, all from the database), which plays the part that the user's question plays in Q&A. The judge also sees the claim facts, and is told that requests and polite phrases need no support.
+- **The denial reason in the header is the user's own note** on the `denied` event, quoted and labelled "as recorded". It is not presented as the insurer's words.
+- **An expired Ombudsman window still offers the rung** ("may have passed"), because the one-year rule is unverified. If the rule is verified, this could become `available: false`.
+- **A rung requested when not available is refused (409)** rather than drafted with a warning. If reversed, the screen's disabled options would be the only guard.
+- **The awards file is read on every request**, so a newly checked award appears without a restart. It is small.
+- **`award_to_wire`** lives in `app/api/v1/grievances.py` and is imported by the eligibility route; both routes serve awards.
+- **The completeness query moved** from the route into `app/claims/reader.load_attached_documents`, so the route and the draft job read the same documents. Behaviour is unchanged.
+- **`_citation` and `_no_progress` in `app/qa/run_question.py`** were renamed to `clause_citation` and `no_progress`, because the grievance job uses them too.
+- **Idempotency helpers moved** from `app/api/v1/documents.py` to `app/jobs/idempotency.py`. The upload's 409 message is unchanged.
+
+### Live drafts (2026-10-20): both timed out
+
+Ayush allowed at most two live generations. Both were run for Lakshmi's claim (`…0f3`) at `insurer_grievance_cell` with `scripts/draft_grievance.py`, and both failed at the same point: retrieval completed (model server loaded, clauses found), then the Gemini **draft** call (`gemini-3.8-flash`) did not answer, first within 60 s and then within 120 s. A timeout is not retried and does not fall back (the same rule as Q&A). Nothing was stored. The cause is not diagnosed: a hung request, long model "thinking" on a longer output, or the response schema. No further calls were made.
+
+- Added `GRIEVANCE_LLM_TIMEOUT_SECONDS` (default 120), separate from `QA_LLM_TIMEOUT_SECONDS` (60), because a letter's paragraphs are a longer output than an answer. A job that times out fails with "The drafting service is busy right now. Please try again in a minute."
+- The deterministic parts of Lakshmi's letter were rendered from the database with no model call. Insurer, plan and policy number show as "not recorded" (Engine A doesn't extract them, D-25). Every evidence item is unticked, because the demo claim has no documents attached.
+
+### Not done (needs a decision)
+
+- **Web render tests for the five states.** `apps/web` has no DOM test environment (no jsdom or happy-dom, no Testing Library), and CLAUDE.md forbids adding libraries without asking. What is tested: the page's logic and the contract schemas (Vitest), and typecheck, lint and build. To render the page in tests, add `jsdom` and `@testing-library/react` as dev dependencies.
+
+### Needs verification against primary source
+
+- `apps/api/app/rules/grievance_rungs.yaml`: every sentence about the escalation order (the insurer's grievance cell first; Bima Bharosa and the Ombudsman usually expecting a prior complaint to the insurer) and every `source`. All are `verified: false` with `url: null`.
+- `apps/api/app/rules/ombudsman_rules.yaml`: the Ombudsman award limit, `value: null`. Sources conflict (§8). It is read into no output; `tests/test_grievance_units.py` fails if any output mentions it.
+- `engines/rules/reference/ombudsman_awards.yaml` is empty. Awards are Ayush's to add, each with `checked_by_ayush: true`.
+
