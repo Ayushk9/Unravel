@@ -30,6 +30,7 @@ export const queryKeys = {
     eligibility: (id: string) => ["claims", "detail", id, "eligibility"] as const,
     completeness: (id: string) => ["claims", "detail", id, "completeness"] as const,
     billValidation: (id: string) => ["claims", "detail", id, "bill-validation"] as const,
+    grievanceRungs: (id: string) => ["claims", "detail", id, "grievance-rungs"] as const,
   },
   alerts: {
     list: () => ["alerts", "list"] as const,
