@@ -65,7 +65,7 @@ def _abstention(missing_context: str, checked: int = 0, removed: int = 0) -> dic
     }
 
 
-def _citation(clause: Clause, document_id: UUID) -> dict[str, Any]:
+def clause_citation(clause: Clause, document_id: UUID) -> dict[str, Any]:
     return {
         "id": str(clause.id),
         "kind": "policy_clause",
@@ -97,7 +97,7 @@ def written_only_by(models: dict[str, str], primary: str) -> bool:
 Progress = Callable[[tuple[str, int]], Awaitable[None]]
 
 
-async def _no_progress(_: tuple[str, int]) -> None:
+async def no_progress(_: tuple[str, int]) -> None:
     return None
 
 
@@ -112,7 +112,7 @@ async def answer_question(
     document_id: UUID,
     document_hash: str,
     question: str,
-    progress: Progress = _no_progress,
+    progress: Progress = no_progress,
 ) -> AnswerOutcome:
     """The whole pipeline for one question, with no job attached. The job below and scripts/evaluate_qa.py both call it.
 
@@ -287,7 +287,7 @@ async def _answer(
     answer_text, order = assemble(outcome.kept)
     return {
         "answer": answer_text,
-        "citations": [_citation(by_short_id[short], document_id) for short in order],
+        "citations": [clause_citation(by_short_id[short], document_id) for short in order],
         "abstained": False,
         "missing_context": None,
         "verification": {"sentences_checked": outcome.checked, "sentences_removed": len(outcome.removed)},
