@@ -131,7 +131,7 @@ def test_escalated_dates_the_ombudsman_from_the_grievance_event() -> None:
 
 def letter_facts(**overrides: Any) -> LetterFacts:
     values = dict(
-        rung="insurer_grievance_cell", addressee_template="The Grievance Redressal Officer, {insurer}",
+        rung="insurer_grievance_cell", addressee_template="Grievance Redressal Officer, {insurer}",
         insurer_name="Star Health and Allied Insurance", policy_number=None, product_name="Star Comprehensive",
         patient_name="Lakshmi Rao", hospital_name="Navjeevan Multispeciality Hospital, Pune",
         admitted_on=date(2026, 4, 2), discharged_on=date(2026, 4, 6), claimed_amount=18_500_000,
@@ -260,7 +260,7 @@ def test_the_header_never_comes_from_the_model(clauses: list[Clause]) -> None:
     result = draft(FakeGrievanceLlm(draft=lambda *_: hostile), context)
 
     assert result.header_lines == header_lines(context.letter)
-    assert result.subject == subject(context.letter) and result.addressee == "The Grievance Redressal Officer, Star Health and Allied Insurance"
+    assert result.subject == subject(context.letter) and result.addressee == "Grievance Redressal Officer, Star Health and Allied Insurance"
     header_text = " ".join(f"{h.label} {h.value}" for h in result.header_lines) + result.subject + result.addressee + result.closing
     assert "FAKE-999" not in header_text and "99,99,999" not in header_text
     assert result.paragraphs[0].verified is False, "its numbers are in no clause"
@@ -343,3 +343,24 @@ def test_only_the_loader_reads_the_award_ceiling() -> None:
     app_dir = Path(__file__).resolve().parents[1] / "app"
     readers = [p.relative_to(app_dir).as_posix() for p in app_dir.rglob("*.py") if "award_ceiling" in p.read_text(encoding="utf-8")]
     assert readers == ["rules/loader.py"]
+
+
+# --- the addressee never carries contact details ---
+
+CONTACT_DETAILS = re.compile(r"@|\+?\d[\d\s-]{7,}\d|\b(road|street|floor|nagar|marg|pin|pincode|tel|phone|email)\b", re.IGNORECASE)
+
+
+@pytest.mark.parametrize("insurer", ["Star Health and Allied Insurance Co. Ltd.", None])
+def test_the_addressee_is_exactly_the_officer_and_the_insurer_with_no_contact_details(insurer: str | None) -> None:
+    from app.grievance.letter import addressee
+
+    template = load_grievance_rungs().rungs["insurer_grievance_cell"].addressee
+    facts = letter_facts(addressee_template=template, insurer_name=insurer)
+
+    assert addressee(facts) == f"Grievance Redressal Officer, {insurer or 'your insurer'}"
+    assert not CONTACT_DETAILS.search(render_letter_text(facts, [], [], "CLOSING"))
+
+
+def test_no_rung_addressee_has_contact_details() -> None:
+    for rung in load_grievance_rungs().rungs.values():
+        assert not CONTACT_DETAILS.search(rung.addressee.format(insurer="Example Insurer"))
