@@ -27,6 +27,7 @@ from app.db.models import Claim as ClaimRow
 from app.db.models import Document as DocumentRow
 from app.db.models import Job as JobRow
 from app.db.session import get_session
+from app.jobs.idempotency import accepted, find_job_by_key, replay_or_conflict, require_key
 from app.jobs.parse_document import UPLOADING
 from app.jobs.runner import JobRunner
 from app.schemas.common import Collection
@@ -40,33 +41,10 @@ from app.storage.base import DocumentStorage, StorageError, build_object_path
 router = APIRouter()
 
 SIGNED_URL_LIFETIME_SECONDS = 300
-_MAX_IDEMPOTENCY_KEY_LENGTH = 255
 _MAX_FILE_NAME_LENGTH = 255
 
 
-def _accepted(job: JobRow) -> JobAccepted:
-    # Always "queued": this is the body of the ORIGINAL 202, and a replay
-    # must return it unchanged even if the job has moved on since (D-13).
-    return JobAccepted(job_id=job.id, kind=job.kind, status="queued")
-
-
-def _replay_or_conflict(existing: JobRow, request_hash: str) -> JobAccepted:
-    """Same key seen before: same file replays, a different file is refused (D-27)."""
-    if existing.request_hash == request_hash:
-        return _accepted(existing)
-    raise ApiError(
-        409,
-        "idempotency_key_reused",
-        "This Idempotency-Key was already used for a different file. Use a new key for a new upload.",
-        field_errors=[FieldError(field="Idempotency-Key", message="Already used with different content.")],
-    )
-
-
-async def _find_job_by_key(session: AsyncSession, household_id: UUID, key: str) -> JobRow | None:
-    # Keys are scoped to a household: two households may use the same key.
-    return await session.scalar(
-        select(JobRow).where(JobRow.household_id == household_id, JobRow.idempotency_key == key)
-    )
+REUSED_KEY_MESSAGE = "This Idempotency-Key was already used for a different file. Use a new key for a new upload."
 
 
 @router.post("/documents", status_code=202)
@@ -85,13 +63,7 @@ async def upload_document(
     Parsing takes tens of seconds, far longer than a request should stay
     open, so the request only records the work and the job runner does it.
     """
-    if not idempotency_key or len(idempotency_key) > _MAX_IDEMPOTENCY_KEY_LENGTH:
-        raise ApiError(
-            422,
-            "validation_error",
-            "Idempotency-Key is required on this endpoint.",
-            field_errors=[FieldError(field="Idempotency-Key", message="This header is required.")],
-        )
+    idempotency_key = require_key(idempotency_key)
     # An upload with a claim_id is a claim document; one without is a policy.
     owned_claim_id = await _owned_claim_id(session, household.household_id, claim_id) if claim_id else None
 
@@ -99,9 +71,9 @@ async def upload_document(
     content_type = validate_file(content, file.content_type)
     request_hash = sha256_hex(content)
 
-    existing = await _find_job_by_key(session, household.household_id, idempotency_key)
+    existing = await find_job_by_key(session, household.household_id, idempotency_key)
     if existing is not None:
-        return _replay_or_conflict(existing, request_hash)
+        return replay_or_conflict(existing, request_hash, REUSED_KEY_MESSAGE)
 
     document_id = new_id()
     file_name = (file.filename or "document")[:_MAX_FILE_NAME_LENGTH]
@@ -152,15 +124,15 @@ async def upload_document(
         # won the unique constraint. Undo ours and answer from the winner's row.
         await session.rollback()
         await storage.delete(storage_path)
-        winner = await _find_job_by_key(session, household.household_id, idempotency_key)
+        winner = await find_job_by_key(session, household.household_id, idempotency_key)
         if winner is None:
             raise
-        return _replay_or_conflict(winner, request_hash)
+        return replay_or_conflict(winner, request_hash, REUSED_KEY_MESSAGE)
 
     # Runs after the response is sent. It only nudges the runner; the job is
     # already safely in the table whether or not this runs.
     background_tasks.add_task(runner.wake)
-    return _accepted(job)
+    return accepted(job)
 
 
 async def _owned_claim_id(session: AsyncSession, household_id: UUID, claim_id: str) -> UUID:
