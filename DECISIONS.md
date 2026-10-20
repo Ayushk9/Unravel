@@ -1001,3 +1001,26 @@ Decided by Ayush after Phase 7 (his answers to the plan's questions): Gemini wor
 
 On 2026-10-20 the health, 404 and 401 checks were run by building the app in-process against `apps/api/.env`. That ran the startup routine on the **dev** database, which failed two `answer_question` jobs stuck in `running` since 19 Oct, 12:10 UTC (never started). The next server restart would have failed them anyway, but it was an unplanned write. From now on these checks run through `tests/test_startup_routine.py`, which runs the real startup routine and the three checks in the temporary test schema, or against a server Ayush started.
 
+## Phase 7 decisions, Stage B (2026-10-20): the draft timeout, diagnosed
+
+Run with the teammate's key (ends `vHWQ`), with `scripts/diagnose_draft_call.py`: Lakshmi's real draft prompt (6 clauses, 10,812 characters, **2,648 tokens** by `count_tokens`), one streamed call per run, no retry.
+
+| Call | Model | Options | Time to first byte | Total | Thinking tokens | Output tokens | Result |
+|---|---|---|---|---|---|---|---|
+| 1 | gemini-3.8-flash | model default | 168.6 s | 168.7 s | 1,475 | 92 | valid JSON |
+| 2 | gemini-3.8-flash | thinking LOW, max 2,048 | 54.0 s | 54.0 s | none reported | 9 | abstained |
+| 3 | gemini-3.7-flash | thinking LOW, max 2,048 | 29.9 s | 29.9 s | none reported | 9 | abstained |
+
+- **Cause:** the model's unbounded thinking, on top of a large wait on Gemini's side for this free key. The wait is not proportional to the work: 9 output tokens and no thinking still took 30–54 s. Both earlier timeouts (60 s and 120 s) fit call 1's 168.6 s.
+- **Change:** the draft call now uses `thinking_level=LOW` and `max_output_tokens=2048`; the support judge uses `MINIMAL` and `1024` (`app/grievance/llm.py`, with the reasons in a comment). `GRIEVANCE_PROMPT_VERSION` is `grievance-v2`. Q&A calls are unchanged (they send no thinking options); a test checks both.
+- **Why these levels:** the draft is composition from at most 6 given clauses under strict citation and honesty rules, so a little reasoning (LOW) is kept. The judge gives one entailment verdict per clause, which needs none (MINIMAL). The caps are well above the largest valid output (5 × 1,200-character paragraphs is about 1,500 tokens).
+- **The 4th diagnostic call was not used.**
+
+### The live draft (Lakshmi, insurer_grievance_cell)
+
+- One draft call (`gemini-3.8-flash`, LOW): draft 14.3 s, retrieval 17.1 s (including the model load). Stored as `grievance_draft` `01a15a70-0027-77bb-9c08-7d58464d9054`.
+- **The model abstained**, as both diagnostic calls had. The facts block includes the rules' own result (PED waiting period failed, from the policy's 36-month clause), and the prompt says to abstain when the clauses give no honest ground. So the letter has the full deterministic header (now with insurer, plan and SAMPLE-0001) and asks the user to write their own reasons. No judge call was made, because there was nothing to judge.
+- **Not changed without Ayush:** the prompt was not loosened to make the model argue. A denial the policy supports is the case where an honest draft has no argument to make.
+
+**Gemini calls on the new key so far:** 4 generate (3 diagnostic, 1 draft) and 3 `count_tokens` (a separate quota).
+
