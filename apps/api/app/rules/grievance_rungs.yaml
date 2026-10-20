@@ -1,0 +1,93 @@
+# Which rung of the escalation ladder a grievance letter can be drafted for,
+# given the claim's current state (Feature 7, GET /claims/{id}/grievance-rungs).
+#
+# NOTHING IN THIS FILE HAS BEEN VERIFIED AGAINST A PRIMARY SOURCE.
+# Every rung is `verified: false`. The sentences describe a best
+# understanding of the usual order of escalation, written down so they can be
+# checked. The API sends `verified` with every rung and the app marks
+# unverified ones "based on an unverified rule".
+#
+# No number lives here. A date in a reason comes from a deadline rule in
+# deadline_rules.yaml (named by `deadline`), which carries its own source and
+# verified flag. A rung is verified only if it AND its deadline rule are.
+#
+# Fields of a rung
+#   label         short name shown in the rung selector
+#   addressee     who the letter is addressed to; {insurer} is the policy's
+#                 insurer, or "your insurer" when it is not recorded
+#   when          the claim states in which the rung is offered, in order. Each has
+#                   state      a claim state (app/claims/state_machine.py)
+#                   reason     one sentence: why this rung fits now
+#                   deadline   optional: the id of a deadline rule active in that state
+#                   reason_after_due  optional: used instead of `reason` once that deadline has passed
+#                 Placeholders: {event_date} (the date the claim entered `state`),
+#                 {due} (the deadline's due date). A placeholder whose value is
+#                 unknown makes the loader reject the file, never a guess.
+#   unavailable   the sentence shown when the claim is in none of the `when` states
+#   source        where the escalation step is described; url stays null until checked
+#   verified      has a person checked this rung's sentences against the source?
+#   version       raise when the meaning changes
+
+version: 1
+
+rungs:
+  insurer_grievance_cell:
+    label: Insurer's grievance cell
+    addressee: "The Grievance Redressal Officer, {insurer}"
+    when:
+      - state: denied
+        reason: Your claim was denied on {event_date}. Writing to the insurer's grievance cell is usually the first step in asking for the decision to be reviewed.
+      - state: escalated
+        reason: You have already written to the insurer. You can send a follow-up letter to its grievance cell.
+      - state: documents_submitted
+        deadline: insurer_decision
+        reason: The insurer is expected to decide by {due}. You can write to its grievance cell about a delay, though it may be early to.
+        reason_after_due: The date by which the insurer was expected to decide ({due}) has passed. You can write to its grievance cell about the delay.
+      - state: under_review
+        deadline: insurer_decision
+        reason: The insurer is expected to decide by {due}. You can write to its grievance cell about a delay, though it may be early to.
+        reason_after_due: The date by which the insurer was expected to decide ({due}) has passed. You can write to its grievance cell about the delay.
+    unavailable: Available once the claim has been submitted to the insurer, or denied.
+    source:
+      document: IRDAI (Protection of Policyholders' Interests) Regulations, 2017
+      section: Grievance redressal procedure (regulation number to be confirmed)
+      url: null   # TODO(Ayush): add the official URL
+    verified: false
+    version: 1
+
+  irdai_bima_bharosa:
+    label: IRDAI Bima Bharosa
+    addressee: Insurance Regulatory and Development Authority of India (IRDAI), through the Bima Bharosa grievance portal
+    when:
+      - state: denied
+        reason: Your claim was denied on {event_date}. Bima Bharosa usually expects you to have complained to the insurer's grievance cell first.
+      - state: escalated
+        reason: You have written to the insurer's grievance cell. If it has not resolved your complaint, you can register it on Bima Bharosa.
+    unavailable: Available once the claim has been denied, or you have written to the insurer's grievance cell.
+    source:
+      document: IRDAI Bima Bharosa (Integrated Grievance Management System)
+      section: null
+      url: null   # TODO(Ayush): add the official URL
+    verified: false
+    version: 1
+
+  insurance_ombudsman:
+    label: Insurance Ombudsman
+    # No office address: which office covers a complainant, and its address, are unverified data.
+    addressee: The Insurance Ombudsman (the office covering your area)
+    when:
+      - state: denied
+        deadline: ombudsman_filing
+        reason: Your claim was denied on {event_date}. A complaint to the Insurance Ombudsman can be made until {due}. The Ombudsman usually expects you to have written to the insurer first.
+        reason_after_due: The window for a complaint to the Ombudsman ended on {due}, so it may have passed. Check the rule before relying on it.
+      - state: escalated
+        deadline: escalation_eligibility
+        reason: You may approach the Ombudsman from {due} if the insurer has not replied to your grievance by then.
+        reason_after_due: The insurer has had until {due} to reply to your grievance, so you may now approach the Ombudsman.
+    unavailable: Available once the claim has been denied, or you have written to the insurer's grievance cell.
+    source:
+      document: Insurance Ombudsman Rules, 2017
+      section: Rule 14 (manner of making a complaint); sub-rule to be confirmed
+      url: null   # TODO(Ayush): add the official URL
+    verified: false
+    version: 1
