@@ -7,6 +7,7 @@ registered on Base.metadata before it is used.
 from app.db.models.claim import Claim, ClaimEvent, claim_current_state
 from app.db.models.coverage import CoverageProfile, Exclusion, SubLimit, WaitingPeriod
 from app.db.models.document import Document, DocumentChunk
+from app.db.models.grievance_draft import GrievanceDraft
 from app.db.models.household import Household, Member
 from app.db.models.insurer import Insurer, InsurerTermMap
 from app.db.models.job import Job
@@ -20,6 +21,7 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "Exclusion",
+    "GrievanceDraft",
     "Household",
     "Insurer",
     "InsurerTermMap",
