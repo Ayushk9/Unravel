@@ -86,8 +86,8 @@ from app.db.models import Claim, ClaimEvent, Document, DocumentChunk, Household,
 from app.db.session import create_engine, create_session_factory  # noqa: E402
 from app.qa.demo_policy import find_real_policy  # noqa: E402
 from app.schemas.claims import ClaimFacts  # noqa: E402
-from app.schemas.policies import PolicyDatesUpdate  # noqa: E402
-from app.services.policy_dates import apply_dates  # noqa: E402
+from app.schemas.policies import PolicyUpdate  # noqa: E402
+from app.services.policy_update import apply_policy_update  # noqa: E402
 from app.services.policy_writer import store_extraction  # noqa: E402
 from app.storage.base import build_object_path  # noqa: E402
 from app.storage.factory import create_storage  # noqa: E402
@@ -242,7 +242,11 @@ class DemoClaim:
 NONE_APPLY = {"matched_waiting_periods": [], "matched_exclusions": []}
 
 # The Star policy's dates, as the user would type them from a schedule (D-39). Demo values.
-STAR_DATES = PolicyDatesUpdate(start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), first_inception_date=date(2024, 11, 1))
+STAR_DATES = PolicyUpdate(start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), first_inception_date=date(2024, 11, 1))
+# What the user would type from the Star schedule (D-46). The number is a sample, not a real policy number.
+STAR_IDENTITY = PolicyUpdate(
+    insurer_name="Star Health and Allied Insurance Co. Ltd.", product_name="Star Comprehensive Insurance Policy", policy_number="SAMPLE-0001"
+)
 # Positions in the Star policy's waiting_periods, as GET /policies/{id} returns them:
 # 0 initial, 1 disease_specific (the listed conditions, p30-31), 2 pre_existing, 3 maternity.
 STAR_LISTED_CONDITIONS = 1
@@ -335,7 +339,20 @@ async def seed_star_dates(session: AsyncSession, star: Policy) -> str:
         return "already entered"
     if any((star.start_date, star.end_date, star.first_inception_date)):
         return "left alone: different dates were already entered, so the bands below may differ"
-    apply_dates(star, STAR_DATES, india_date(datetime.now(INDIA)))
+    apply_policy_update(star, STAR_DATES, india_date(datetime.now(INDIA)))
+    await session.commit()
+    return "entered now"
+
+
+async def seed_star_identity(session: AsyncSession, star: Policy) -> str:
+    """Enter the Star policy's insurer, product and number (D-46) through the PATCH code, unless any is already set."""
+    current = (star.insurer_name, star.product_name, star.policy_number)
+    wanted = (STAR_IDENTITY.insurer_name, STAR_IDENTITY.product_name, STAR_IDENTITY.policy_number)
+    if current == wanted:
+        return "already entered"
+    if any(current):
+        return f"left alone: already set to {current}"
+    apply_policy_update(star, STAR_IDENTITY, india_date(datetime.now(INDIA)))
     await session.commit()
     return "entered now"
 
@@ -395,11 +412,12 @@ async def main() -> None:
     async with factory() as session:
         star = await find_real_policy(session)
         dates = await seed_star_dates(session, star)
+        identity = await seed_star_identity(session, star)
         claims = await seed_claims(session, star)
     await engine.dispose()
     print(f"Fixture policy {policy_id} ({POLICY_NUMBER}); clauses: {chunks} written" + (" (run scripts/index_chunks.py)" if chunks else ""))
     print(f"Household city tier: {tier}" + (" (set now)" if set_tier else " (already chosen; left alone)"))
-    print(f"Demo claims are on the Star policy {star.id}. Its dates: {dates}.")
+    print(f"Demo claims are on the Star policy {star.id}. Its dates: {dates}. Its insurer, product and number: {identity}.")
     for line in claims:
         print(f"  {line}")
     print("Lakshmi's claim is at_risk until a person confirms waiting period #3 (36 months, p31) on the policy screen.")
