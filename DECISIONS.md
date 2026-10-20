@@ -866,7 +866,7 @@ Measured round trip to the Supabase pooler from the demo Mac: about 170-200 ms, 
 
 ### Phase 6 follow-up (2026-10-19)
 
-- **The 15-clause "demo policy" is a synthetic test fixture** written by Claude (`scripts/seed_demo_claims.py`: fictional insurer, generated 3-page PDF). It is now labelled so (`product_name` "... (synthetic test fixture)"), kept out of the Q&A demo and out of headline metrics. The latency, profiling and cache warm-up scripts use the dev household's real uploaded Star policy (`app/qa/demo_policy.py`); the evaluation target is the Star Comprehensive wording. Latency figures reported on 2026-10-16 for the "demo policy" were measured on this fixture and are superseded. The four eligibility demo claims (Phase 5) still sit on this fixture.
+- **The 15-clause "demo policy" is a synthetic test fixture** written by Claude (`scripts/seed_demo_claims.py`: fictional insurer, generated 3-page PDF). It is now labelled so (`product_name` "... (synthetic test fixture)"), kept out of the Q&A demo and out of headline metrics. The latency, profiling and cache warm-up scripts use the dev household's real uploaded Star policy (`app/qa/demo_policy.py`); the evaluation target is the Star Comprehensive wording. Latency figures reported on 2026-10-16 for the "demo policy" were measured on this fixture and are superseded. The four eligibility demo claims (Phase 5) sat on this fixture until 2026-10-20; they are now on the Star policy (see "Before Phase 7" below).
 - **Cache key now includes the document id** (found by an independent review): before, the same file in two households would have shared an answer whose citations named the first document.
 - **Search is one SQL statement** (dense and keyword ranks in CTEs, clauses returned by the same statement): 5 round trips per search became 3 (BEGIN, the statement, ROLLBACK). Postgres executes it in about 2 ms; nearly all remaining time is network (one round trip to Supabase's Tokyo region is about 160 ms) and opening/pinging connections (`pool_pre_ping`). Changing pool behaviour is left to Ayush.
 - **Gemini fallback:** `GEMINI_FALLBACK_MODEL=gemini-3.7-flash`, chosen because it was listed and answering on 2026-10-19 while `gemini-3.8-flash` had used its free daily quota (20 requests per model per day). A 429 that says to wait more than 60 s goes straight to the fallback.
@@ -882,3 +882,22 @@ Approved by Ayush in the Phase 6 brief ("Edit only the ask-screen components"). 
 - `packages/contracts-ts`: `QuestionAnswerResult.verification` (D-42), required, as the server always sends it. The mock Q&A answers include it.
 
 No network code outside `client.ts`: the browser's speech service is the browser's own connection, which is what the disclosure line is for.
+
+
+## Before Phase 7: CORS, the flagship question, demo claims on the Star policy (2026-10-20)
+
+### The flagship question's flip-flop ("What if I choose a ₹12,000/day room?", Star policy)
+
+- **It is the generator, not the judge.** Every recorded run (`policy_question.generated` / `verification`) had the same five clauses retrieved, in the same order, with the same rerank scores. Each abstention was the generator setting `abstain: true`, and the judge was never called. In the one run that answered (fallback model), the judge supported both sentences and removed none.
+- Temperature was already 0 for every call (rewrite, answer, judge): one `GenerateContentConfig`, in `GeminiQaLlm._once`.
+- What varies is the model and the generator itself: the runs mix the primary and the fallback, and the fallback answered once and abstained minutes later on identical input. The room-rent clause (p9) ranks only 2nd, with a rerank score of 0.0004, so the generator is on a knife-edge. Retrieval and the reranker are left as they are (out of scope).
+- **Not re-run live on 2026-10-20**: both models' free-tier daily quotas were used up (primary 20/day; the fallback also hit its daily limit after its 5/minute one). The finding rests on the recorded runs.
+
+### Ambiguities decided conservatively
+
+- **`warm_demo_cache.py` never caches an abstention**, as well as never caching a non-primary answer. A demo answer is pinned for 24 h, and a pinned abstention on a demo question is the failure being fixed. An existing entry that breaks either rule is removed and the question is asked again. If reversed, abstentions from the primary would be cached and only reported.
+- **The API's own cache still stores fallback answers under the primary model's key** (`run_question.answer_question` always writes `answer_key(..., gemini_model)`). Only the warm-up script was in scope. Effect: after a fallback answer, the same question is served that answer for 24 h even once the primary is back.
+- **Demo claims moved, not recreated** (Ayush's choice): the four fixed-id claims had their `policy_id` changed to the Star policy, and their facts re-saved through `save_facts` (the PUT /facts code). Their event logs are unchanged (append-only). Before: all four on the fixture `01a13f0a-...`. To undo: set `policy_id` back.
+- **Star policy dates** were entered through `apply_dates` (the PATCH /policies code) as demo values: start 2026-01-01, end 2026-12-31, first inception 2024-11-01. They were chosen to fit the existing admission dates, which can't change because they are in the events. They are only entered when the policy has no dates.
+- **Ananya's claim** is matched to the 24-month listed-conditions period (position 1): knee arthroscopy is on that list in the PDF (p30, p32: "Arthroscopy and Arthroplasty / Joint Replacement").
+- **Lakshmi's PED claim is `at_risk` until a person confirms** the 36-month PED period (waiting period #3, p31) on the policy screen; it is then `likely_ineligible` (D-36 needs a high-confidence failure). Ayush's choice: the seed script does not mark it confirmed, because a script-made "user confirmed" would corrupt the extraction-accuracy evaluation data. Verified in memory that the confirmation flips the band.
