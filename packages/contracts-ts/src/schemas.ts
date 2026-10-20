@@ -286,13 +286,17 @@ export const citationSchema = z.object({
   external_url: z.string().nullable(),
 });
 
+const grievanceRungSchema = z
+  .enum(["insurer_grievance_cell", "irdai_bima_bharosa", "insurance_ombudsman", "other"])
+  .catch("other");
+
 export const grievanceDraftSchema = z.object({
   id: uuidSchema,
   claim_id: uuidSchema,
-  rung: z
-    .enum(["insurer_grievance_cell", "irdai_bima_bharosa", "insurance_ombudsman", "other"])
-    .catch("other"),
+  rung: grievanceRungSchema,
   subject: z.string(),
+  addressee: z.string(),
+  header_lines: z.array(z.object({ label: z.string(), value: z.string().nullable() })),
   paragraphs: z.array(
     z.object({
       text: z.string(),
@@ -303,6 +307,20 @@ export const grievanceDraftSchema = z.object({
   citations: z.array(citationSchema),
   evidence_checklist: z.array(z.object({ item: z.string(), satisfied: z.boolean() })),
   citation_precision: z.number().min(0).max(1),
+  closing: z.string(),
+  disclaimer: z.string(),
+  letter_text: z.string(),
+  missing_context: z.string().nullable(),
+  generated_at: isoDateTimeSchema,
+});
+
+export const grievanceRungOptionSchema = z.object({
+  rung: grievanceRungSchema,
+  label: z.string(),
+  available: z.boolean(),
+  reason: z.string(),
+  rule_ids: z.array(z.string()),
+  verified: z.boolean(),
 });
 
 export const ombudsmanAwardSchema = z.object({
