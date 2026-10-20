@@ -224,6 +224,7 @@ Grounded Q&A responses are cached by a hash of (retrieved chunk ids + normalised
 *Revisit:* if the endpoint ever reports anything beyond liveness.
 
 ### D-25 · Policy identity fields are nullable
+*Amended by D-46: the user may enter insurer, product and policy number.*
 On `Policy`, the fields `insurer`, `policy_number`, `product_name`, `start_date` and `end_date` may be `null`. `policy_type` is never null; when unknown it is `"other"`. Clients must render a null as "not stated", not crash and not substitute a placeholder.
 
 *Why:* a policy is created from an uploaded document, and Engine A does not extract these fields. A policy wording PDF often does not contain a policy number or dates at all (they are on the separate schedule). Sending an invented value would be a fact without provenance.
@@ -526,6 +527,21 @@ Extends row 20, all consistent with D-04 and D-27:
 - `GET /ombudsman-awards`: newest `decided_on` first; `cursor` is the id of the last award seen; an unknown cursor is `422` on `cursor`.
 
 *Ratified:* 2026-10-20. Additive.
+
+### D-46 · Policy identity is entered by the user, and marked as such
+Extends D-39 and amends D-25. `PATCH /api/v1/policies/{id}` also accepts `insurer_name`, `product_name` and `policy_number`: a string, trimmed, 1–200 characters, or `null` to clear. Every D-39 rule still holds: only the keys sent change, an empty body is `422`, and the dates are checked as a whole.
+
+`Policy` gains two fields (additive):
+```json
+"insurer_name": "Star Health and Allied Insurance Co. Ltd.",
+"user_entered_fields": ["insurer_name", "product_name", "policy_number", "start_date", "end_date", "first_inception_date"]
+```
+- `insurer_name` is the user's text, stored on the policy. The shared `insurer` table (reference data every household sees) is never written from user input; `insurer` stays `null` unless we link a reference insurer. Clients show `insurer.name` when set, else `insurer_name`, else "not stated".
+- `user_entered_fields` names which of those six fields the user typed. Setting a field adds it; clearing it (`null`) removes it. These are plain values, not `Extracted[T]`: nothing was read from a page, so no provenance is invented. Clients mark each one "Entered by you". Dates set before this decision were marked by migration 0009 (PATCH was the only way to set them).
+- Grievance letters (D-43) use them. The addressee is exactly "Grievance Redressal Officer, <insurer>" (`insurer.name`, else `insurer_name`, else "your insurer"), **never with an address, e-mail or phone number**. The "Plan" and "Policy number" header lines use the entered values.
+
+*Ratified:* 2026-10-20. Additive.
+*Revisit:* when Engine A extracts these fields from a schedule (they then become `Extracted[T]`, D-25's revisit).
 
 ---
 
