@@ -5,15 +5,15 @@ Run from apps/api (no database, no network, no model):
 
 Writes apps/api/sample_documents/<member>/<type>.pdf: a discharge summary, a
 final hospital bill, a payment receipt and an insurer denial letter for each
-claim in scripts/seed_demo_claims.py, using that claim's own dates, amounts,
+of the five claims in scripts/seed_demo_claims.py, using that claim's own dates, amounts,
 hospital and diagnosis. Ishaan's payment receipt is deliberately left out, so
 his claim still has a required document missing.
 
 Everything here is FICTIONAL. Every page is stamped "SAMPLE DOCUMENT -
 FICTIONAL PATIENT" at the top and the bottom. There are no real registration
 numbers, addresses, phone numbers or e-mail addresses. The denial letters come
-from a "Sample Insurer" and quote the sample policy number, never a real
-insurer's letterhead. Denial letters for claims that the event log does not
+from a "Sample Insurer" and quote the sample policy number (SAMPLE-0001, or SAMPLE-0002 for Rajan), never
+a real insurer's letterhead. Denial letters for claims that the event log does not
 show as denied were asked for as briefed (DECISIONS.md, Phase 7 decisions).
 
 scripts/upload_sample_documents.py attaches them through the normal upload flow.
@@ -32,7 +32,7 @@ from sample_pdf import write_pdf  # noqa: E402
 from seed_demo_claims import CLAIMS, DemoClaim  # noqa: E402
 
 OUT_DIR = Path(__file__).resolve().parents[1] / "sample_documents"
-POLICY_NUMBER = "SAMPLE-0001"
+POLICY_NUMBER = {"star": "SAMPLE-0001", "renewed": "SAMPLE-0002"}
 DOCTOR = "Dr. A. Sample (fictional)"
 
 TREATMENT = {
@@ -40,12 +40,14 @@ TREATMENT = {
     "Planned knee arthroscopy": ("Arthroscopic knee procedure (right knee) under spinal anaesthesia.", "Physiotherapy as advised. Review in the orthopaedic clinic after 10 days."),
     "Complications of type 2 diabetes": ("Insulin titration, intravenous fluids and management of blood sugar control.", "Continue the prescribed insulin regimen. Review in the diabetes clinic after 2 weeks."),
     "Severe asthma attack": ("Nebulisation, systemic steroids and oxygen support.", "Continue inhalers as prescribed. Review in the chest clinic after 1 week."),
+    "Hypertensive heart disease": ("Evaluation of chest pain, blood pressure control and cardiac monitoring.", "Continue the prescribed antihypertensives. Review in the cardiology clinic after 2 weeks."),
 }
 DENIAL_REASON = {
     "Vikram": "The hospitalisation records submitted with the claim are incomplete.",
     "Ananya": "The treatment falls under a listed condition with a waiting period that had not been completed on the date of admission.",
     "Lakshmi": "Denied as a pre-existing disease within the waiting period.",
     "Ishaan": "The claim cannot be admitted without the investigation reports and the history of the ailment.",
+    "Rajan": "Denied as a pre-existing disease within the waiting period.",
 }
 # Shares of the bill, in percent, by line. The last line takes the rounding remainder.
 BILL_LINES = (("Room and nursing charges", 22), ("Doctor and consultation fees", 18), ("Operation theatre / procedure charges", 20),
@@ -149,7 +151,7 @@ def denial_letter(claim: DemoClaim) -> list[str]:
         "",
         f"Date: {day(denial_date(claim))}",
         f"To: {patient(claim)}",
-        f"Policy number: {POLICY_NUMBER}",
+        f"Policy number: {POLICY_NUMBER[claim.policy]}",
         f"Insured person: {patient(claim)}",
         f"Hospital: {claim.hospital}",
         f"Period of hospitalisation: {day(claim.admitted_on)} to {day(discharged)}",
