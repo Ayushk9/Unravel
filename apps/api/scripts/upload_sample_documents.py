@@ -10,7 +10,9 @@ path the claim wizard uses, so the classifier really runs: ONE Gemini call per
 document that is not already in the classification cache (15 documents).
 
 Safe to run again: a file already attached to its claim (same file name, not
-deleted) is skipped, and each upload's Idempotency-Key is fixed per file.
+deleted) is skipped, and each upload's Idempotency-Key is fixed per file. A file
+whose classification FAILED is soft-deleted and uploaded again under a new key
+(one more Gemini call).
 
 Afterwards it prints, per claim, the documents' detected types, the
 completeness report (GET from the server) and the grievance evidence
@@ -40,25 +42,27 @@ POLL_SECONDS = 2.0
 JOB_TIMEOUT_SECONDS = 180
 
 
-def attached_names(client: httpx.Client, claim_id: str) -> set[str]:
-    names: set[str] = set()
+def attached(client: httpx.Client, claim_id: str) -> dict[str, dict[str, Any]]:
+    """The claim's documents (not deleted), by file name."""
+    documents: dict[str, dict[str, Any]] = {}
     cursor = None
     while True:
         params = {"claim_id": claim_id, "limit": 100, **({"cursor": cursor} if cursor else {})}
         page = client.get("/documents", params=params).json()
-        names |= {document["file_name"] for document in page["items"]}
+        documents |= {document["file_name"]: document for document in page["items"]}
         cursor = page["next_cursor"]
         if not cursor:
-            return names
+            return documents
 
 
-def upload(client: httpx.Client, claim_id: str, member: str, path: Path) -> dict[str, Any]:
+def upload(client: httpx.Client, claim_id: str, member: str, path: Path, key_suffix: str = "") -> dict[str, Any]:
     file_name = f"sample_{member}_{path.name}"
     response = client.post(
         "/documents",
         files={"file": (file_name, path.read_bytes(), "application/pdf")},
         data={"claim_id": claim_id},
-        headers={"Idempotency-Key": f"sample-document-{claim_id}-{path.stem}"},
+        # A retry needs a new key: the first key would replay the failed job (D-27).
+        headers={"Idempotency-Key": f"sample-document-{claim_id}-{path.stem}{key_suffix}"},
     )
     if response.status_code != 202:
         raise SystemExit(f"POST /documents for {file_name} -> {response.status_code} {response.text}")
@@ -107,13 +111,20 @@ def main() -> None:
         for demo in CLAIMS:
             claim_id = str(demo.id)
             folder = OUT_DIR / demo.member.lower()
-            already = attached_names(client, claim_id)
+            already = attached(client, claim_id)
             print(f"{demo.member} ({claim_id})")
             for path in sorted(folder.glob("*.pdf")):
-                if f"sample_{demo.member}_{path.name}" in already:
+                existing = already.get(f"sample_{demo.member}_{path.name}")
+                if existing is not None and existing["parse_status"] != "failed":
                     print(f"  {path.name:44} already attached; skipped")
                     continue
-                upload(client, claim_id, demo.member, path)
+                suffix = ""
+                if existing is not None:
+                    # Its classification failed: remove it (a soft delete, D-20) and classify the file again.
+                    client.delete(f"/documents/{existing['id']}").raise_for_status()
+                    suffix = f"-retry-{existing['id'][:8]}"
+                    print(f"  {path.name:44} classification had failed; removed and uploading again")
+                upload(client, claim_id, demo.member, path, suffix)
                 calls += 1
 
         print(f"\nUploaded {calls} document(s) (at most {calls} Gemini classification call(s); cached files make none).\n")
