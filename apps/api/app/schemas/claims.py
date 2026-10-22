@@ -60,6 +60,14 @@ class OmittedDeadline(ApiModel):
     reason: str
 
 
+# The eligibility check ids (engines/rules/registry.py), the same tags as Ombudsman award grounds (D-45).
+# tests/test_grievance_units.py checks the two lists stay equal.
+DenialGround = Literal[
+    "coverage_profile", "initial_waiting_period", "ped_waiting_period", "disease_specific_waiting_period",
+    "permanent_exclusions", "room_rent_sub_limit", "claim_intimation", "sum_insured_adequacy",
+]
+
+
 class ClaimFacts(ApiModel):
     """What the user has told us about the illness and the stay (D-37).
 
@@ -79,6 +87,10 @@ class ClaimFacts(ApiModel):
     matched_exclusions: list[Annotated[int, Field(strict=True, ge=0)]] | None
     # Integer paise per day.
     planned_room_rent_per_day: Annotated[int, Field(strict=True, ge=0)] | None
+    # The ground the insurer gave for a denial, as the user chooses it: one of the
+    # eligibility check ids (D-48). Null: not answered. Never read from the free-text
+    # note on the denial event. Defaults to null so clients built before D-48 still validate.
+    denial_ground: DenialGround | None = None
 
 
 class Claim(ApiModel):
