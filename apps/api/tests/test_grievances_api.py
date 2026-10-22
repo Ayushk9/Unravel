@@ -31,7 +31,7 @@ CLAUSES = [
 ]
 DRAFT_KEYS = {
     "id", "claim_id", "rung", "subject", "addressee", "header_lines", "paragraphs", "citations", "evidence_checklist",
-    "citation_precision", "closing", "disclaimer", "letter_text", "missing_context", "assessment_note", "generated_at",
+    "citation_precision", "closing", "disclaimer", "letter_text", "missing_context", "assessment_note", "before_you_send", "generated_at",
 }
 DENIAL_REASON = "Denied as a pre-existing disease within the waiting period"
 
@@ -282,3 +282,31 @@ def test_eligibility_precedent_matches_failed_checks_by_tag(world: SimpleNamespa
     assert ped["status"] in ("failed", "at_risk")
     assert [a["case_reference"] for a in assessment["ombudsman_precedent"]] == ["C/1", "C/3"]
     assert assessment["ombudsman_precedent_note"] == NOTE_MATCHED
+
+
+
+def test_a_wrongful_denial_opens_with_the_rules_paragraph_citing_the_ped_clause(world: SimpleNamespace) -> None:
+    """Cover from 2021 (36-month PED period over by 2024), admitted 2026, denied on the PED ground the user chose."""
+    policy_id, _ = _index_policy(world.db, world.household_id)
+    world.db.execute("UPDATE policy SET start_date = '2026-01-01', end_date = '2026-12-31', first_inception_date = '2021-06-01' WHERE id = :p",
+                     p=policy_id)
+    claim_id = _claim(world, policy_id=policy_id)
+    saved = world.api.request("PUT", f"/claims/{claim_id}/facts", json={
+        "diagnosis": "Hypertensive heart disease", "condition_is_pre_existing": True, "first_diagnosed_on": "2019-04-10",
+        "matched_waiting_periods": [], "matched_exclusions": [], "planned_room_rent_per_day": None, "denial_ground": "ped_waiting_period",
+    })
+    assert saved.status_code == 200, saved.text
+
+    response = _request(world, claim_id=claim_id)
+    assert response.status_code == 202, response.text
+    world.api.finish_jobs()
+    draft = world.api.get(f"/jobs/{response.json()['job_id']}").json()["result"]
+
+    opening = draft["paragraphs"][0]
+    assert opening["source"] == "rules" and opening["text"].startswith("My continuous cover with you began on 1 Jun 2021.")
+    assert "ended on 1 Jun 2024" in opening["text"] and "admitted on 2 Apr 2026" in opening["text"]
+    cited = {c["id"]: c for c in draft["citations"]}
+    assert cited[opening["citation_ids"][0]]["provenance"]["page"] >= 1
+    assert draft["assessment_note"] is None
+    assert any(n["source"] == "rules" for n in draft["before_you_send"])
+    assert all(n["text"] not in draft["letter_text"] for n in draft["before_you_send"])
