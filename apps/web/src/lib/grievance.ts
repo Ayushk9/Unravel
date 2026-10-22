@@ -13,8 +13,9 @@ export function defaultRung(options: GrievanceRungOption[], requested: string | 
  * Null when the model wrote no paragraphs: the abstention card says why instead.
  */
 export function confirmationSummary(paragraphs: GrievanceDraft["paragraphs"]): { confirmed: number; total: number; text: string } | null {
-  // Only the model's paragraphs are checked against the policy; template requests assert nothing (D-47).
-  const written = paragraphs.filter((p) => p.source !== "template");
+  // Only the model's paragraphs are checked against the policy. Template requests assert nothing (D-47) and a
+  // rules paragraph is built from the eligibility check's values (D-48); neither is counted. An unknown source counts.
+  const written = paragraphs.filter((p) => p.source !== "template" && p.source !== "rules");
   const total = written.length;
   if (total === 0) return null;
   const confirmed = written.filter((p) => p.verified).length;
