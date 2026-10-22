@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from app.qa.llm import Answered, CallOptions, ClausePrompt, GeminiQaLlm, Verdicts
 
 # Bump when a prompt, schema or call option below changes. Stored with every draft.
-GRIEVANCE_PROMPT_VERSION = "grievance-v3"
+GRIEVANCE_PROMPT_VERSION = "grievance-v4"
 
 # Why these limits (diagnosed 2026-10-20; DECISIONS.md, Phase 7 Stage B):
 # - The draft is composition from at most 6 given clauses under strict citation
@@ -40,6 +40,7 @@ DRAFT_OPTIONS = CallOptions(thinking_level="LOW", max_output_tokens=2048)
 JUDGE_OPTIONS = CallOptions(thinking_level="LOW", max_output_tokens=1024)
 
 MAX_PARAGRAPHS = 5
+MAX_CONDITIONS = 4
 
 
 class GeneratedParagraph(BaseModel):
@@ -47,11 +48,19 @@ class GeneratedParagraph(BaseModel):
     chunk_ids: list[str] = Field(min_length=1, max_length=4)
 
 
+class GeneratedCondition(BaseModel):
+    """A condition written in a cited clause that the insurer could rely on. Shown before sending, never in the letter (D-48)."""
+
+    text: str = Field(min_length=1, max_length=400)
+    chunk_ids: list[str] = Field(min_length=1, max_length=2)
+
+
 class GeneratedDraft(BaseModel):
     # One object with an `abstain` flag, as for Q&A answers (app/qa/llm.py explains why).
     abstain: bool
     reason: str | None = None
     paragraphs: list[GeneratedParagraph] = Field(default_factory=list, max_length=MAX_PARAGRAPHS)
+    conditions: list[GeneratedCondition] = Field(default_factory=list, max_length=MAX_CONDITIONS)
 
 
 class GrievanceLlm(Protocol):
@@ -71,16 +80,27 @@ The letter's header, greeting, closing and signature are written separately. Wri
 
 Use ONLY the CLAIM FACTS and the POLICY CLAUSES given below.
 
-Rules:
+What you may argue from:
+- ONLY the claim's facts and the CHECKS THAT SUPPORT THE POLICYHOLDER listed in the CLAIM FACTS.
 - Every paragraph must cite, by id (c1, c2, ...), the clause or clauses that support each thing it says about the policy.
+
+What you must not do:
+- Do not introduce optional covers, add-ons, portability, migration, buy-back or any other benefit that the CLAIM FACTS do not mention.
+- Do not raise, quote or hint at any condition, exclusion or requirement that could count against the policyholder. Put such
+  conditions in "conditions" instead (see below), never in a paragraph.
+- Do not repeat the opening paragraph given in the CLAIM FACTS, if there is one.
 - State nothing about the policy that is not written in the clauses you cite. Do not use general knowledge about insurance.
 - Do not mention any law, regulation, circular, regulator rule, deadline, time limit or award limit.
-- Do not write names, policy numbers, amounts or dates. The header already states them.
+- Do not write names, policy numbers, amounts or dates. The letter states them elsewhere.
 - Do not do arithmetic. Do not contradict the CLAIM FACTS.
-- Be honest: if a clause supports the insurer's decision, do not pretend otherwise. You may ask the insurer to point to the exact clause it relied on, or point out a clause that supports cover.
 - Do not promise or predict an outcome. Do not threaten. Do not give legal advice.
-- First person, polite, plain English. 2 to 4 sentences per paragraph. At most {max_paragraphs} paragraphs.
-- If the clauses give no honest ground for the letter, set "abstain" to true, give a short reason, and return no paragraphs.
+
+Style: first person, polite, plain English. 2 to 4 sentences per paragraph. At most {max_paragraphs} paragraphs.
+If the supporting checks and clauses give no honest ground for the letter, set "abstain" to true, give a short reason, and return no paragraphs.
+
+"conditions": list (at most {max_conditions}) conditions written in the clauses you were given that the insurer could rely on
+against this claim, each in one plain sentence that says only what the clause says, citing its clause id. These are shown
+to the policyholder privately before sending, never put in the letter. Return an empty list if there are none.
 """
 
 JUDGE_PROMPT = """You check paragraphs of a policyholder's grievance letter against the policy's own text.
@@ -95,11 +115,11 @@ Judge each pair independently. Do not use outside knowledge.
 
 def generated_draft_problems(draft: GeneratedDraft, clause_ids: set[str]) -> str | None:
     """Why a parsed draft can't be used, or None if it is well formed."""
-    if draft.abstain:
-        return "abstained but also gave paragraphs" if draft.paragraphs else None
-    if not draft.paragraphs:
+    if draft.abstain and draft.paragraphs:
+        return "abstained but also gave paragraphs"
+    if not draft.abstain and not draft.paragraphs:
         return "did not abstain but gave no paragraphs"
-    unknown = {cid for p in draft.paragraphs for cid in p.chunk_ids} - clause_ids
+    unknown = {cid for p in [*draft.paragraphs, *draft.conditions] for cid in p.chunk_ids} - clause_ids
     if unknown:
         return f"cited clause ids it was not given: {sorted(unknown)}"
     return None
@@ -111,7 +131,7 @@ def _clause_listing(clauses: list[ClausePrompt]) -> str:
 
 def draft_contents(rung_description: str, facts: str, clauses: list[ClausePrompt]) -> list[str]:
     """Exactly what the draft call sends. scripts/diagnose_draft_call.py sends the same."""
-    prompt = DRAFT_PROMPT.format(rung_description=rung_description, max_paragraphs=MAX_PARAGRAPHS)
+    prompt = DRAFT_PROMPT.format(rung_description=rung_description, max_paragraphs=MAX_PARAGRAPHS, max_conditions=MAX_CONDITIONS)
     return [prompt, f"CLAIM FACTS:\n{facts}", f"POLICY CLAUSES:\n{_clause_listing(clauses)}"]
 
 
