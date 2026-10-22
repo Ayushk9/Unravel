@@ -37,9 +37,10 @@ API_DIR = Path(__file__).resolve().parents[1]
 REPO = API_DIR.parents[1]
 sys.path.insert(0, str(API_DIR))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import or_, select  # noqa: E402
 
 from app.db.models import Document, Household, Policy  # noqa: E402
+from app.qa.demo_policy import EXCLUDED_FROM_EVALUATION  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.db.session import create_engine, create_session_factory  # noqa: E402
 from app.jobs.worker_process import ChildResult, run_extraction, run_in_child_process  # noqa: E402
@@ -66,7 +67,13 @@ async def ensure_policy(session_factory, settings, server: ModelServer, pdf: Pat
         if document is None:
             session.add(Document(id=EVAL_DOCUMENT, household_id=EVAL_HOUSEHOLD, file_name=pdf.name, mime_type="application/pdf",
                                  sha256=sha256, size_bytes=pdf.stat().st_size, parse_status="queued"))
-        policy_exists = await session.scalar(select(Policy.id).where(Policy.source_document_id == EVAL_DOCUMENT)) is not None
+        # The demo copy SAMPLE-0002 shares a document with the Star policy; it never counts as the evaluated policy.
+        policy_exists = await session.scalar(
+            select(Policy.id).where(
+                Policy.source_document_id == EVAL_DOCUMENT,
+                or_(Policy.policy_number.is_(None), Policy.policy_number.not_in(EXCLUDED_FROM_EVALUATION)),
+            )
+        ) is not None
 
     if not policy_exists:
         print(f"Parsing {pdf.name} with Engine A (a few minutes the first time)...")
