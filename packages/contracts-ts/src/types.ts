@@ -335,14 +335,17 @@ export interface GrievanceDraft {
   subject: string;
   addressee: string; // D-43
   header_lines: { label: string; value: string | null }[]; // D-43: null renders as "not recorded"
-  paragraphs: { text: string; citation_ids: string[]; verified: boolean }[]; // verified: false must be flagged visibly
+  // verified: false must be flagged visibly, except a "template" paragraph: our fixed procedural request (D-47),
+  // shown as template text, never as a checked claim. Unknown sources degrade to "other" and are flagged.
+  paragraphs: { text: string; citation_ids: string[]; verified: boolean; source: "model" | "template" | "other" }[];
   citations: Citation[];
   evidence_checklist: { item: string; satisfied: boolean }[];
-  citation_precision: number; // 0..1 = verified / all paragraphs; 0 with no paragraphs (missing_context says why)
+  citation_precision: number; // 0..1 = verified / all MODEL paragraphs; templates don't count (D-47)
   closing: string; // D-43
   disclaimer: string; // D-43
   letter_text: string; // D-43: the whole letter as plain text, for "Copy text"
   missing_context: string | null; // D-43: set when no argument paragraph could be drafted
+  assessment_note: string | null; // D-47: set when our rules agree with the denial; show it with the letter
   generated_at: ISODateTime; // D-43
 }
 
