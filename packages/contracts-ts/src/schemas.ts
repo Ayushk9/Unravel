@@ -311,6 +311,7 @@ export const grievanceDraftSchema = z.object({
       text: z.string(),
       citation_ids: z.array(z.string()),
       verified: z.boolean(),
+      source: z.enum(["model", "template", "other"]).catch("other"),
     }),
   ),
   citations: z.array(citationSchema),
@@ -320,6 +321,7 @@ export const grievanceDraftSchema = z.object({
   disclaimer: z.string(),
   letter_text: z.string(),
   missing_context: z.string().nullable(),
+  assessment_note: z.string().nullable(),
   generated_at: isoDateTimeSchema,
 });
 
