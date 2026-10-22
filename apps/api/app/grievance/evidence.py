@@ -9,7 +9,8 @@ Three sources, in this order:
   3. documents an eligibility check says would settle a missing fact (its
      `resolving_document`), when not already listed.
 
-An item is `satisfied` when a document of that type is attached to the claim.
+An item is `satisfied` when a document of that type is attached to the claim, or,
+for the policy wording, when the claim's policy document is uploaded.
 """
 
 from __future__ import annotations
@@ -33,8 +34,13 @@ DOCUMENT_LABELS = {
 }
 
 
-def evidence_checklist(report: CompletenessReport, was_denied: bool, checks: Sequence[CheckResult]) -> list[EvidenceItem]:
+def evidence_checklist(
+    report: CompletenessReport, was_denied: bool, checks: Sequence[CheckResult], policy_document_uploaded: bool = False
+) -> list[EvidenceItem]:
     present = set(report.present)
+    # The policy's own document is uploaded with the policy, not attached to the claim; it still counts.
+    if policy_document_uploaded:
+        present.add("policy_wording")
     wanted: list[str] = list(report.required)
     if was_denied:
         wanted.append("denial_letter")
