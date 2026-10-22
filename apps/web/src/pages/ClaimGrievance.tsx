@@ -277,7 +277,14 @@ function DraftView({ draft, onOpenCitation }: { draft: GrievanceDraft; onOpenCit
           </p>
         )}
         {draft.paragraphs.map((paragraph, index) =>
-          paragraph.source === "template" ? (
+          paragraph.source === "rules" ? (
+            // D-48: fixed text built only from our eligibility check's values, citing the clause it read. Not model output.
+            <div key={index} className="flex flex-col gap-1">
+              <span className="text-xs tracking-wide text-muted-foreground uppercase">From our eligibility checks (fixed text)</span>
+              <p>{paragraph.text}</p>
+              <CitationChips ids={paragraph.citation_ids} byId={byId} onOpenCitation={onOpenCitation} />
+            </div>
+          ) : paragraph.source === "template" ? (
             // Our fixed procedural request (D-47): no model output and no claim about the policy, so no flag and no citation.
             <div key={index} className="flex flex-col gap-1">
               <span className="text-xs tracking-wide text-muted-foreground uppercase">Standard request (template text)</span>
@@ -319,6 +326,8 @@ function DraftView({ draft, onOpenCitation }: { draft: GrievanceDraft; onOpenCit
         <p className="border-t border-rule pt-3 text-xs text-muted-foreground">{draft.disclaimer}</p>
       </article>
 
+      {draft.before_you_send.length > 0 && <BeforeYouSend notes={draft.before_you_send} byId={byId} onOpenCitation={onOpenCitation} />}
+
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -352,6 +361,69 @@ function DraftView({ draft, onOpenCitation }: { draft: GrievanceDraft; onOpenCit
           </ul>
         )}
       </section>
+    </section>
+  );
+}
+
+function CitationChips({
+  ids,
+  byId,
+  onOpenCitation,
+}: {
+  ids: string[];
+  byId: Map<string, Citation>;
+  onOpenCitation: (citation: Citation) => void;
+}) {
+  return (
+    <span className="mt-1 flex flex-wrap gap-1.5">
+      {ids.map((citationId) => {
+        const citation = byId.get(citationId);
+        if (!citation) return null;
+        return (
+          <button
+            key={citationId}
+            type="button"
+            onClick={() => onOpenCitation(citation)}
+            className="rounded-full border border-rule bg-background px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Policy, {citation.label.toLowerCase()}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
+
+/** D-48: things to check before sending. Shown here only; none of it is in the letter or in "Copy text". */
+function BeforeYouSend({
+  notes,
+  byId,
+  onOpenCitation,
+}: {
+  notes: GrievanceDraft["before_you_send"];
+  byId: Map<string, Citation>;
+  onOpenCitation: (citation: Citation) => void;
+}) {
+  return (
+    <section aria-labelledby="before-you-send-heading" className="flex flex-col gap-2 rounded border border-neutral-border bg-neutral-bg px-4 py-3">
+      <h2 id="before-you-send-heading" className="font-serif text-base font-semibold text-foreground">
+        Before you send
+      </h2>
+      <p className="text-xs text-muted-foreground">For you only. These are not in the letter.</p>
+      <ul className="flex flex-col gap-2">
+        {notes.map((note, index) => (
+          <li key={index} className="flex flex-col gap-1 text-sm">
+            {note.source !== "rules" && !note.verified && (
+              <span className="inline-flex items-start gap-1.5 text-xs font-semibold text-caution">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                We couldn't confirm this against your policy's text. Check the clause yourself.
+              </span>
+            )}
+            <span className="text-foreground">{note.text}</span>
+            {note.citation_ids.length > 0 && <CitationChips ids={note.citation_ids} byId={byId} onOpenCitation={onOpenCitation} />}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
