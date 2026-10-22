@@ -10,12 +10,14 @@ export function defaultRung(options: GrievanceRungOption[], requested: string | 
 
 /**
  * The citation-precision strip as a count, never a percentage or a gauge (product rule 2).
- * Null when there are no paragraphs: the abstention card says why instead.
+ * Null when the model wrote no paragraphs: the abstention card says why instead.
  */
 export function confirmationSummary(paragraphs: GrievanceDraft["paragraphs"]): { confirmed: number; total: number; text: string } | null {
-  const total = paragraphs.length;
+  // Only the model's paragraphs are checked against the policy; template requests assert nothing (D-47).
+  const written = paragraphs.filter((p) => p.source !== "template");
+  const total = written.length;
   if (total === 0) return null;
-  const confirmed = paragraphs.filter((p) => p.verified).length;
+  const confirmed = written.filter((p) => p.verified).length;
   const noun = total === 1 ? "paragraph" : "paragraphs";
   const text =
     confirmed === total
