@@ -34,6 +34,7 @@ const serverDraft = {
   letter_text: "To,\n...",
   missing_context: null,
   assessment_note: null,
+  before_you_send: [],
   generated_at: "2026-10-20T10:00:00+00:00",
 };
 
