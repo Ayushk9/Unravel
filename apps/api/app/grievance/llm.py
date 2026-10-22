@@ -24,18 +24,20 @@ from pydantic import BaseModel, Field
 from app.qa.llm import Answered, CallOptions, ClausePrompt, GeminiQaLlm, Verdicts
 
 # Bump when a prompt, schema or call option below changes. Stored with every draft.
-GRIEVANCE_PROMPT_VERSION = "grievance-v2"
+GRIEVANCE_PROMPT_VERSION = "grievance-v3"
 
 # Why these limits (diagnosed 2026-10-20; DECISIONS.md, Phase 7 Stage B):
 # - The draft is composition from at most 6 given clauses under strict citation
 #   rules. Some reasoning helps it choose honest grounds and keep to the rules,
 #   so LOW, not MINIMAL; unbounded thinking is what made the call run past its timeout.
 # - The judge gives one supported/unsupported verdict per pair: entailment
-#   against a single clause, which needs no deliberation. MINIMAL.
+#   against a single clause, which needs little deliberation. LOW, the lowest
+#   level gemini-3.8-flash accepts: it rejects MINIMAL with a 400 (found live,
+#   2026-10-22; DECISIONS.md).
 # - Output caps: 5 paragraphs of at most 1,200 characters is about 1,500
 #   tokens of JSON, so 2,048; a list of verdicts fits well inside 1,024.
 DRAFT_OPTIONS = CallOptions(thinking_level="LOW", max_output_tokens=2048)
-JUDGE_OPTIONS = CallOptions(thinking_level="MINIMAL", max_output_tokens=1024)
+JUDGE_OPTIONS = CallOptions(thinking_level="LOW", max_output_tokens=1024)
 
 MAX_PARAGRAPHS = 5
 
