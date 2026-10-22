@@ -1060,3 +1060,35 @@ Run with the teammate's key (ends `vHWQ`), with `scripts/diagnose_draft_call.py`
 - 2 refused with 429;
 - after the reset: 1 draft and 1 rejected judge (400), then 1 draft and 1 judge, then 1 classification.
 
+## Phase 7, 2026-10-22: the rules-built opening, a stricter prompt, "Before you send" (D-48)
+
+### Decided with Ayush
+
+- **The denial ground is the user's choice**, not read from the reason text: a new claim fact, `denial_ground` (an eligibility check id), with a dropdown in the claim facts form ("If the insurer denied this claim, which ground did it give?"). The seed sets `ped_waiting_period` for Lakshmi and Rajan.
+- **The ID-proof sample is plainly fictional:** "IDENTITY PROOF (SAMPLE) - NOT A GOVERNMENT DOCUMENT", SAMPLE-ID-0005, with no government layout, emblem or number format. Classified as `id_proof` (high).
+
+### What was built
+
+- **The opening paragraph** (`app/grievance/rules_text.py`) is fixed text from the chosen ground's check values, citing its governing clause. It is written only for the three date-counted waiting-period checks; any other ground gets none rather than improvised text.
+- **The model's prompt** (grievance-v4) only receives the checks that support the policyholder, and must not raise benefits the facts don't mention, or conditions against the policyholder, in the letter. Those go to `conditions`, which become "Before you send" notes, verified by the same judge call. Calls per draft stay at 2.
+- **The evidence checklist** ticks "Policy wording attached" when the claim's policy document is uploaded.
+- **Rajan's investigation report and identity proof** were uploaded through Ayush's server: 2 classification calls, both correct (high). His checklist is now complete.
+- **Evaluation exclusion:** `app/qa/demo_policy.EXCLUDED_FROM_EVALUATION` lists the synthetic fixture and SAMPLE-0002. `find_real_policy` and `scripts/evaluate_qa.py` use it. A test fails if any non-seed script picks a policy without going through it. **There is no extraction-accuracy script yet; when one is written it must use this list.**
+- **Web (an approved edit):**
+  - the claim facts form's ground dropdown;
+  - the grievance screen labels a rules paragraph "From our eligibility checks (fixed text)" with its citation chip, and shows a "Before you send" panel ("For you only. These are not in the letter."), with unconfirmed model notes flagged;
+  - the confirmation count ignores rules and template paragraphs;
+  - a render test covers both.
+
+### The regenerated live draft (Rajan, `grievance_draft 01a16390-8328-7fce-8b41-6b526c1b3c10`)
+
+- 2 calls on `gemini-3.8-flash` (after two 503 retries). Retrieval 25.1 s, draft 28.5 s, verification 22.4 s.
+- **The letter has one argument paragraph, the rules opening** (cover from 1 Jun 2021, 36 months, ended 1 Jun 2024, admitted 14 Jul 2026), citing page 31.
+- Under the stricter prompt **the model wrote no paragraph of its own**: it abstained and returned four conditions, all judged supported (pp. 31 and 32), shown in "Before you send" with the two rules notes. The earlier version's paragraphs about the optional buy-back and portability are gone, as asked.
+- **A bug found in this draft and fixed in code:** with the rules opening present, the draft still carried the model-abstention sentence ("…the letter has no argument paragraphs. Add your own reasons…"). That was untrue. It appears only on the screen, never in the letter. A draft with a rules opening now has no `missing_context` (tested). The stored row keeps what was produced; it was not regenerated, to save a call.
+- **Observation for review:** one condition (the 30-day initial exclusion, p32) cannot apply to cover held since 2021. It is shown but harmless. Filtering conditions by relevance would need either more model judgement or more rules; not done.
+
+**Gemini calls on the new key since the reset (12:30 IST, 22 Oct):**
+- first 1 draft and 1 rejected judge (400), then 1 draft and 1 judge, then 1 receipt classification;
+- now 2 classifications (Rajan's report and ID proof), and 1 draft and 1 judge.
+
