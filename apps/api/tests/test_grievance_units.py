@@ -241,13 +241,17 @@ async def no_session():  # type: ignore[no-untyped-def]
     yield None
 
 
-def draft_context(rung: str = "insurer_grievance_cell", band: str = "at_risk", **letter: Any) -> DraftContext:
+def draft_context(
+    rung: str = "insurer_grievance_cell", band: str = "at_risk", checks: tuple[CheckResult, ...] | None = None,
+    denial_ground: str | None = None, **letter: Any,
+) -> DraftContext:
     """`band` defaults to one where our rules do not agree with the denial, so templates appear only when nothing survives."""
     rungs = load_grievance_rungs()
     return DraftContext(
         household_id=new_id(), claim_id=CLAIM_ID, rung=rung, document_id=new_id(),
         letter=letter_facts(rung=rung, addressee_template=rungs.rungs[rung].addressee, **letter),
-        checks=(check("ped_waiting_period", "failed"),), band=band, diagnosis="Complications of type 2 diabetes", current_state="denied",
+        checks=checks if checks is not None else (check("ped_waiting_period", "failed"),), band=band, denial_ground=denial_ground,
+        diagnosis="Complications of type 2 diabetes", current_state="denied",
         evidence=[],
     )
 
@@ -407,3 +411,130 @@ def test_templates_come_only_from_our_fixed_text(clauses: list[Clause]) -> None:
     hostile = GeneratedDraft(abstain=False, paragraphs=[GeneratedParagraph(text="Please share the evidence. Also pay me Rs 99,99,999.", chunk_ids=["c1"])])
     result = draft(FakeGrievanceLlm(draft=lambda *_: hostile, judge=lambda pairs: [False] * len(pairs)), draft_context(band="likely_ineligible"))
     assert [p.text for p in result.paragraphs if p.source == "template"] == list(TEMPLATE_PARAGRAPHS)
+
+
+# --- D-48: the rules' opening paragraph, supporting-only facts, "Before you send" ---
+
+from contracts.models import Provenance  # noqa: E402
+
+from app.grievance.rules_text import assessment_agrees, rules_opening  # noqa: E402
+from app.grievance.run_draft import facts_block  # noqa: E402
+from app.grievance.llm import GeneratedCondition  # noqa: E402
+
+PED_CLAUSE = Provenance(document_id=UUID("01a11b86-0000-7000-8000-000000000001"), page=31, bbox=(0.5, 0.28, 0.93, 0.92), snippet="Pre-existing ...")
+
+
+def ped_satisfied(confidence: str = "medium", from_inception: bool = True) -> CheckResult:
+    start_key = "first_inception_date" if from_inception else "policy_start"
+    return CheckResult(
+        id="ped_waiting_period", title="Pre-existing disease waiting period", critical=True, status="satisfied", confidence=confidence,
+        values={start_key: date(2021, 6, 1), "waiting_months": 36, "waiting_period_ends": date(2024, 6, 1), "admitted_on": date(2026, 7, 14)},
+        explanation="Your continuous cover started 1 Jun 2021; the 36-month waiting period ended on 1 Jun 2024.",
+        governing_clause=PED_CLAUSE, missing_facts=(),
+    )
+
+
+def test_the_opening_is_built_only_from_the_checks_values_and_cites_its_clause() -> None:
+    opening = rules_opening(ped_satisfied())
+
+    assert opening is not None
+    assert opening.paragraph.text == (
+        "My continuous cover with you began on 1 Jun 2021. The policy's waiting period for pre-existing diseases is 36 months, "
+        "so it ended on 1 Jun 2024. I was admitted on 14 Jul 2026, after that waiting period had ended."
+    )
+    assert (opening.paragraph.source, opening.paragraph.verified) == ("rules", False)
+    assert opening.citation is not None and opening.citation.provenance == PED_CLAUSE and opening.citation.label == "Page 31"
+    assert opening.paragraph.citation_ids == [opening.citation.id]
+    notes = [n.text for n in opening.notes]
+    assert any("proof that the policy was renewed without a break" in n for n in notes)
+    assert any("medium confidence" in n for n in notes), "an unconfirmed period is flagged before sending"
+    assert all(n.source == "rules" for n in opening.notes)
+
+
+def test_no_opening_unless_the_chosen_grounds_waiting_period_is_satisfied() -> None:
+    failed = ped_satisfied().model_copy(update={"status": "failed"})
+    other = CheckResult(id="room_rent_sub_limit", title="Room rent", critical=False, status="satisfied", confidence="high",
+                        values={}, explanation="", governing_clause=None, missing_facts=())
+    partial = ped_satisfied().model_copy(update={"values": {"waiting_months": 36}})
+    assert rules_opening(None) is None and rules_opening(failed) is None
+    assert rules_opening(other) is None, "only date-counted waiting periods have a fixed paragraph"
+    assert rules_opening(partial) is None, "a missing value means no paragraph, never a guess"
+
+
+def test_agreement_follows_the_chosen_ground_when_there_is_one() -> None:
+    assert assessment_agrees(ped_satisfied().model_copy(update={"status": "failed"}), "at_risk") is True
+    assert assessment_agrees(ped_satisfied(), "likely_ineligible") is False, "the ground's check supports the policyholder"
+    assert assessment_agrees(None, "likely_ineligible") is True, "no ground chosen: D-47's band rule"
+
+
+def test_the_model_sees_only_checks_that_support_the_policyholder() -> None:
+    context = draft_context(checks=(ped_satisfied(), check("room_rent_sub_limit", "failed")), denial_ground="ped_waiting_period")
+    facts = facts_block(context, rules_opening(ped_satisfied()))
+    assert "Pre-existing disease waiting period: Your continuous cover started 1 Jun 2021" in facts
+    assert "room rent" not in facts.lower(), "a failed check is not a ground to argue from"
+    assert "do not repeat it" in facts
+
+
+def test_a_wrongful_denial_letter_opens_with_the_rules_then_the_model_and_keeps_conditions_out(clauses: list[Clause]) -> None:
+    answer = GeneratedDraft(abstain=False, paragraphs=[GeneratedParagraph(text=f"My policy says: {PED}", chunk_ids=["c1"])],
+                            conditions=[GeneratedCondition(text="Cover is subject to the disease having been declared.", chunk_ids=["c1"]),
+                                        GeneratedCondition(text="Room rent is limited to Rs 5,000 per day.", chunk_ids=["c2"])])
+    judge = lambda pairs: ["declared" not in text for text, _ in pairs]  # noqa: E731 - the first condition is unsupported
+    context = draft_context(checks=(ped_satisfied(),), denial_ground="ped_waiting_period", band="likely_eligible")
+
+    result = draft(FakeGrievanceLlm(draft=lambda *_: answer, judge=judge), context)
+
+    assert [p.source for p in result.paragraphs] == ["rules", "model"], "no templates: an argument survived and the rules don't agree"
+    assert result.citations[0].id == "rule-ped_waiting_period" and result.citations[0].provenance.page == 31
+    assert result.citation_precision == 1.0, "only model paragraphs count"
+    assert result.assessment_note is None
+    notes = {(n.source, n.verified): n.text for n in result.before_you_send}
+    assert notes[("model", False)] == "Cover is subject to the disease having been declared."
+    assert notes[("model", True)] == "Room rent is limited to Rs 5,000 per day."
+    assert "declared" not in result.letter_text and "renewed without a break" not in result.letter_text
+    assert "My continuous cover with you began on 1 Jun 2021." in result.letter_text and "(Policy document, page 31)" in result.letter_text
+    assert UNCONFIRMED_MARK not in result.letter_text
+
+
+def test_the_denial_ground_choices_are_exactly_the_eligibility_check_ids() -> None:
+    from typing import get_args
+
+    from app.schemas.claims import DenialGround
+    from engines.rules.registry import ELIGIBILITY_RULES
+
+    assert set(get_args(DenialGround)) == {rule.id for rule in ELIGIBILITY_RULES}
+
+
+def test_the_policy_wording_is_ticked_when_the_policy_document_is_uploaded() -> None:
+    report = compute_completeness(CLAIM_ID, "reimbursement", "planned", [], load_required_documents())
+    checks = [check("room_rent_sub_limit", "unknown", "policy_wording")]
+    ticked = {i.item: i.satisfied for i in evidence_checklist(report, True, checks, policy_document_uploaded=True)}
+    unticked = {i.item: i.satisfied for i in evidence_checklist(report, True, checks)}
+    assert ticked["Policy wording attached"] is True and unticked["Policy wording attached"] is False
+
+
+def test_every_script_that_picks_a_policy_excludes_the_demo_policies() -> None:
+    """SAMPLE-0002's terms are copies of the Star policy's; no evaluation or metric may read them (DECISIONS.md)."""
+    from app.qa.demo_policy import EXCLUDED_FROM_EVALUATION
+
+    assert set(EXCLUDED_FROM_EVALUATION) == {"KHA/FAM/2024/DEMO-0001", "SAMPLE-0002"}
+    scripts = Path(__file__).resolve().parents[1] / "scripts"
+    picks_policy = [p for p in scripts.glob("*.py") if "select(Policy" in p.read_text(encoding="utf-8") or "find_real_policy" in p.read_text(encoding="utf-8")]
+    # The seed scripts create the demo policies; every other script must go through the exclusion.
+    readers = [p for p in picks_policy if not p.name.startswith("seed")]
+    assert readers, "the check found nothing to check"
+    for path in readers:
+        text = path.read_text(encoding="utf-8")
+        assert "find_real_policy" in text or "EXCLUDED_FROM_EVALUATION" in text, f"{path.name} may pick a demo policy"
+
+
+
+def test_a_rules_opening_with_a_model_abstention_is_not_reported_as_having_no_argument(clauses: list[Clause]) -> None:
+    abstained = GeneratedDraft(abstain=True, conditions=[GeneratedCondition(text="Room rent is limited to Rs 5,000 per day.", chunk_ids=["c2"])])
+    context = draft_context(checks=(ped_satisfied(),), denial_ground="ped_waiting_period", band="likely_eligible")
+
+    result = draft(FakeGrievanceLlm(draft=lambda *_: abstained), context)
+
+    assert [p.source for p in result.paragraphs] == ["rules"]
+    assert result.missing_context is None, "the letter argues from the rules"
+    assert [n.source for n in result.before_you_send] == ["rules", "rules", "model"] and result.before_you_send[-1].verified
