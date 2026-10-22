@@ -1024,3 +1024,27 @@ Run with the teammate's key (ends `vHWQ`), with `scripts/diagnose_draft_call.py`
 
 **Gemini calls on the new key so far:** 4 generate (3 diagnostic, 1 draft) and 3 `count_tokens` (a separate quota).
 
+## Phase 7 decisions, Stage B continued (2026-10-22): sample uploads, procedural requests, a wrongful denial
+
+### Sample documents attached (the normal upload flow, classifier live)
+
+- **15 documents** were uploaded through `POST /documents` to Ayush's restarted server with `scripts/upload_sample_documents.py`. All 15 were classified correctly with high confidence (discharge summary, itemised bill, payment receipt, denial letter), using **15 Gemini calls**.
+- **Rajan's 4 documents** (claim 5, below): the denial letter, discharge summary and bill classified correctly. The **payment receipt failed** (`classify_failed`, retryable). It was the 19th classification call of that quota day; the next Gemini calls minutes later got 429 RESOURCE_EXHAUSTED on both models. The receipt is attached but has no type, so his claim also lists `payment_receipt` as missing.
+
+### D-47: fixed procedural requests (approved by Ayush)
+
+- See `API_DECISIONS.md` D-47.
+- **What "our assessment agrees" means:** the band is `likely_ineligible`. The denial reason is the user's free text and is never keyword-matched, so agreement is with the claim being ineligible, not a matched reading of the insurer's words. If reversed (match the reason to a check), a reason-to-check mapping chosen by the user would be needed.
+- **Model paragraphs are kept** when the templates are added. In the "our rules agree" case the model has so far abstained, so in practice the letter is all template text. If it ever argues while the note says "does not dispute it", the two would conflict; flagged here rather than silently dropping verified text.
+- **Template paragraphs carry `verified: false`**, so a client that doesn't know `source` flags them rather than presenting them as checked.
+- **Web:** template paragraphs are labelled "Standard request (template text)" with no unconfirmed flag; the note is shown above the letter; the "N of M confirmed" strip counts model paragraphs only. The MSW mock sends `source` and `assessment_note`.
+
+### A fifth demo claim: a wrongful PED denial (Ayush chose a second sample policy)
+
+- **Why a second policy:** the Star policy's first inception is 1 Nov 2024, so its 36-month PED period ends 1 Nov 2027, after today. No admission on it can yet be outside the period.
+- **SAMPLE-0002** (`01920000-…-0000000000a2`): a new policy row on the same Star wording document, with a **copy of the Star policy's extracted terms** (values, provenance, user confirmations). Its user-entered details were set through the PATCH code: Star Health and Allied Insurance Co. Ltd., Star Comprehensive Insurance Policy, start 1 Jan 2026, end 31 Dec 2026, first inception 1 Jun 2021.
+  - **Its terms are copies and are not extraction-accuracy data.** Any accuracy count must exclude SAMPLE-0002.
+  - `app/qa/demo_policy.find_real_policy` excludes it, so the Q&A scripts keep using the uploaded Star policy.
+- **Rajan Rao** (a fictional member, `…000015`, created by the seed): planned admission 14 Jul 2026 to 18 Jul 2026, Rs 2,40,000, hypertensive heart disease, first diagnosed 10 Apr 2019 (pre-existing). Denied 20 Aug 2026 with "Denied as a pre-existing disease within the waiting period".
+- **Eligibility (live, through the server):** `likely_eligible`. PED satisfied ("Your continuous cover started 1 Jun 2021; the 36-month waiting period ended on 1 Jun 2024"); room rent and sum-insured checks are unknown (not extracted for this policy).
+
