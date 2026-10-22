@@ -543,6 +543,19 @@ Extends D-39 and amends D-25. `PATCH /api/v1/policies/{id}` also accepts `insure
 *Ratified:* 2026-10-20. Additive.
 *Revisit:* when Engine A extracts these fields from a schedule (they then become `Extracted[T]`, D-25's revisit).
 
+### D-47 · Fixed procedural requests in a grievance draft
+Extends D-43. Approved by Ayush, 2026-10-22.
+
+- `DraftParagraph` gains `source`: `"model"` (written by the model and checked, as before) or `"template"` (our fixed text, no model output), with `"other"` as the escape hatch (D-06).
+- `GrievanceDraft` gains `assessment_note: string | null`.
+- **When:** if no model paragraph survived verification (none written, all unverified, nothing retrieved), or our rules agree with the denial, three fixed requests are added after the model's paragraphs. They ask the insurer to (a) state the exact clause relied on, (b) share the evidence used, and (c) give a written, reasoned decision.
+- A template paragraph has `citation_ids: []` and `verified: false`: it is a request, not a claim, and nothing was checked. Clients show it as template text, not as an unconfirmed claim. A client that doesn't know `source` falls back to flagging it, which is the safe failure. `letter_text` doesn't mark it.
+- `citation_precision` counts **model** paragraphs only.
+- **"Our rules agree"** means the eligibility band is `likely_ineligible` (a check failed with high confidence, D-36). The recorded denial reason is free text and is never keyword-matched. So this can't confirm that the failed check is the very ground the insurer named; it says our assessment also finds the claim likely ineligible.
+- Then `assessment_note` is exactly "Our assessment agrees with the insurer's stated reason. This letter asks the insurer to explain its decision; it does not dispute it.", and clients show it with the letter. The subject becomes "Request for an explanation of the denial …" and the closing asks for a written reply to each point instead of a review. Otherwise `assessment_note` is `null`.
+
+*Ratified:* 2026-10-22. Additive.
+
 ---
 
 ## 5. Pagination
