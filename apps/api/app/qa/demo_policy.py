@@ -18,6 +18,10 @@ from app.db.models import Policy
 
 DEV_HOUSEHOLD = UUID("01920000-0000-7000-8000-000000000001")  # scripts/seed.py
 SYNTHETIC_FIXTURE_NUMBER = "KHA/FAM/2024/DEMO-0001"  # scripts/seed_demo_claims.py
+# A demo COPY of the Star policy's row and terms (same document), made only for the wrongful-denial
+# claim (scripts/seed_demo_claims.py). Not the uploaded policy, so never chosen here.
+DEMO_COPY_NUMBER = "SAMPLE-0002"
+NOT_REAL = (SYNTHETIC_FIXTURE_NUMBER, DEMO_COPY_NUMBER)
 
 
 async def find_real_policy(session: AsyncSession, policy_id: UUID | None = None) -> Policy:
@@ -27,7 +31,7 @@ async def find_real_policy(session: AsyncSession, policy_id: UUID | None = None)
         policy = await session.scalar(
             select(Policy)
             .where(Policy.household_id == DEV_HOUSEHOLD,
-                   or_(Policy.policy_number.is_(None), Policy.policy_number != SYNTHETIC_FIXTURE_NUMBER))
+                   or_(Policy.policy_number.is_(None), Policy.policy_number.not_in(NOT_REAL)))
             .order_by(Policy.id.desc())
             .limit(1)
         )
@@ -35,4 +39,6 @@ async def find_real_policy(session: AsyncSession, policy_id: UUID | None = None)
         raise SystemExit("No real policy found in the dev household. Upload one, or pass a policy id.")
     if policy.policy_number == SYNTHETIC_FIXTURE_NUMBER:
         raise SystemExit("That is the synthetic test fixture; it is kept out of the demo and metrics. Choose a real policy.")
+    if policy.policy_number == DEMO_COPY_NUMBER:
+        raise SystemExit("That is a demo copy of the Star policy (SAMPLE-0002); it is kept out of metrics. Choose the uploaded policy.")
     return policy
