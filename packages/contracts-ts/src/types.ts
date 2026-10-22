@@ -313,7 +313,21 @@ export interface ClaimFacts {
   matched_waiting_periods: number[] | null; // positions in coverage_profile.waiting_periods (disease_specific only)
   matched_exclusions: number[] | null; // positions in coverage_profile.exclusions
   planned_room_rent_per_day: Paise | null;
+  // D-48: the insurer's denial ground, as the user chooses it: an eligibility check id. null = not answered.
+  // Never read from the free-text note on the denial event.
+  denial_ground: DenialGround | null;
 }
+
+// D-48: the eligibility check ids (the same tags as Ombudsman award grounds, D-45).
+export type DenialGround =
+  | "coverage_profile"
+  | "initial_waiting_period"
+  | "ped_waiting_period"
+  | "disease_specific_waiting_period"
+  | "permanent_exclusions"
+  | "room_rent_sub_limit"
+  | "claim_intimation"
+  | "sum_insured_adequacy";
 
 // --- Engine C: grounded generation ---
 export interface Citation {
@@ -335,9 +349,9 @@ export interface GrievanceDraft {
   subject: string;
   addressee: string; // D-43
   header_lines: { label: string; value: string | null }[]; // D-43: null renders as "not recorded"
-  // verified: false must be flagged visibly, except a "template" paragraph: our fixed procedural request (D-47),
-  // shown as template text, never as a checked claim. Unknown sources degrade to "other" and are flagged.
-  paragraphs: { text: string; citation_ids: string[]; verified: boolean; source: "model" | "template" | "other" }[];
+  // verified: false must be flagged visibly, except fixed text: a "template" request (D-47) or a "rules"
+  // paragraph built from an eligibility check's values (D-48). Unknown sources degrade to "other" and are flagged.
+  paragraphs: { text: string; citation_ids: string[]; verified: boolean; source: "model" | "rules" | "template" | "other" }[];
   citations: Citation[];
   evidence_checklist: { item: string; satisfied: boolean }[];
   citation_precision: number; // 0..1 = verified / all MODEL paragraphs; templates don't count (D-47)
@@ -346,6 +360,9 @@ export interface GrievanceDraft {
   letter_text: string; // D-43: the whole letter as plain text, for "Copy text"
   missing_context: string | null; // D-43: set when no argument paragraph could be drafted
   assessment_note: string | null; // D-47: set when our rules agree with the denial; show it with the letter
+  // D-48: shown on the screen as "Before you send", NEVER part of the letter. "model" notes are conditions
+  // found in cited clauses, checked like paragraphs (flag verified: false); "rules" notes come from the rules.
+  before_you_send: { text: string; citation_ids: string[]; source: "model" | "rules" | "other"; verified: boolean }[];
   generated_at: ISODateTime; // D-43
 }
 
