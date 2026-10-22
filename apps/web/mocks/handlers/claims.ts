@@ -55,11 +55,13 @@ db.registerJobResolver("generate_grievance_draft", (params): GrievanceDraft => {
       text: "I ask you to point me to the exact clause of my policy that the decision relies on, and to explain how it applies to this admission.",
       citation_ids: pedCheck ? ["cite-policy"] : [],
       verified: Boolean(pedCheck),
+      source: "model" as const,
     },
     {
       text: "My policy covers this treatment in full regardless of any waiting period.",
       citation_ids: pedCheck ? ["cite-policy"] : [],
       verified: false,
+      source: "model" as const,
     },
   ];
   const subject = `Request to review the denial of a health insurance claim: ${claim?.hospital_name ?? "the hospital"}`;
@@ -95,6 +97,7 @@ db.registerJobResolver("generate_grievance_draft", (params): GrievanceDraft => {
     disclaimer: MOCK_DISCLAIMER,
     letter_text,
     missing_context: null,
+    assessment_note: null,
     generated_at: new Date().toISOString(),
   };
 });
