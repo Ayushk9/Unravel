@@ -5,7 +5,8 @@ Run from apps/api (no database, no network, no model):
 
 Writes apps/api/sample_documents/<member>/<type>.pdf: a discharge summary, a
 final hospital bill, a payment receipt and an insurer denial letter for each
-of the five claims in scripts/seed_demo_claims.py, using that claim's own dates, amounts,
+of the five claims in scripts/seed_demo_claims.py (Rajan's claim also gets an
+investigation report and a plainly fictional identity proof), using that claim's own dates, amounts,
 hospital and diagnosis. Ishaan's payment receipt is deliberately left out, so
 his claim still has a required document missing.
 
@@ -166,12 +167,47 @@ def denial_letter(claim: DemoClaim) -> list[str]:
     ]
 
 
+def investigation_report(claim: DemoClaim) -> list[str]:
+    return [
+        *hospital_header(claim, "INVESTIGATION REPORT"),
+        f"Patient name: {patient(claim)}",
+        f"Date of tests: {day(claim.admitted_on)}",
+        "",
+        "Test                              Result                     Note",
+        "Electrocardiogram (ECG)           Left ventricular strain    Sample finding",
+        "2D echocardiogram                 Concentric LV hypertrophy  Sample finding",
+        "Blood pressure on admission       172/104 mmHg               Sample value",
+        "Lipid profile                     Within reference range     Sample value",
+        "",
+        f"Impression: findings consistent with {claim.facts['diagnosis'].lower()}.",
+        "",
+        f"Reported by: {DOCTOR}",
+    ]
+
+
+def identity_proof(claim: DemoClaim) -> list[str]:
+    """Plainly fictional: no government ID's layout, emblem or number format (Ayush's choice)."""
+    return [
+        "IDENTITY PROOF (SAMPLE) - NOT A GOVERNMENT DOCUMENT",
+        "",
+        f"Name: {patient(claim)}",
+        f"Date of birth: {day(date(1958, 3, 10))}",
+        "Sample identity number: SAMPLE-ID-0005",
+        "",
+        "This page stands in for an identity document in a demonstration.",
+        "It is not issued by any authority and identifies no real person.",
+    ]
+
+
 DOCUMENTS = {
     "discharge_summary": discharge_summary,
     "final_hospital_bill": final_bill,
     "payment_receipt": payment_receipt,
     "denial_letter": denial_letter,
 }
+# Made for Rajan's claim only (2026-10-22), so his evidence checklist can be complete.
+ONLY_FOR = {"investigation_report": {"Rajan"}, "identity_proof": {"Rajan"}}
+DOCUMENTS |= {"investigation_report": investigation_report, "identity_proof": identity_proof}
 # Left out so the missing-documents list still has something to show.
 LEFT_OUT = {("Ishaan", "payment_receipt")}
 
@@ -183,6 +219,8 @@ def main() -> None:
         folder.mkdir(parents=True, exist_ok=True)
         for name, build in DOCUMENTS.items():
             path = folder / f"{name}.pdf"
+            if name in ONLY_FOR and claim.member not in ONLY_FOR[name]:
+                continue
             if (claim.member, name) in LEFT_OUT:
                 path.unlink(missing_ok=True)
                 print(f"  left out  {path.relative_to(OUT_DIR.parent)}")
