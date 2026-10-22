@@ -1029,7 +1029,7 @@ Run with the teammate's key (ends `vHWQ`), with `scripts/diagnose_draft_call.py`
 ### Sample documents attached (the normal upload flow, classifier live)
 
 - **15 documents** were uploaded through `POST /documents` to Ayush's restarted server with `scripts/upload_sample_documents.py`. All 15 were classified correctly with high confidence (discharge summary, itemised bill, payment receipt, denial letter), using **15 Gemini calls**.
-- **Rajan's 4 documents** (claim 5, below): the denial letter, discharge summary and bill classified correctly. The **payment receipt failed** (`classify_failed`, retryable). It was the 19th classification call of that quota day; the next Gemini calls minutes later got 429 RESOURCE_EXHAUSTED on both models. The receipt is attached but has no type, so his claim also lists `payment_receipt` as missing.
+- **Rajan's 4 documents** (claim 5, below): the denial letter, discharge summary and bill classified correctly. The **payment receipt failed** at first (`classify_failed`, retryable). It was the 19th classification call of that quota day; the next Gemini calls minutes later got 429 RESOURCE_EXHAUSTED on both models. After the quota reset, `upload_sample_documents.py` (which now soft-deletes a document whose classification failed and uploads it again under a new key) classified it as `payment_receipt` (high), using 1 call. Rajan's claim is missing only the investigation report and ID proof, like the others.
 
 ### D-47: fixed procedural requests (approved by Ayush)
 
@@ -1047,4 +1047,16 @@ Run with the teammate's key (ends `vHWQ`), with `scripts/diagnose_draft_call.py`
   - `app/qa/demo_policy.find_real_policy` excludes it, so the Q&A scripts keep using the uploaded Star policy.
 - **Rajan Rao** (a fictional member, `…000015`, created by the seed): planned admission 14 Jul 2026 to 18 Jul 2026, Rs 2,40,000, hypertensive heart disease, first diagnosed 10 Apr 2019 (pre-existing). Denied 20 Aug 2026 with "Denied as a pre-existing disease within the waiting period".
 - **Eligibility (live, through the server):** `likely_eligible`. PED satisfied ("Your continuous cover started 1 Jun 2021; the 36-month waiting period ended on 1 Jun 2024"); room rent and sum-insured checks are unknown (not extracted for this policy).
+
+### The live wrongful-denial draft (Rajan, insurer_grievance_cell)
+
+- **A bug found live:** `gemini-3.8-flash` rejects `thinking_level=MINIMAL` with 400 INVALID_ARGUMENT. The first attempt's draft call succeeded (after two 503 retries), then the judge call failed on this. The fake-client test could not see it. **The judge now uses LOW**, the lowest level the model accepts. `GRIEVANCE_PROMPT_VERSION` is `grievance-v3`.
+- **Second attempt:** `grievance_draft` `01a16271-1416-7e69-ae6e-8006e01b4678`. Timings: retrieval 13.8 s, draft 24.3 s, verification 13.5 s. Both calls were answered by `gemini-3.8-flash`, after one 503 retry.
+- **Three model paragraphs, all verified (citation precision 1.00)**, citing pages 31 (PED clause: continuous cover and the waiting period), 30 (the optional buy-back reducing the PED period) and 41 (portability credits). The third paragraph had cited two clauses; the judge rejected one and only the supported citation was kept. No template paragraphs were added (one survived, and the rules do not agree with the denial).
+- **Observation for review:** the paragraphs ask the insurer to clarify and reconsider. None states the strongest fact, that the 36-month period counted from first inception (1 Jun 2021) ended on 1 Jun 2024, because the prompt forbids dates in paragraphs (the header carries the facts). If Ayush wants the letter to say so, it should be a deterministic sentence built from the eligibility check's values, not model text.
+
+**Gemini calls on the new key, 2026-10-22:**
+- 19 classifications before the reset (18 succeeded; the 19th failed);
+- 2 refused with 429;
+- after the reset: 1 draft and 1 rejected judge (400), then 1 draft and 1 judge, then 1 classification.
 
