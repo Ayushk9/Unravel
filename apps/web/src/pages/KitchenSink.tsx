@@ -325,6 +325,7 @@ const sampleClaim: Claim = {
     matched_waiting_periods: [],
     matched_exclusions: [],
     planned_room_rent_per_day: null,
+    denial_ground: null,
   },
 };
 
