@@ -38,7 +38,17 @@ from app.core.ids import new_id
 from app.db.models import ClaimEvent, Document, Job, Member, Policy
 from app.db.models import GrievanceDraft as GrievanceDraftRow
 from app.grievance.evidence import enclosures, evidence_checklist
-from app.grievance.letter import DISCLAIMER, LetterFacts, addressee, closing, header_lines, render_letter_text, subject
+from app.grievance.letter import (
+    ASSESSMENT_AGREES,
+    DISCLAIMER,
+    LetterFacts,
+    addressee,
+    closing,
+    header_lines,
+    render_letter_text,
+    subject,
+    template_paragraphs,
+)
 from app.grievance.llm import GRIEVANCE_PROMPT_VERSION, RUNG_DESCRIPTIONS, GrievanceLlm, generated_draft_problems
 from app.jobs.parse_document import JobFailure
 from app.jobs.queue import ClaimedJob, SessionFactory, set_progress
@@ -90,6 +100,8 @@ class DraftContext:
     document_id: UUID
     letter: LetterFacts
     checks: tuple[CheckResult, ...]
+    # The eligibility band (D-36). "likely_ineligible" means our rules agree with a denial (D-47).
+    band: str
     diagnosis: str | None
     current_state: str
     evidence: list[EvidenceItem]
@@ -103,10 +115,22 @@ class DraftOutcome:
 
 
 def citation_precision(paragraphs: list[DraftParagraph]) -> float:
-    """Verified paragraphs / all paragraphs. 0 when there are none (the draft then says why in missing_context)."""
-    if not paragraphs:
+    """Verified model paragraphs / all model paragraphs. 0 when there are none. Template paragraphs don't count (D-47)."""
+    written = [p for p in paragraphs if p.source == "model"]
+    if not written:
         return 0.0
-    return sum(1 for p in paragraphs if p.verified) / len(paragraphs)
+    return sum(1 for p in written if p.verified) / len(written)
+
+
+def assessment_agrees(band: str) -> bool:
+    """Our rules agree with the denial: a check failed with high confidence (D-36's likely_ineligible band).
+
+    The denial reason is the user's free text, and no keyword matching is
+    done on it, so this cannot confirm that the failed check is the very
+    ground the insurer named; it says our assessment also finds the claim
+    likely ineligible (DECISIONS.md, D-47).
+    """
+    return band == "likely_ineligible"
 
 
 def search_queries(denial_reason: str | None, checks: tuple[CheckResult, ...]) -> list[str]:
@@ -186,6 +210,7 @@ async def load_context(session_factory: SessionFactory, household_id: UUID, clai
         document_id=document.id,
         letter=letter,
         checks=assessment.checks,
+        band=assessment.band,
         diagnosis=claim.diagnosis,
         current_state=events[-1].to_state if events else "unknown",
         evidence=evidence_checklist(report, last_denied is not None, assessment.checks),
@@ -193,15 +218,22 @@ async def load_context(session_factory: SessionFactory, household_id: UUID, clai
 
 
 def assemble_draft(
-    context: DraftContext, paragraphs: list[DraftParagraph], citations: list[Citation], missing_context: str | None, now: datetime
+    context: DraftContext, written: list[DraftParagraph], citations: list[Citation], missing_context: str | None, now: datetime
 ) -> GrievanceDraft:
-    """The whole draft. Only `paragraphs[].text` came from the model; every other field is built here."""
-    closing_text = closing(context.rung, enclosures(context.evidence))
+    """The whole draft. Only `written[].text` came from the model; every other field is built here.
+
+    D-47: when no model paragraph survived verification, or our rules agree with
+    the denial, the fixed procedural requests are added after the model's paragraphs.
+    """
+    agrees = assessment_agrees(context.band)
+    survived = any(p.verified for p in written)
+    paragraphs = written + template_paragraphs() if agrees or not survived else written
+    closing_text = closing(context.rung, enclosures(context.evidence), asks_for_explanation=agrees)
     return GrievanceDraft(
         id=new_id(),
         claim_id=context.claim_id,
         rung=context.rung,
-        subject=subject(context.letter),
+        subject=subject(context.letter, asks_for_explanation=agrees),
         addressee=addressee(context.letter),
         header_lines=header_lines(context.letter),
         paragraphs=paragraphs,
@@ -210,8 +242,9 @@ def assemble_draft(
         citation_precision=citation_precision(paragraphs),
         closing=closing_text,
         disclaimer=DISCLAIMER,
-        letter_text=render_letter_text(context.letter, paragraphs, citations, closing_text),
+        letter_text=render_letter_text(context.letter, paragraphs, citations, closing_text, asks_for_explanation=agrees),
         missing_context=missing_context,
+        assessment_note=ASSESSMENT_AGREES if agrees else None,
         generated_at=now,
     )
 
@@ -287,7 +320,9 @@ async def draft_letter(
         # unverified one keeps all it cited, so the user can check them.
         shorts = outcome.chunk_ids if isinstance(outcome, Sentence) else sentence.chunk_ids
         cited_order += [s for s in shorts if s not in cited_order]
-        paragraphs.append(DraftParagraph(text=sentence.text, citation_ids=[str(by_short_id[s].id) for s in shorts], verified=verified))
+        paragraphs.append(
+            DraftParagraph(text=sentence.text, citation_ids=[str(by_short_id[s].id) for s in shorts], verified=verified, source="model")
+        )
     record["verification"] = {
         "paragraphs": [
             {"verified": not isinstance(o, Removed), "reason": o.reason if isinstance(o, Removed) else None,
