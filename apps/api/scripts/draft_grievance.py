@@ -72,12 +72,18 @@ async def main(claim_id: UUID, rung: str) -> None:
     draft = outcome.result
     print("\nLETTER\n" + "=" * 72 + f"\n{draft.letter_text}\n" + "=" * 72)
     print("\nPARAGRAPHS")
-    # An abstained draft (no clauses, or no honest ground) has no verification record and no paragraphs.
-    checks = (outcome.record["verification"] or {}).get("paragraphs", [])
-    for index, (paragraph, check) in enumerate(zip(draft.paragraphs, checks, strict=True), 1):
-        pages = sorted({c.provenance.page for c in draft.citations if c.id in paragraph.citation_ids and c.provenance})
-        print(f"  {index}. verified={paragraph.verified} pages={pages} reason={check['reason']} {check['detail'] or ''}")
-    print(f"  citation_precision={draft.citation_precision:.2f} missing_context={draft.missing_context}")
+    by_id = {c.id: c for c in draft.citations}
+    for index, paragraph in enumerate(draft.paragraphs, 1):
+        cited = [f"p{by_id[i].provenance.page}" for i in paragraph.citation_ids if i in by_id and by_id[i].provenance]
+        print(f"  {index}. source={paragraph.source} verified={paragraph.verified} cites={cited}: {paragraph.text[:90]}...")
+    # Why each model text passed or failed (paragraphs and conditions, in that order).
+    for check in (outcome.record["verification"] or {}).get("paragraphs", []):
+        print(f"     check: {check.get('kind', 'paragraph')} verified={check['verified']} reason={check['reason']} {check['detail'] or ''}")
+    print(f"  citation_precision={draft.citation_precision:.2f} assessment_note={draft.assessment_note} missing_context={draft.missing_context}")
+    print("\nBEFORE YOU SEND (screen only, not in the letter)")
+    for note in draft.before_you_send:
+        cited = [f"p{by_id[i].provenance.page}" for i in note.citation_ids if i in by_id and by_id[i].provenance]
+        print(f"  - [{note.source}, verified={note.verified}, cites={cited}] {note.text}")
     print("\nEVIDENCE CHECKLIST")
     for item in draft.evidence_checklist:
         print(f"  [{'x' if item.satisfied else ' '}] {item.item}")
