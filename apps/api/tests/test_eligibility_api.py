@@ -23,6 +23,7 @@ FACTS_NONE = {
     "matched_waiting_periods": None,
     "matched_exclusions": None,
     "planned_room_rent_per_day": None,
+    "denial_ground": None,
 }
 
 
@@ -201,3 +202,16 @@ def test_alerts_are_computed_for_the_households_policies(world: SimpleNamespace)
     for alert in alerts:
         assert set(alert) == {"id", "policy_id", "kind", "severity", "title", "explanation", "suggested_action", "reference_source", "triggers_on", "verified", "provenance"}
         assert alert["policy_id"] == world.policy_id
+
+
+
+def test_the_denial_ground_is_the_users_choice_of_a_check_and_may_be_left_out(world: SimpleNamespace) -> None:
+    claim_id = _claim(world)
+
+    chosen = _facts(world, claim_id, denial_ground="ped_waiting_period")
+    unknown = _facts(world, claim_id, denial_ground="pre-existing disease")
+    older_client = world.api.request("PUT", f"/claims/{claim_id}/facts", json={k: v for k, v in FACTS_NONE.items() if k != "denial_ground"})
+
+    assert chosen.status_code == 200 and chosen.json()["facts"]["denial_ground"] == "ped_waiting_period"
+    assert unknown.status_code == 422, "only an eligibility check id; free text is never read as a ground"
+    assert older_client.status_code == 200 and older_client.json()["facts"]["denial_ground"] is None, "D-37 full replacement"
