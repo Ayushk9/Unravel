@@ -267,6 +267,21 @@ export const claimFactsSchema = z.object({
   matched_waiting_periods: z.array(z.number().int()).nullable(),
   matched_exclusions: z.array(z.number().int()).nullable(),
   planned_room_rent_per_day: z.number().int().nullable(),
+  // D-48. Absent from a server older than D-48: read as not answered. An unknown id is dropped to null.
+  denial_ground: z
+    .enum([
+      "coverage_profile",
+      "initial_waiting_period",
+      "ped_waiting_period",
+      "disease_specific_waiting_period",
+      "permanent_exclusions",
+      "room_rent_sub_limit",
+      "claim_intimation",
+      "sum_insured_adequacy",
+    ])
+    .nullable()
+    .catch(null)
+    .default(null),
 });
 
 export const claimSchema = z.object({
@@ -311,7 +326,7 @@ export const grievanceDraftSchema = z.object({
       text: z.string(),
       citation_ids: z.array(z.string()),
       verified: z.boolean(),
-      source: z.enum(["model", "template", "other"]).catch("other"),
+      source: z.enum(["model", "rules", "template", "other"]).catch("other"),
     }),
   ),
   citations: z.array(citationSchema),
@@ -322,6 +337,14 @@ export const grievanceDraftSchema = z.object({
   letter_text: z.string(),
   missing_context: z.string().nullable(),
   assessment_note: z.string().nullable(),
+  before_you_send: z.array(
+    z.object({
+      text: z.string(),
+      citation_ids: z.array(z.string()),
+      source: z.enum(["model", "rules", "other"]).catch("other"),
+      verified: z.boolean(),
+    }),
+  ),
   generated_at: isoDateTimeSchema,
 });
 
