@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { z } from "zod";
@@ -99,6 +99,7 @@ function draft(overrides: Partial<GrievanceDraft> = {}): GrievanceDraft {
     letter_text: "To,\nGrievance Redressal Officer, Star Health and Allied Insurance Co. Ltd.\n...",
     missing_context: null,
     assessment_note: null,
+    before_you_send: [],
     generated_at: "2026-10-20T10:00:00+00:00",
     ...overrides,
   };
@@ -246,5 +247,35 @@ describe("ClaimGrievance: the five states", () => {
     expect(screen.queryByText(UNVERIFIED_FLAG)).toBeNull();
     expect(screen.queryByText(/paragraphs? confirmed/)).toBeNull();
     for (const text of TEMPLATES) expect(screen.getByText(text)).toBeTruthy();
+  });
+
+  it("a rules paragraph (D-48) is fixed text with its citation, and 'Before you send' stays off the letter", async () => {
+    const opening = "My continuous cover with you began on 1 Jun 2021. The policy's waiting period for pre-existing diseases is 36 months, so it ended on 1 Jun 2024. I was admitted on 14 Jul 2026, after that waiting period had ended.";
+    const wrongful = draft({
+      paragraphs: [{ text: opening, citation_ids: ["k1"], verified: false, source: "rules" }],
+      citation_precision: 0,
+      before_you_send: [
+        { text: "The insurer may ask for proof that the policy was renewed without a break since then.", citation_ids: ["k1"], source: "rules", verified: false },
+        { text: "Cover is subject to the disease having been declared at application.", citation_ids: ["k1"], source: "model", verified: false },
+      ],
+    });
+    handler = (path) =>
+      common(path) ??
+      (path.endsWith("/grievance-rungs")
+        ? Promise.resolve([rung("insurer_grievance_cell", true)])
+        : path.startsWith("/jobs/")
+          ? Promise.resolve(job(wrongful))
+          : new Promise(() => {}));
+    renderAt(`/claims/${CLAIM_ID}/grievance?job=01a15870-0000-7000-8000-000000000001`);
+
+    expect(await screen.findByText(opening)).toBeTruthy();
+    expect(screen.getByText("From our eligibility checks (fixed text)")).toBeTruthy();
+    expect(screen.queryByText(UNVERIFIED_FLAG)).toBeNull();
+    // A rules paragraph is not counted as model text, so with no model paragraph there is no count.
+    expect(screen.queryByText(/paragraphs? confirmed/)).toBeNull();
+    const panel = screen.getByRole("region", { name: "Before you send" });
+    expect(within(panel).getByText(/renewed without a break/)).toBeTruthy();
+    expect(within(panel).getAllByText(/couldn't confirm this against your policy's text/)).toHaveLength(1);
+    expect(within(panel).getAllByRole("button", { name: /policy, page 31/i }).length).toBe(2);
   });
 });
