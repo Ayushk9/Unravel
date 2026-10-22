@@ -38,6 +38,7 @@ from app.core.ids import new_id
 from app.db.models import ClaimEvent, Document, Job, Member, Policy
 from app.db.models import GrievanceDraft as GrievanceDraftRow
 from app.grievance.evidence import enclosures, evidence_checklist
+from app.grievance.rules_text import RulesText, assessment_agrees, ground_check, rules_opening
 from app.grievance.letter import (
     ASSESSMENT_AGREES,
     DISCLAIMER,
@@ -58,7 +59,7 @@ from app.qa.retrieval import Clause, retrieve
 from app.qa.run_question import Progress, clause_citation, no_progress
 from app.rules.loader import load_grievance_rungs, load_required_documents
 from app.rules_bridge import eligibility_input
-from app.schemas.grievances import DraftParagraph, EvidenceItem, GrievanceDraft
+from app.schemas.grievances import BeforeYouSendNote, DraftParagraph, EvidenceItem, GrievanceDraft
 from app.schemas.questions import Citation
 from engines.retrieval.verify import Removed, Sentence, precheck, verify_in_order
 from engines.rules import assess_eligibility
@@ -100,8 +101,10 @@ class DraftContext:
     document_id: UUID
     letter: LetterFacts
     checks: tuple[CheckResult, ...]
-    # The eligibility band (D-36). "likely_ineligible" means our rules agree with a denial (D-47).
+    # The eligibility band (D-36), used for D-47 when no denial ground was chosen.
     band: str
+    # The insurer's denial ground as the user chose it: an eligibility check id, or None (D-48).
+    denial_ground: str | None
     diagnosis: str | None
     current_state: str
     evidence: list[EvidenceItem]
@@ -122,20 +125,12 @@ def citation_precision(paragraphs: list[DraftParagraph]) -> float:
     return sum(1 for p in written if p.verified) / len(written)
 
 
-def assessment_agrees(band: str) -> bool:
-    """Our rules agree with the denial: a check failed with high confidence (D-36's likely_ineligible band).
-
-    The denial reason is the user's free text, and no keyword matching is
-    done on it, so this cannot confirm that the failed check is the very
-    ground the insurer named; it says our assessment also finds the claim
-    likely ineligible (DECISIONS.md, D-47).
-    """
-    return band == "likely_ineligible"
-
-
-def search_queries(denial_reason: str | None, checks: tuple[CheckResult, ...]) -> list[str]:
-    """What to search the policy for: the recorded denial reason, then each failed or at-risk check."""
+def search_queries(denial_reason: str | None, checks: tuple[CheckResult, ...], denial_ground: str | None = None) -> list[str]:
+    """What to search the policy for: the recorded denial reason, the chosen ground's check, then each failed or at-risk check."""
     queries = [denial_reason.strip()] if denial_reason and denial_reason.strip() else []
+    ground = ground_check(checks, denial_ground)
+    if ground is not None:
+        queries.append(ground.title)
     queries += [check.title for check in checks if check.status in ("failed", "at_risk")]
     return list(dict.fromkeys(queries)) or [FALLBACK_QUERY]
 
@@ -152,17 +147,25 @@ def merge_clauses(per_query: list[list[Clause]], limit: int = MAX_CLAUSES) -> li
     return merged
 
 
-def facts_block(context: DraftContext) -> str:
-    """The claim facts the model may argue from, and the judge checks claim statements against. All from the database."""
+def facts_block(context: DraftContext, opening: RulesText | None = None) -> str:
+    """The claim facts the model may argue from, and the judge checks claim statements against. All from the database.
+
+    Only the checks that SUPPORT the policyholder (satisfied) are given as grounds to argue
+    from (D-48); a failed or unknown check is not something the letter may argue with.
+    """
     lines = [f"Claim status: {context.current_state.replace('_', ' ')}"]
     if context.letter.denial_reason:
         lines.append(f"Reason for denial, as recorded by the policyholder: “{context.letter.denial_reason}”")
     if context.diagnosis:
         lines.append(f"Diagnosis, as entered by the policyholder: {context.diagnosis}")
-    flagged = [c for c in context.checks if c.status in ("failed", "at_risk", "unknown")]
-    if flagged:
-        lines.append("Checks of the claim against the policy, made by rules on the policyholder's documents:")
-        lines += [f"- {c.title}: {c.status.replace('_', ' ')}. {c.explanation}" for c in flagged]
+    supporting = [c for c in context.checks if c.status == "satisfied" and c.id != "coverage_profile"]
+    if supporting:
+        lines.append("CHECKS THAT SUPPORT THE POLICYHOLDER (made by rules on the policyholder's documents):")
+        lines += [f"- {c.title}: {c.explanation}" for c in supporting]
+    else:
+        lines.append("CHECKS THAT SUPPORT THE POLICYHOLDER: none.")
+    if opening is not None:
+        lines.append(f"The letter already opens with this paragraph (do not repeat it): {opening.paragraph.text}")
     return "\n".join(lines)
 
 
@@ -211,23 +214,39 @@ async def load_context(session_factory: SessionFactory, household_id: UUID, clai
         letter=letter,
         checks=assessment.checks,
         band=assessment.band,
+        denial_ground=claim.denial_ground,
         diagnosis=claim.diagnosis,
         current_state=events[-1].to_state if events else "unknown",
-        evidence=evidence_checklist(report, last_denied is not None, assessment.checks),
+        # The policy document was checked above: it exists and is not deleted.
+        evidence=evidence_checklist(report, last_denied is not None, assessment.checks, policy_document_uploaded=True),
     )
 
 
 def assemble_draft(
-    context: DraftContext, written: list[DraftParagraph], citations: list[Citation], missing_context: str | None, now: datetime
+    context: DraftContext,
+    written: list[DraftParagraph],
+    citations: list[Citation],
+    missing_context: str | None,
+    now: datetime,
+    *,
+    opening: RulesText | None = None,
+    conditions: list[BeforeYouSendNote] | None = None,
 ) -> GrievanceDraft:
-    """The whole draft. Only `written[].text` came from the model; every other field is built here.
+    """The whole draft. Only `written[].text` and the model's conditions came from the model; everything else is built here.
 
-    D-47: when no model paragraph survived verification, or our rules agree with
-    the denial, the fixed procedural requests are added after the model's paragraphs.
+    Order of paragraphs: the rules' opening (D-48), the model's, then the fixed
+    procedural requests (D-47) when nothing argued survived or our rules agree with the denial.
     """
-    agrees = assessment_agrees(context.band)
-    survived = any(p.verified for p in written)
-    paragraphs = written + template_paragraphs() if agrees or not survived else written
+    agrees = assessment_agrees(ground_check(context.checks, context.denial_ground), context.band)
+    if opening is not None:
+        # The letter does argue (from the rules), so "no argument paragraphs" would be untrue.
+        missing_context = None
+    survived = opening is not None or any(p.verified for p in written)
+    paragraphs = ([opening.paragraph] if opening else []) + written
+    if agrees or not survived:
+        paragraphs += template_paragraphs()
+    if opening is not None and opening.citation is not None:
+        citations = [opening.citation, *citations]
     closing_text = closing(context.rung, enclosures(context.evidence), asks_for_explanation=agrees)
     return GrievanceDraft(
         id=new_id(),
@@ -245,6 +264,8 @@ def assemble_draft(
         letter_text=render_letter_text(context.letter, paragraphs, citations, closing_text, asks_for_explanation=agrees),
         missing_context=missing_context,
         assessment_note=ASSESSMENT_AGREES if agrees else None,
+        # Deterministic notes first, then the model's conditions. Never in letter_text.
+        before_you_send=(opening.notes if opening else []) + (conditions or []),
         generated_at=now,
     )
 
@@ -265,7 +286,7 @@ async def draft_letter(
     # --- retrieving ---
     await progress(RETRIEVING)
     t = time.perf_counter()
-    queries = search_queries(context.letter.denial_reason, context.checks)
+    queries = search_queries(context.letter.denial_reason, context.checks, context.denial_ground)
     per_query: list[list[Clause]] = []
     record["retrieved"] = []
     async with session_factory() as session:
@@ -275,13 +296,15 @@ async def draft_letter(
             record["retrieved"].append({"query": query, "trace": found.trace})
     clauses = merge_clauses(per_query)
     timings["retrieve"] = round(time.perf_counter() - t, 3)
+    # The rules' own opening paragraph (D-48), when the chosen ground's check supports the policyholder.
+    opening = rules_opening(ground_check(context.checks, context.denial_ground))
     if not clauses:
-        return DraftOutcome(assemble_draft(context, [], [], NO_CLAUSES, now), record, timings)
+        return DraftOutcome(assemble_draft(context, [], [], NO_CLAUSES, now, opening=opening), record, timings)
 
     # Short ids for the model; it never sees (or can invent) a database id.
     by_short_id = {f"c{i}": clause for i, clause in enumerate(clauses, start=1)}
     prompts = [ClausePrompt(id=short, page=c.page, text=c.text) for short, c in by_short_id.items()]
-    facts = facts_block(context)
+    facts = facts_block(context, opening)
 
     # --- drafting ---
     await progress(DRAFTING)
@@ -293,46 +316,58 @@ async def draft_letter(
     problem = generated_draft_problems(drafted.value, set(by_short_id))
     if problem:
         raise LlmError(f"unusable draft: {problem}", code="bad_answer", retryable=True)
-    if drafted.value.abstain:
-        return DraftOutcome(assemble_draft(context, [], [], NOT_DRAFTED, now), record, timings)
+    if drafted.value.abstain and not drafted.value.conditions:
+        return DraftOutcome(assemble_draft(context, [], [], NOT_DRAFTED, now, opening=opening), record, timings)
 
     # --- verifying ---
+    # Paragraphs and the model's conditions get the same two checks (D-48), in one judge call.
     await progress(VERIFYING)
     t = time.perf_counter()
     chunk_text = {short: c.text for short, c in by_short_id.items()}
     written = [Sentence(p.text, tuple(dict.fromkeys(p.chunk_ids))) for p in drafted.value.paragraphs]
-    # Only paragraphs that pass the number check are worth a judge's verdict.
-    worth_judging = [i for i, s in enumerate(written) if not precheck([s], chunk_text, facts)[1]]
-    pairs = [(i, chunk_id) for i in worth_judging for chunk_id in written[i].chunk_ids]
+    found_conditions = [Sentence(c.text, tuple(dict.fromkeys(c.chunk_ids))) for c in drafted.value.conditions]
+    candidates = written + found_conditions
+    # Only text that passes the number check is worth a judge's verdict.
+    worth_judging = [i for i, s in enumerate(candidates) if not precheck([s], chunk_text, facts)[1]]
+    pairs = [(i, chunk_id) for i in worth_judging for chunk_id in candidates[i].chunk_ids]
     prompt_by_id = {p.id: p for p in prompts}
-    judged = await llm.judge_paragraphs(facts, [(written[i].text, prompt_by_id[chunk_id]) for i, chunk_id in pairs])
+    judged = await llm.judge_paragraphs(facts, [(candidates[i].text, prompt_by_id[chunk_id]) for i, chunk_id in pairs])
     if pairs:
         record["models"]["judge"] = judged.model
     verdicts = dict(zip(pairs, judged.value, strict=True))
-    results = verify_in_order(written, verdicts, chunk_text, facts)
+    results = verify_in_order(candidates, verdicts, chunk_text, facts)
     timings["verify"] = round(time.perf_counter() - t, 3)
 
+    def kept_ids(sentence: Sentence, outcome: Sentence | Removed) -> tuple[str, ...]:
+        # Verified text keeps only the clauses judged to support it; unverified text keeps all it cited, so the user can check them.
+        return outcome.chunk_ids if isinstance(outcome, Sentence) else sentence.chunk_ids
+
     paragraphs: list[DraftParagraph] = []
+    conditions: list[BeforeYouSendNote] = []
     cited_order: list[str] = []
-    for sentence, outcome in zip(written, results, strict=True):
-        verified = not isinstance(outcome, Removed)
-        # A verified paragraph keeps only the clauses judged to support it; an
-        # unverified one keeps all it cited, so the user can check them.
-        shorts = outcome.chunk_ids if isinstance(outcome, Sentence) else sentence.chunk_ids
+    for index, (sentence, outcome) in enumerate(zip(candidates, results, strict=True)):
+        shorts = kept_ids(sentence, outcome)
         cited_order += [s for s in shorts if s not in cited_order]
-        paragraphs.append(
-            DraftParagraph(text=sentence.text, citation_ids=[str(by_short_id[s].id) for s in shorts], verified=verified, source="model")
-        )
+        ids = [str(by_short_id[s].id) for s in shorts]
+        verified = not isinstance(outcome, Removed)
+        if index < len(written):
+            paragraphs.append(DraftParagraph(text=sentence.text, citation_ids=ids, verified=verified, source="model"))
+        else:
+            conditions.append(BeforeYouSendNote(text=sentence.text, citation_ids=ids, source="model", verified=verified))
     record["verification"] = {
         "paragraphs": [
-            {"verified": not isinstance(o, Removed), "reason": o.reason if isinstance(o, Removed) else None,
-             "detail": o.detail if isinstance(o, Removed) else None, "chunk_ids": list(s.chunk_ids)}
-            for s, o in zip(written, results, strict=True)
+            {"kind": "paragraph" if i < len(written) else "condition", "verified": not isinstance(o, Removed),
+             "reason": o.reason if isinstance(o, Removed) else None, "detail": o.detail if isinstance(o, Removed) else None,
+             "chunk_ids": list(s.chunk_ids)}
+            for i, (s, o) in enumerate(zip(candidates, results, strict=True))
         ],
         "judgements": [{"paragraph": i, "chunk_id": chunk_id, "supported": ok} for (i, chunk_id), ok in verdicts.items()],
     }
     citations = [Citation.model_validate(clause_citation(by_short_id[s], context.document_id)) for s in cited_order]
-    return DraftOutcome(assemble_draft(context, paragraphs, citations, None, now), record, timings)
+    missing = NOT_DRAFTED if drafted.value.abstain else None
+    return DraftOutcome(
+        assemble_draft(context, paragraphs, citations, missing, now, opening=opening, conditions=conditions), record, timings
+    )
 
 
 async def run_generate_grievance_draft(job: ClaimedJob, *, session_factory: SessionFactory, models: Models, llm: GrievanceLlm) -> None:
