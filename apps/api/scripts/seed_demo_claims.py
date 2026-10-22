@@ -82,7 +82,14 @@ from app.claims.deadlines import india_date  # noqa: E402
 from app.claims.facts import save_facts  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.core.ids import new_id  # noqa: E402
-from app.db.models import Claim, ClaimEvent, Document, DocumentChunk, Household, Member, Policy, policy_member  # noqa: E402
+from app.db.models import (  # noqa: E402
+    Claim, ClaimEvent, Document, DocumentChunk, Household, Member, Policy, policy_member,
+)
+# The table models, aliased: contracts.models has engine types with the same names.
+from app.db.models import CoverageProfile as CoverageProfileRow  # noqa: E402
+from app.db.models import Exclusion as ExclusionRow  # noqa: E402
+from app.db.models import SubLimit as SubLimitRow  # noqa: E402
+from app.db.models import WaitingPeriod as WaitingPeriodRow  # noqa: E402
 from app.db.session import create_engine, create_session_factory  # noqa: E402
 from app.qa.demo_policy import find_real_policy  # noqa: E402
 from app.schemas.claims import ClaimFacts  # noqa: E402
@@ -101,6 +108,8 @@ MEMBER = {
     "Vikram": UUID("01920000-0000-7000-8000-000000000012"),
     "Ishaan": UUID("01920000-0000-7000-8000-000000000013"),
     "Lakshmi": UUID("01920000-0000-7000-8000-000000000014"),
+    # Added for the wrongful-denial demo (Phase 7). A fictional member, created here if missing.
+    "Rajan": UUID("01920000-0000-7000-8000-000000000015"),
 }
 POLICY_NUMBER = "KHA/FAM/2024/DEMO-0001"
 # Shown wherever the policy appears, so nobody mistakes it for a real one.
@@ -237,6 +246,8 @@ class DemoClaim:
     claimed_amount: int
     facts: dict
     events: tuple[tuple[str, datetime, str], ...]
+    # Which policy: "star" (the uploaded Star wording) or "renewed" (SAMPLE-0002, its demo copy with cover since 2021).
+    policy: str = "star"
 
 
 NONE_APPLY = {"matched_waiting_periods": [], "matched_exclusions": []}
@@ -282,6 +293,29 @@ CLAIMS = (
          "matched_waiting_periods": None, "matched_exclusions": []},
         (("intimated", ist(date(2026, 10, 1), 22), "Told the insurer the same night"),),
     ),
+    # The wrongful denial: a pre-existing condition, but admitted after the 36-month PED period
+    # ended, counted from first inception (1 Jun 2021, so it ended 1 Jun 2024). Denied anyway.
+    DemoClaim(
+        UUID("01920000-0000-7000-8000-0000000000f5"), "likely_eligible", "Rajan", "planned", "Navjeevan Multispeciality Hospital, Pune",
+        date(2026, 7, 14), date(2026, 7, 18), 24_000_000,
+        {"diagnosis": "Hypertensive heart disease", "condition_is_pre_existing": True, "first_diagnosed_on": date(2019, 4, 10),
+         "planned_room_rent_per_day": 400_000, **NONE_APPLY},
+        (("intimated", ist(date(2026, 7, 10)), "Planned admission notified in advance"),
+         ("documents_submitted", ist(date(2026, 7, 22)), "Claim file submitted"),
+         ("under_review", ist(date(2026, 7, 25)), "Insurer acknowledged"),
+         ("denied", ist(date(2026, 8, 20), 15), "Denied as a pre-existing disease within the waiting period")),
+        policy="renewed",
+    ),
+)
+
+# SAMPLE-0002: a demo copy of the Star policy (same wording document, a copy of its extracted terms)
+# held since 2021 without a break. It exists only so a wrongful PED denial can be shown today: the
+# Star policy's own cover started 1 Nov 2024, so its 36-month PED period has not ended yet.
+# Its copied terms duplicate the Star policy's and are NOT extraction-accuracy data (DECISIONS.md).
+RENEWED_POLICY_ID = UUID("01920000-0000-7000-8000-0000000000a2")
+RENEWED = PolicyUpdate(
+    insurer_name="Star Health and Allied Insurance Co. Ltd.", product_name="Star Comprehensive Insurance Policy", policy_number="SAMPLE-0002",
+    start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), first_inception_date=date(2021, 6, 1),
 )
 
 
@@ -357,15 +391,55 @@ async def seed_star_identity(session: AsyncSession, star: Policy) -> str:
     return "entered now"
 
 
+async def seed_renewed_policy(session: AsyncSession, star: Policy) -> str:
+    """SAMPLE-0002 for Rajan: a copy of the Star policy's row and coverage terms, with its own dates (via the PATCH code)."""
+    if await session.get(Policy, RENEWED_POLICY_ID) is not None:
+        return "already there"
+    if await session.get(Member, MEMBER["Rajan"]) is None:
+        session.add(Member(id=MEMBER["Rajan"], household_id=HOUSEHOLD_ID, full_name="Rajan Rao", relationship="parent",
+                           date_of_birth=date(1958, 3, 10)))
+    renewed = Policy(id=RENEWED_POLICY_ID, household_id=HOUSEHOLD_ID, source_document_id=star.source_document_id,
+                     policy_type=star.policy_type, user_entered_fields=[])
+    session.add(renewed)
+    await session.flush()
+    await copy_coverage_terms(session, star.id, renewed.id)
+    apply_policy_update(renewed, RENEWED, india_date(datetime.now(INDIA)))
+    await session.execute(policy_member.insert().values(policy_id=renewed.id, member_id=MEMBER["Rajan"]))
+    await session.commit()
+    return "created"
+
+
+def _copy_row(row: object, **changes: object) -> object:
+    """A new row of the same table with every column copied, except a new id and the given changes."""
+    table = type(row).__table__
+    values = {column.key: getattr(row, column.key) for column in table.columns}
+    return type(row)(**{**values, "id": new_id(), **changes})
+
+
+async def copy_coverage_terms(session: AsyncSession, from_policy: UUID, to_policy: UUID) -> None:
+    """Copy a policy's coverage profile and its three lists, values, provenance and user confirmations included."""
+    profile = await session.scalar(select(CoverageProfileRow).where(CoverageProfileRow.policy_id == from_policy))
+    if profile is None:
+        raise SystemExit("The Star policy has no coverage profile to copy.")
+    copied = _copy_row(profile, policy_id=to_policy)
+    session.add(copied)
+    await session.flush()
+    for model in (SubLimitRow, WaitingPeriodRow, ExclusionRow):
+        for row in await session.scalars(select(model).where(model.coverage_profile_id == profile.id)):
+            session.add(_copy_row(row, coverage_profile_id=copied.id))
+    await session.flush()
+
+
 async def seed_claims(session: AsyncSession, star: Policy) -> list[str]:
-    """Each demo claim on the Star policy, with its facts. Creates, moves or updates; never writes an event twice."""
+    """Each demo claim on its policy, with its facts. Creates, moves or updates; never writes an event twice."""
     done = []
     today = india_date(datetime.now(INDIA))
     for demo in CLAIMS:
+        policy_id = RENEWED_POLICY_ID if demo.policy == "renewed" else star.id
         claim = await session.get(Claim, demo.id)
         if claim is None:
             claim = Claim(
-                id=demo.id, household_id=HOUSEHOLD_ID, policy_id=star.id, member_id=MEMBER[demo.member],
+                id=demo.id, household_id=HOUSEHOLD_ID, policy_id=policy_id, member_id=MEMBER[demo.member],
                 claim_type="reimbursement", admission_type=demo.admission_type, hospital_name=demo.hospital,
                 admitted_on=demo.admitted_on, discharged_on=demo.discharged_on, claimed_amount=demo.claimed_amount,
             )
@@ -377,9 +451,9 @@ async def seed_claims(session: AsyncSession, star: Policy) -> list[str]:
                                        occurred_at=occurred_at, note=note, source="user"))
                 previous = state
             action = "created"
-        elif claim.policy_id != star.id:
-            claim.policy_id = star.id  # the claim row only; its events are append-only and stay as they are
-            action = "moved to the Star policy"
+        elif claim.policy_id != policy_id:
+            claim.policy_id = policy_id  # the claim row only; its events are append-only and stay as they are
+            action = "moved to its policy"
         else:
             action = "facts updated"
         await session.flush()
@@ -394,7 +468,8 @@ async def main() -> None:
     engine = create_engine(settings.database_url)
     factory = create_session_factory(engine)
     async with factory() as session, session.begin():
-        missing = [name for name, member_id in MEMBER.items() if await session.get(Member, member_id) is None]
+        # Rajan is created with his policy below; the others come from scripts/seed.py.
+        missing = [name for name, member_id in MEMBER.items() if name != "Rajan" and await session.get(Member, member_id) is None]
         if missing:
             raise SystemExit(f"Run scripts/seed.py first: members missing: {missing}")
         policy_id = await seed_policy(session, settings)
@@ -413,11 +488,13 @@ async def main() -> None:
         star = await find_real_policy(session)
         dates = await seed_star_dates(session, star)
         identity = await seed_star_identity(session, star)
+        renewed = await seed_renewed_policy(session, star)
         claims = await seed_claims(session, star)
     await engine.dispose()
     print(f"Fixture policy {policy_id} ({POLICY_NUMBER}); clauses: {chunks} written" + (" (run scripts/index_chunks.py)" if chunks else ""))
     print(f"Household city tier: {tier}" + (" (set now)" if set_tier else " (already chosen; left alone)"))
     print(f"Demo claims are on the Star policy {star.id}. Its dates: {dates}. Its insurer, product and number: {identity}.")
+    print(f"SAMPLE-0002 (demo copy of the Star policy, cover since 1 Jun 2021) for Rajan's claim: {renewed}.")
     for line in claims:
         print(f"  {line}")
     print("Lakshmi's claim is at_risk until a person confirms waiting period #3 (36 months, p31) on the policy screen.")
