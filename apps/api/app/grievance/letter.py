@@ -142,8 +142,9 @@ def render_letter_text(
     body: list[str] = []
     for paragraph in paragraphs:
         text = f"{paragraph.text} {references(paragraph, citations)}".strip()
-        # A template request states nothing about the policy, so it carries no "not confirmed" mark.
-        body.append(text if paragraph.verified or paragraph.source == "template" else f"{UNCONFIRMED_MARK}\n{text}")
+        # Only the model's text can be unconfirmed. A template request states nothing about the policy, and a
+        # rules paragraph is built from the eligibility check's own values (D-47, D-48): neither is marked.
+        body.append(text if paragraph.verified or paragraph.source in ("template", "rules") else f"{UNCONFIRMED_MARK}\n{text}")
     if not body:
         body.append(NO_ARGUMENT_PLACEHOLDER)
     sections = [
