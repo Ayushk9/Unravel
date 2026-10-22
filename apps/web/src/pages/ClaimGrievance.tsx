@@ -244,6 +244,13 @@ function DraftView({ draft, onOpenCitation }: { draft: GrievanceDraft; onOpenCit
         </div>
       )}
 
+      {/* D-47: our rules agree with the denial, so the letter asks for an explanation instead of disputing it. */}
+      {draft.assessment_note && (
+        <p role="note" className="rounded border border-neutral-border bg-neutral-bg px-4 py-2 text-sm text-foreground">
+          {draft.assessment_note}
+        </p>
+      )}
+
       {draft.missing_context && <AbstentionCard missingFact={draft.missing_context} resolvingDocument="Your full policy wording document" />}
 
       <article className="flex flex-col gap-4 rounded border border-rule bg-card p-5 text-sm leading-relaxed text-foreground">
@@ -269,7 +276,14 @@ function DraftView({ draft, onOpenCitation }: { draft: GrievanceDraft; onOpenCit
             Write here why you disagree with the decision. We couldn't draft this part from your policy's text.
           </p>
         )}
-        {draft.paragraphs.map((paragraph, index) => (
+        {draft.paragraphs.map((paragraph, index) =>
+          paragraph.source === "template" ? (
+            // Our fixed procedural request (D-47): no model output and no claim about the policy, so no flag and no citation.
+            <div key={index} className="flex flex-col gap-1">
+              <span className="text-xs tracking-wide text-muted-foreground uppercase">Standard request (template text)</span>
+              <p>{paragraph.text}</p>
+            </div>
+          ) : (
           <div
             key={index}
             className={paragraph.verified ? "" : "flex flex-col gap-2 rounded border-l-4 border-caution-border bg-caution-bg py-2 pr-2 pl-3"}
@@ -298,7 +312,8 @@ function DraftView({ draft, onOpenCitation }: { draft: GrievanceDraft; onOpenCit
               })}
             </span>
           </div>
-        ))}
+          ),
+        )}
 
         <p className="whitespace-pre-line">{draft.closing}</p>
         <p className="border-t border-rule pt-3 text-xs text-muted-foreground">{draft.disclaimer}</p>
