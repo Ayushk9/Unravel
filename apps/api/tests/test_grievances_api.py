@@ -31,7 +31,7 @@ CLAUSES = [
 ]
 DRAFT_KEYS = {
     "id", "claim_id", "rung", "subject", "addressee", "header_lines", "paragraphs", "citations", "evidence_checklist",
-    "citation_precision", "closing", "disclaimer", "letter_text", "missing_context", "generated_at",
+    "citation_precision", "closing", "disclaimer", "letter_text", "missing_context", "assessment_note", "generated_at",
 }
 DENIAL_REASON = "Denied as a pre-existing disease within the waiting period"
 
@@ -135,7 +135,7 @@ def test_a_draft_is_a_job_whose_result_has_the_contract_shape_and_is_recorded(wo
     header = {line["label"]: line["value"] for line in draft["header_lines"]}
     assert header["Insured person (patient)"] == "Lakshmi Rao" and header["Amount claimed"] == "₹1,85,000"
     assert header["Reason for denial, as recorded"] == f"“{DENIAL_REASON}”"
-    assert draft["paragraphs"] and all(set(p) == {"text", "citation_ids", "verified"} for p in draft["paragraphs"])
+    assert draft["paragraphs"] and all(set(p) == {"text", "citation_ids", "verified", "source"} for p in draft["paragraphs"])
     cited = {c["id"] for c in draft["citations"]}
     assert all(set(p["citation_ids"]) <= cited for p in draft["paragraphs"])
     assert all(c["kind"] == "policy_clause" and c["provenance"]["document_id"] == str(world.document_id) for c in draft["citations"])
@@ -159,7 +159,7 @@ def test_an_unsupported_paragraph_is_kept_with_verified_false(world: SimpleNames
 
     draft = _draft(world)["result"]
 
-    assert [p["verified"] for p in draft["paragraphs"]] == [True, False]
+    assert [(p["source"], p["verified"]) for p in draft["paragraphs"]] == [("model", True), ("model", False)], "one survived: no templates"
     assert draft["paragraphs"][1]["text"] == "My policy says pre-existing diseases are never excluded."
     assert draft["citation_precision"] == pytest.approx(0.5)
 
