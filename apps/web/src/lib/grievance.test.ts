@@ -15,8 +15,8 @@ const serverDraft = {
     { label: "Policy number", value: null },
   ],
   paragraphs: [
-    { text: "Confirmed paragraph.", citation_ids: ["c-1"], verified: true },
-    { text: "Unconfirmed paragraph.", citation_ids: ["c-1"], verified: false },
+    { text: "Confirmed paragraph.", citation_ids: ["c-1"], verified: true, source: "model" },
+    { text: "Unconfirmed paragraph.", citation_ids: ["c-1"], verified: false, source: "template" },
   ],
   citations: [
     {
@@ -33,6 +33,7 @@ const serverDraft = {
   disclaimer: "This is a draft based on your documents, not legal advice.",
   letter_text: "To,\n...",
   missing_context: null,
+  assessment_note: null,
   generated_at: "2026-10-20T10:00:00+00:00",
 };
 
@@ -61,9 +62,9 @@ describe("grievance draft contract", () => {
 describe("confirmationSummary", () => {
   it("is a count, never a percentage", () => {
     const summary = confirmationSummary([
-      { text: "a", citation_ids: [], verified: true },
-      { text: "b", citation_ids: [], verified: true },
-      { text: "c", citation_ids: [], verified: false },
+      { text: "a", citation_ids: [], verified: true, source: "model" as const },
+      { text: "b", citation_ids: [], verified: true, source: "model" as const },
+      { text: "c", citation_ids: [], verified: false, source: "model" as const },
     ]);
     expect(summary).toEqual({
       confirmed: 2,
@@ -73,12 +74,21 @@ describe("confirmationSummary", () => {
     expect(summary?.text).not.toMatch(/%/);
   });
 
+  it("counts only the model's paragraphs; template requests are not checked claims (D-47)", () => {
+    const summary = confirmationSummary([
+      { text: "a", citation_ids: [], verified: true, source: "model" as const },
+      { text: "Please tell me the clause.", citation_ids: [], verified: false, source: "template" as const },
+    ]);
+    expect(summary?.text).toBe("1 of 1 paragraph confirmed against your policy.");
+    expect(confirmationSummary([{ text: "t", citation_ids: [], verified: false, source: "template" as const }])).toBeNull();
+  });
+
   it("says nothing when there are no paragraphs (the abstention card speaks instead)", () => {
     expect(confirmationSummary([])).toBeNull();
   });
 
   it("has no warning when every paragraph is confirmed", () => {
-    expect(confirmationSummary([{ text: "a", citation_ids: [], verified: true }])?.text).toBe("1 of 1 paragraph confirmed against your policy.");
+    expect(confirmationSummary([{ text: "a", citation_ids: [], verified: true, source: "model" as const }])?.text).toBe("1 of 1 paragraph confirmed against your policy.");
   });
 });
 
