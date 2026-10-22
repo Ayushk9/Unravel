@@ -40,10 +40,14 @@ class HeaderLine(ApiModel):
 
 class DraftParagraph(ApiModel):
     text: str
-    # Ids into `citations`. Every one is a clause of the claim's policy.
+    # Ids into `citations`. Every one is a clause of the claim's policy. Empty for a template paragraph.
     citation_ids: list[str]
     # False when the number check or the support judge could not confirm it (product rule 4).
+    # Always false for a template paragraph: it is a request, not a checked claim (D-47).
     verified: bool
+    # "model": written by the model and checked. "template": our fixed procedural request,
+    # no model output (D-47). "other" is the escape hatch (D-06).
+    source: Literal["model", "template", "other"]
 
 
 class EvidenceItem(ApiModel):
@@ -67,13 +71,16 @@ class GrievanceDraft(ApiModel):
     paragraphs: list[DraftParagraph]
     citations: list[Citation]
     evidence_checklist: list[EvidenceItem]
-    # verified paragraphs / all paragraphs; 0 when there are none (then missing_context says why).
+    # verified model paragraphs / all model paragraphs; 0 when there are none. Template paragraphs don't count (D-47).
     citation_precision: float
     closing: str
     disclaimer: str
     # The whole letter as plain text, rendered by the server, for "Copy text".
     letter_text: str
     missing_context: str | None
+    # Set when our rules find the claim likely ineligible (D-47): the letter then asks the
+    # insurer to explain its decision rather than dispute it. Null otherwise.
+    assessment_note: str | None
     generated_at: datetime
 
 
