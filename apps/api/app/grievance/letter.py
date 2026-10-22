@@ -32,6 +32,19 @@ NO_ARGUMENT_PLACEHOLDER = (
 SIGN_OFF = "Yours faithfully,\n\n(Your name, signature, address and phone number)"
 DATE_LINE = "Date: (fill in when you send it)"
 
+# D-47: fixed procedural requests, added when no model paragraph survived verification or our
+# rules agree with the denial. They assert nothing about the policy, so they need no citation.
+TEMPLATE_PARAGRAPHS = (
+    "Please tell me the exact clause of the policy, with its number and wording, on which the decision on this claim is based.",
+    "Please share the documents and other evidence your decision relied on, including any medical opinion or investigation report.",
+    "Please give me your decision in writing, with the reasons for it, so that I can understand how the policy was applied to this claim.",
+)
+ASSESSMENT_AGREES = (
+    "Our assessment agrees with the insurer's stated reason. This letter asks the insurer to explain its decision; it does not dispute it."
+)
+EXPLANATION_PREFIX = "Request for an explanation of"
+EXPLANATION_REQUEST = "I request you to reply to each of these points in writing."
+
 SUBJECT_PREFIX = {
     "insurer_grievance_cell": "Request to review",
     "irdai_bima_bharosa": "Grievance about",
@@ -66,11 +79,12 @@ def addressee(facts: LetterFacts) -> str:
     return facts.addressee_template.format(insurer=facts.insurer_name or "your insurer")
 
 
-def subject(facts: LetterFacts) -> str:
+def subject(facts: LetterFacts, asks_for_explanation: bool = False) -> str:
     topic = "the denial of a health insurance claim" if facts.denied_on else "the delay in deciding a health insurance claim"
     who = facts.patient_name or "the insured person"
     policy = f"policy {facts.policy_number}" if facts.policy_number else "policy number not recorded"
-    return f"{SUBJECT_PREFIX[facts.rung]} {topic}: {who}, {policy}"
+    prefix = EXPLANATION_PREFIX if asks_for_explanation else SUBJECT_PREFIX[facts.rung]
+    return f"{prefix} {topic}: {who}, {policy}"
 
 
 def header_lines(facts: LetterFacts) -> list[HeaderLine]:
@@ -96,8 +110,8 @@ def header_lines(facts: LetterFacts) -> list[HeaderLine]:
     return lines
 
 
-def closing(rung: str, enclosed: list[str]) -> str:
-    parts = [REQUEST[rung]]
+def closing(rung: str, enclosed: list[str], asks_for_explanation: bool = False) -> str:
+    parts = [EXPLANATION_REQUEST if asks_for_explanation else REQUEST[rung]]
     if enclosed:
         parts.append("Enclosures:\n" + "\n".join(f"- {name}" for name in enclosed))
     parts.append(SIGN_OFF)
@@ -115,21 +129,27 @@ def references(paragraph: DraftParagraph, citations: list[Citation]) -> str:
     return f"(Policy document, pages {', '.join(map(str, pages[:-1]))} and {pages[-1]})"
 
 
+def template_paragraphs() -> list[DraftParagraph]:
+    """The fixed procedural requests (D-47). Never model output; `verified` is false because nothing was checked."""
+    return [DraftParagraph(text=text, citation_ids=[], verified=False, source="template") for text in TEMPLATE_PARAGRAPHS]
+
+
 def render_letter_text(
-    facts: LetterFacts, paragraphs: list[DraftParagraph], citations: list[Citation], closing_text: str
+    facts: LetterFacts, paragraphs: list[DraftParagraph], citations: list[Citation], closing_text: str, asks_for_explanation: bool = False
 ) -> str:
     """The whole letter as plain text, for "Copy text". Unconfirmed paragraphs carry a visible mark."""
     header = "\n".join(f"{line.label}: {line.value or NOT_RECORDED}" for line in header_lines(facts))
     body: list[str] = []
     for paragraph in paragraphs:
         text = f"{paragraph.text} {references(paragraph, citations)}".strip()
-        body.append(text if paragraph.verified else f"{UNCONFIRMED_MARK}\n{text}")
+        # A template request states nothing about the policy, so it carries no "not confirmed" mark.
+        body.append(text if paragraph.verified or paragraph.source == "template" else f"{UNCONFIRMED_MARK}\n{text}")
     if not body:
         body.append(NO_ARGUMENT_PLACEHOLDER)
     sections = [
         f"To,\n{addressee(facts)}",
         DATE_LINE,
-        f"Subject: {subject(facts)}",
+        f"Subject: {subject(facts, asks_for_explanation)}",
         header,
         "Dear Sir or Madam,",
         *body,
