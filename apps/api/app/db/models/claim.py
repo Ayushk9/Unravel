@@ -71,6 +71,8 @@ class Claim(Base):
     matched_waiting_periods: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     matched_exclusions: Mapped[list[int] | None] = mapped_column(ARRAY(Integer))
     planned_room_rent_per_day: Mapped[int | None] = mapped_column(BigInteger)  # paise
+    # The insurer's denial ground, as the user chose it: an eligibility check id (D-48).
+    denial_ground: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
