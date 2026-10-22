@@ -98,6 +98,7 @@ db.registerJobResolver("generate_grievance_draft", (params): GrievanceDraft => {
     letter_text,
     missing_context: null,
     assessment_note: null,
+    before_you_send: [],
     generated_at: new Date().toISOString(),
   };
 });

@@ -133,6 +133,7 @@ export const NO_FACTS: Claim["facts"] = {
   matched_waiting_periods: null,
   matched_exclusions: null,
   planned_room_rent_per_day: null,
+  denial_ground: null,
 };
 
 export const deniedClaim: Claim = {
@@ -157,6 +158,7 @@ export const deniedClaim: Claim = {
     matched_waiting_periods: [],
     matched_exclusions: [],
     planned_room_rent_per_day: null,
+    denial_ground: null,
   },
 };
 
