@@ -165,6 +165,7 @@ def test_grievance_calls_cap_thinking_and_output_while_qa_keeps_the_defaults() -
 
     draft, judge, qa = client.configs
     assert (draft.thinking_config.thinking_level, draft.max_output_tokens) == ("LOW", 2048)
-    assert (judge.thinking_config.thinking_level, judge.max_output_tokens) == ("MINIMAL", 1024)
+    # LOW, not MINIMAL: gemini-3.8-flash rejects MINIMAL with a 400.
+    assert (judge.thinking_config.thinking_level, judge.max_output_tokens) == ("LOW", 1024)
     assert (qa.thinking_config, qa.max_output_tokens) == (None, None), "Q&A is unchanged"
     assert all(config.temperature == 0.0 for config in client.configs)
