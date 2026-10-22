@@ -21,7 +21,10 @@ SYNTHETIC_FIXTURE_NUMBER = "KHA/FAM/2024/DEMO-0001"  # scripts/seed_demo_claims.
 # A demo COPY of the Star policy's row and terms (same document), made only for the wrongful-denial
 # claim (scripts/seed_demo_claims.py). Not the uploaded policy, so never chosen here.
 DEMO_COPY_NUMBER = "SAMPLE-0002"
-NOT_REAL = (SYNTHETIC_FIXTURE_NUMBER, DEMO_COPY_NUMBER)
+# Policies never used for any evaluation or metric: every script that picks a policy excludes them
+# (tests/test_grievance_units.py checks). SAMPLE-0002's terms are copies of the Star policy's, so
+# counting them would count the Star extraction twice.
+EXCLUDED_FROM_EVALUATION = (SYNTHETIC_FIXTURE_NUMBER, DEMO_COPY_NUMBER)
 
 
 async def find_real_policy(session: AsyncSession, policy_id: UUID | None = None) -> Policy:
@@ -31,7 +34,7 @@ async def find_real_policy(session: AsyncSession, policy_id: UUID | None = None)
         policy = await session.scalar(
             select(Policy)
             .where(Policy.household_id == DEV_HOUSEHOLD,
-                   or_(Policy.policy_number.is_(None), Policy.policy_number.not_in(NOT_REAL)))
+                   or_(Policy.policy_number.is_(None), Policy.policy_number.not_in(EXCLUDED_FROM_EVALUATION)))
             .order_by(Policy.id.desc())
             .limit(1)
         )
