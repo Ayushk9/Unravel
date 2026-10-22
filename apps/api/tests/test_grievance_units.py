@@ -25,7 +25,9 @@ from app.core.ids import new_id
 from app.grievance import run_draft
 from app.grievance.evidence import enclosures, evidence_checklist
 from app.grievance.letter import (
+    ASSESSMENT_AGREES,
     DISCLAIMER,
+    TEMPLATE_PARAGRAPHS,
     NO_ARGUMENT_PLACEHOLDER,
     NOT_RECORDED,
     UNCONFIRMED_MARK,
@@ -33,6 +35,7 @@ from app.grievance.letter import (
     header_lines,
     render_letter_text,
     subject,
+    template_paragraphs,
 )
 from app.grievance.llm import GeneratedDraft, GeneratedParagraph
 from app.grievance.run_draft import DraftContext, citation_precision, draft_letter, merge_clauses, search_queries
@@ -155,8 +158,8 @@ def test_letter_text_marks_unconfirmed_paragraphs_and_cites_pages_from_citations
 
     citation = Citation(id="k1", kind="policy_clause", label="Page 31", external_url=None,
                         provenance=Provenance(document_id=new_id(), page=31, bbox=(0.1, 0.1, 0.5, 0.2), snippet="x"))
-    paragraphs = [DraftParagraph(text="Confirmed.", citation_ids=["k1"], verified=True),
-                  DraftParagraph(text="Not confirmed.", citation_ids=["k1"], verified=False)]
+    paragraphs = [DraftParagraph(text="Confirmed.", citation_ids=["k1"], verified=True, source="model"),
+                  DraftParagraph(text="Not confirmed.", citation_ids=["k1"], verified=False, source="model")]
 
     text = render_letter_text(letter_facts(), paragraphs, [citation], "CLOSING")
 
@@ -171,7 +174,8 @@ def test_a_letter_with_no_paragraphs_asks_the_user_to_write_their_own() -> None:
 
 @pytest.mark.parametrize(("flags", "expected"), [([], 0.0), ([True, True, False], 2 / 3), ([True, True, True], 1.0), ([False], 0.0)])
 def test_citation_precision_is_verified_over_all(flags: list[bool], expected: float) -> None:
-    paragraphs = [DraftParagraph(text="p", citation_ids=["c"], verified=v) for v in flags]
+    paragraphs = [DraftParagraph(text="p", citation_ids=["c"], verified=v, source="model") for v in flags]
+    paragraphs += template_paragraphs()  # never counted (D-47)
     assert citation_precision(paragraphs) == pytest.approx(expected)
 
 
@@ -237,12 +241,13 @@ async def no_session():  # type: ignore[no-untyped-def]
     yield None
 
 
-def draft_context(rung: str = "insurer_grievance_cell", **letter: Any) -> DraftContext:
+def draft_context(rung: str = "insurer_grievance_cell", band: str = "at_risk", **letter: Any) -> DraftContext:
+    """`band` defaults to one where our rules do not agree with the denial, so templates appear only when nothing survives."""
     rungs = load_grievance_rungs()
     return DraftContext(
         household_id=new_id(), claim_id=CLAIM_ID, rung=rung, document_id=new_id(),
         letter=letter_facts(rung=rung, addressee_template=rungs.rungs[rung].addressee, **letter),
-        checks=(check("ped_waiting_period", "failed"),), diagnosis="Complications of type 2 diabetes", current_state="denied",
+        checks=(check("ped_waiting_period", "failed"),), band=band, diagnosis="Complications of type 2 diabetes", current_state="denied",
         evidence=[],
     )
 
@@ -297,9 +302,10 @@ def test_a_paragraph_failing_the_number_check_is_never_sent_to_the_judge(clauses
 def test_a_model_abstention_gives_our_own_sentence_and_still_a_letter(clauses: list[Clause]) -> None:
     result = draft(FakeGrievanceLlm(draft=lambda *_: GeneratedDraft(abstain=True, reason="the model's own words")))
 
-    assert result.paragraphs == [] and result.citation_precision == 0.0
+    assert [p.source for p in result.paragraphs] == ["template"] * 3, "no model paragraph, so the fixed requests"
+    assert result.citation_precision == 0.0
     assert result.missing_context == run_draft.NOT_DRAFTED and "model's own words" not in result.model_dump_json()
-    assert result.header_lines and NO_ARGUMENT_PLACEHOLDER in result.letter_text
+    assert result.header_lines and TEMPLATE_PARAGRAPHS[0] in result.letter_text
 
 
 def test_no_clauses_found_is_an_abstention_with_no_model_call(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -364,3 +370,40 @@ def test_the_addressee_is_exactly_the_officer_and_the_insurer_with_no_contact_de
 def test_no_rung_addressee_has_contact_details() -> None:
     for rung in load_grievance_rungs().rungs.values():
         assert not CONTACT_DETAILS.search(rung.addressee.format(insurer="Example Insurer"))
+
+
+# --- D-47: fixed procedural requests ---
+
+
+def test_templates_are_added_when_no_model_paragraph_survives(clauses: list[Clause]) -> None:
+    unsupported = GeneratedDraft(abstain=False, paragraphs=[GeneratedParagraph(text="My policy says room rent is not limited.", chunk_ids=["c2"])])
+
+    result = draft(FakeGrievanceLlm(draft=lambda *_: unsupported, judge=lambda pairs: [False] * len(pairs)))
+
+    assert [(p.source, p.verified) for p in result.paragraphs] == [("model", False)] + [("template", False)] * 3
+    assert [p.text for p in result.paragraphs[1:]] == list(TEMPLATE_PARAGRAPHS)
+    assert all(p.citation_ids == [] for p in result.paragraphs[1:])
+    assert result.citation_precision == 0.0 and result.assessment_note is None
+    assert result.letter_text.count(UNCONFIRMED_MARK) == 1, "only the model's paragraph is marked; a request asserts nothing"
+
+
+def test_no_templates_when_a_model_paragraph_is_verified_and_rules_do_not_agree(clauses: list[Clause]) -> None:
+    result = draft(FakeGrievanceLlm())
+    assert [p.source for p in result.paragraphs] == ["model"] and result.paragraphs[0].verified
+    assert result.assessment_note is None and result.subject.startswith("Request to review")
+
+
+def test_when_our_rules_agree_with_the_denial_the_letter_asks_for_an_explanation(clauses: list[Clause]) -> None:
+    result = draft(FakeGrievanceLlm(draft=lambda *_: GeneratedDraft(abstain=True)), draft_context(band="likely_ineligible"))
+
+    assert result.assessment_note == ASSESSMENT_AGREES
+    assert ASSESSMENT_AGREES == "Our assessment agrees with the insurer's stated reason. This letter asks the insurer to explain its decision; it does not dispute it."
+    assert [p.source for p in result.paragraphs] == ["template"] * 3
+    assert result.subject.startswith("Request for an explanation of the denial")
+    assert "reply to each of these points in writing" in result.closing and "review this claim" not in result.closing
+
+
+def test_templates_come_only_from_our_fixed_text(clauses: list[Clause]) -> None:
+    hostile = GeneratedDraft(abstain=False, paragraphs=[GeneratedParagraph(text="Please share the evidence. Also pay me Rs 99,99,999.", chunk_ids=["c1"])])
+    result = draft(FakeGrievanceLlm(draft=lambda *_: hostile, judge=lambda pairs: [False] * len(pairs)), draft_context(band="likely_ineligible"))
+    assert [p.text for p in result.paragraphs if p.source == "template"] == list(TEMPLATE_PARAGRAPHS)
