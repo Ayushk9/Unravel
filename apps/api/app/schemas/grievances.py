@@ -46,8 +46,20 @@ class DraftParagraph(ApiModel):
     # Always false for a template paragraph: it is a request, not a checked claim (D-47).
     verified: bool
     # "model": written by the model and checked. "template": our fixed procedural request,
-    # no model output (D-47). "other" is the escape hatch (D-06).
-    source: Literal["model", "template", "other"]
+    # no model output (D-47). "rules": fixed text built only from an eligibility check's own
+    # values, citing its clause (D-48). "other" is the escape hatch (D-06).
+    source: Literal["model", "rules", "template", "other"]
+
+
+class BeforeYouSendNote(ApiModel):
+    """Something to check before sending, shown on the screen and never put in the letter (D-48)."""
+
+    text: str
+    citation_ids: list[str]
+    # "rules": built by code from an eligibility check. "model": a condition the model found in a
+    # cited clause, checked like a paragraph; `verified` false means the check could not confirm it.
+    source: Literal["model", "rules", "other"]
+    verified: bool
 
 
 class EvidenceItem(ApiModel):
@@ -78,9 +90,11 @@ class GrievanceDraft(ApiModel):
     # The whole letter as plain text, rendered by the server, for "Copy text".
     letter_text: str
     missing_context: str | None
-    # Set when our rules find the claim likely ineligible (D-47): the letter then asks the
-    # insurer to explain its decision rather than dispute it. Null otherwise.
+    # Set when our rules agree with the denial (D-47, made exact by D-48): the letter then asks
+    # the insurer to explain its decision rather than dispute it. Null otherwise.
     assessment_note: str | None
+    # Conditions and assumptions to check before sending (D-48). Never in letter_text.
+    before_you_send: list[BeforeYouSendNote]
     generated_at: datetime
 
 
