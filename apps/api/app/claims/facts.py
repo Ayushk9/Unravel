@@ -53,6 +53,7 @@ async def save_facts(session: AsyncSession, claim: Claim, facts: ClaimFacts, tod
     claim.matched_waiting_periods = facts.matched_waiting_periods
     claim.matched_exclusions = facts.matched_exclusions
     claim.planned_room_rent_per_day = facts.planned_room_rent_per_day
+    claim.denial_ground = facts.denial_ground
     await session.commit()
 
 

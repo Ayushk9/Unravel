@@ -38,6 +38,7 @@ def facts_of(row: ClaimRow) -> WireClaimFacts:
         matched_waiting_periods=list(row.matched_waiting_periods) if row.matched_waiting_periods is not None else None,
         matched_exclusions=list(row.matched_exclusions) if row.matched_exclusions is not None else None,
         planned_room_rent_per_day=row.planned_room_rent_per_day,
+        denial_ground=row.denial_ground,
     )
 
 
