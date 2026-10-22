@@ -556,6 +556,25 @@ Extends D-43. Approved by Ayush, 2026-10-22.
 
 *Ratified:* 2026-10-22. Additive.
 
+### D-48 · The denial ground, a rules-built opening, and "Before you send"
+Extends D-37, D-43 and D-47. Approved by Ayush, 2026-10-22.
+
+- **`ClaimFacts.denial_ground`**: an eligibility check id (`ped_waiting_period`, `initial_waiting_period`, …, the same tags as D-45), or `null` (not answered). The user chooses it from the insurer's letter; the free-text note on the `denied` event is never read for it. It defaults to `null`, so a client that doesn't send it still validates (and, as a full replacement, clears it). An unknown id is `422`.
+- **D-47's "our rules agree" becomes exact:** with a ground chosen, it means that check failed. Without one, the D-47 band rule still applies.
+- **A rules-built opening paragraph** (`DraftParagraph.source = "rules"`): when the chosen ground's check is a date-counted waiting period and is **satisfied**, the letter opens with fixed text built only from that check's `values`:
+  - the date cover counts from (first inception when entered);
+  - the period's length and its end date;
+  - the admission date.
+
+  It cites the check's governing clause (page and bbox), so its citation id is `rule-<check id>` rather than a clause id. It is `verified: false` (no model check ran; a client that doesn't know `source` flags it, the safe failure), is not marked in `letter_text`, and is not counted in `citation_precision`. A missing value means no paragraph, never a guess. With an opening, the letter counts as arguing: no D-47 templates for "nothing survived", and no `missing_context`.
+- **`GrievanceDraft.before_you_send`**: a list of `{text, citation_ids, source: "rules" | "model" | "other", verified}`. Shown on the screen; **never in `letter_text`**.
+  - `rules` notes come from the same check: the date cover is counted from, and whether the period's length is confirmed.
+  - `model` notes are conditions the model found in the clauses it was given that the insurer could rely on (for example "must have been declared at application"). They come from the same draft call and are checked by the same number check and judge call as paragraphs; one that fails is kept with `verified: false` and flagged.
+- **Prompt (grievance-v4, then the judge fix):** the model may argue only from the claim's facts and the checks that **support** the policyholder (only satisfied checks are given to it). It must not introduce optional covers, portability or other benefits the facts don't mention, and must not raise conditions against the policyholder in the letter; those go to `conditions`.
+
+*Ratified:* 2026-10-22. Additive.
+*Revisit:* when grounds other than waiting periods need a fixed paragraph.
+
 ---
 
 ## 5. Pagination
