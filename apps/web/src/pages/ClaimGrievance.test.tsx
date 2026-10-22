@@ -77,8 +77,8 @@ function draft(overrides: Partial<GrievanceDraft> = {}): GrievanceDraft {
       { label: "Plan", value: null },
     ],
     paragraphs: [
-      { text: "I ask you to point me to the clause the decision relies on.", citation_ids: ["k1"], verified: true },
-      { text: "My policy covers this in full regardless of any waiting period.", citation_ids: ["k1"], verified: false },
+      { text: "I ask you to point me to the clause the decision relies on.", citation_ids: ["k1"], verified: true, source: "model" },
+      { text: "My policy covers this in full regardless of any waiting period.", citation_ids: ["k1"], verified: false, source: "model" },
     ],
     citations: [
       {
@@ -98,6 +98,7 @@ function draft(overrides: Partial<GrievanceDraft> = {}): GrievanceDraft {
     disclaimer: "This is a draft based on your documents, not legal advice.",
     letter_text: "To,\nGrievance Redressal Officer, Star Health and Allied Insurance Co. Ltd.\n...",
     missing_context: null,
+    assessment_note: null,
     generated_at: "2026-10-20T10:00:00+00:00",
     ...overrides,
   };
@@ -132,6 +133,13 @@ beforeEach(() => {
   handler = () => new Promise(() => {});
 });
 afterEach(() => cleanup());
+
+const TEMPLATES = [
+  "Please tell me the exact clause of the policy, with its number and wording, on which the decision on this claim is based.",
+  "Please share the documents and other evidence your decision relied on, including any medical opinion or investigation report.",
+  "Please give me your decision in writing, with the reasons for it, so that I can understand how the policy was applied to this claim.",
+];
+const AGREES = "Our assessment agrees with the insurer's stated reason. This letter asks the insurer to explain its decision; it does not dispute it.";
 
 describe("ClaimGrievance: the five states", () => {
   it("loading: shows skeletons and no rung options or Generate button yet", () => {
@@ -215,5 +223,28 @@ describe("ClaimGrievance: the five states", () => {
     expect(screen.getByText(/Write here why you disagree with the decision/)).toBeTruthy();
     expect(screen.queryByText(/paragraphs confirmed/)).toBeNull();
     expect(screen.queryByText(/couldn't draft the letter/i)).toBeNull();
+  });
+
+  it("template requests (D-47) are labelled as template text, never flagged as unconfirmed, with the assessment note", async () => {
+    const explaining = draft({
+      paragraphs: TEMPLATES.map((text) => ({ text, citation_ids: [], verified: false, source: "template" as const })),
+      citations: [],
+      citation_precision: 0,
+      assessment_note: AGREES,
+    });
+    handler = (path) =>
+      common(path) ??
+      (path.endsWith("/grievance-rungs")
+        ? Promise.resolve([rung("insurer_grievance_cell", true)])
+        : path.startsWith("/jobs/")
+          ? Promise.resolve(job(explaining))
+          : new Promise(() => {}));
+    renderAt(`/claims/${CLAIM_ID}/grievance?job=01a15870-0000-7000-8000-000000000001`);
+
+    expect(await screen.findByText(AGREES)).toBeTruthy();
+    expect(screen.getAllByText("Standard request (template text)")).toHaveLength(3);
+    expect(screen.queryByText(UNVERIFIED_FLAG)).toBeNull();
+    expect(screen.queryByText(/paragraphs? confirmed/)).toBeNull();
+    for (const text of TEMPLATES) expect(screen.getByText(text)).toBeTruthy();
   });
 });
