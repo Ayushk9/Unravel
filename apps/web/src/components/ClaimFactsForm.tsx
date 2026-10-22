@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import type { Claim, ClaimFacts, Policy } from "@/api/types";
+import type { Claim, ClaimFacts, DenialGround, Policy } from "@/api/types";
 import { ApiError } from "@/api/client";
 import { useSaveClaimFacts } from "@/api/endpoints/claims";
 import { Money } from "@/components/primitives";
@@ -29,6 +29,18 @@ function positionsFor(selection: Selection, chosen: number[]): number[] | null {
 
 const inputClass = "rounded border border-rule bg-background px-2 py-1.5 text-sm";
 
+// D-48: the grounds a denial can be given on, named as the eligibility checks are.
+const DENIAL_GROUNDS: { value: DenialGround; label: string }[] = [
+  { value: "ped_waiting_period", label: "Pre-existing disease waiting period" },
+  { value: "initial_waiting_period", label: "Initial waiting period" },
+  { value: "disease_specific_waiting_period", label: "Waiting period for specific conditions" },
+  { value: "permanent_exclusions", label: "Permanent exclusions" },
+  { value: "room_rent_sub_limit", label: "Room rent limit" },
+  { value: "claim_intimation", label: "Telling the insurer in time" },
+  { value: "sum_insured_adequacy", label: "Amount within the sum insured" },
+  { value: "coverage_profile", label: "Not covered by the policy at all" },
+];
+
 export interface ClaimFactsFormProps {
   claim: Claim;
   policy: Policy | null;
@@ -54,6 +66,7 @@ export function ClaimFactsForm({ claim, policy }: ClaimFactsFormProps) {
   const [roomRentRupees, setRoomRentRupees] = useState(
     facts.planned_room_rent_per_day === null ? "" : String(facts.planned_room_rent_per_day / 100),
   );
+  const [denialGround, setDenialGround] = useState<DenialGround | "">(facts.denial_ground ?? "");
   const [errors, setErrors] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
 
@@ -89,6 +102,7 @@ export function ClaimFactsForm({ claim, policy }: ClaimFactsFormProps) {
       matched_waiting_periods: positionsFor(conditionMode, chosenConditions),
       matched_exclusions: positionsFor(exclusionMode, chosenExclusions),
       planned_room_rent_per_day: roomRent,
+      denial_ground: denialGround || null,
     };
     save.mutate(body, {
       onSuccess: () => setSaved(true),
@@ -173,6 +187,25 @@ export function ClaimFactsForm({ claim, policy }: ClaimFactsFormProps) {
               Saved: <Money value={facts.planned_room_rent_per_day} />
             </>
           )}
+        </span>
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="font-medium text-foreground">If the insurer denied this claim, which ground did it give?</span>
+        <select
+          value={denialGround}
+          onChange={(e) => setDenialGround(e.target.value as DenialGround | "")}
+          className={`${inputClass} w-fit`}
+        >
+          <option value="">Not answered</option>
+          {DENIAL_GROUNDS.map((ground) => (
+            <option key={ground.value} value={ground.value}>
+              {ground.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-muted-foreground">
+          Choose it from the insurer's letter. A grievance letter uses it to show whether our checks support or agree with the denial.
         </span>
       </label>
 
