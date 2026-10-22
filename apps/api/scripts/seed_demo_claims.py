@@ -280,7 +280,8 @@ CLAIMS = (
     DemoClaim(
         UUID("01920000-0000-7000-8000-0000000000f3"), "likely_ineligible", "Lakshmi", "planned", "Navjeevan Multispeciality Hospital, Pune",
         date(2026, 4, 2), date(2026, 4, 6), 18_500_000,
-        {"diagnosis": "Complications of type 2 diabetes", "condition_is_pre_existing": True, "first_diagnosed_on": date(2023, 11, 5), "planned_room_rent_per_day": 400_000, **NONE_APPLY},
+        {"diagnosis": "Complications of type 2 diabetes", "condition_is_pre_existing": True, "first_diagnosed_on": date(2023, 11, 5), "planned_room_rent_per_day": 400_000, **NONE_APPLY,
+         "denial_ground": "ped_waiting_period"},  # the ground the denial gave, as the user would choose it (D-48)
         (("intimated", ist(date(2026, 3, 31)), "Planned admission notified in advance"),
          ("documents_submitted", ist(date(2026, 4, 8)), "Claim file submitted"),
          ("under_review", ist(date(2026, 4, 10)), "Insurer acknowledged"),
@@ -299,7 +300,7 @@ CLAIMS = (
         UUID("01920000-0000-7000-8000-0000000000f5"), "likely_eligible", "Rajan", "planned", "Navjeevan Multispeciality Hospital, Pune",
         date(2026, 7, 14), date(2026, 7, 18), 24_000_000,
         {"diagnosis": "Hypertensive heart disease", "condition_is_pre_existing": True, "first_diagnosed_on": date(2019, 4, 10),
-         "planned_room_rent_per_day": 400_000, **NONE_APPLY},
+         "planned_room_rent_per_day": 400_000, **NONE_APPLY, "denial_ground": "ped_waiting_period"},
         (("intimated", ist(date(2026, 7, 10)), "Planned admission notified in advance"),
          ("documents_submitted", ist(date(2026, 7, 22)), "Claim file submitted"),
          ("under_review", ist(date(2026, 7, 25)), "Insurer acknowledged"),
