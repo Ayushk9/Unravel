@@ -70,7 +70,7 @@ These are not style preferences. Breaking one makes the product dishonest, which
 
 ## Backend conventions
 
-Stack is fixed: Python 3.12, FastAPI, SQLAlchemy 2.0 async, Alembic (one linear chain), Pydantic v2, pydantic-settings, PostgreSQL on Supabase (pgvector enabled, unused for now), uvicorn. FastAPI `BackgroundTasks` for jobs: no Celery, no broker. venv + `requirements.txt`. No Docker. Do not add libraries without asking.
+Stack is fixed: Python 3.12, FastAPI, SQLAlchemy 2.0 async, Alembic (one linear chain), Pydantic v2, pydantic-settings, a **local PostgreSQL 17 on this Mac** (Homebrew `postgresql@17` with `pgvector`, run by `brew services`; no Docker), uvicorn. Supabase is used only for login keys (JWKS); dev mode keeps the stub token. FastAPI `BackgroundTasks` for jobs: no Celery, no broker. venv + `requirements.txt`. No Docker. Do not add libraries without asking.
 
 - Ayush must be able to explain every line to a university panel. Prefer clear code over clever code, and explain design decisions as you go.
 - Treat anything from the former `feat/be-foundations` branch as untrusted. Do not build on it.
@@ -115,7 +115,8 @@ Every phase needs tests for what it adds. Standing ones: error envelope for 404/
 ### Backend commands
 
 - `cd apps/api && ../../.venv/bin/python -m app`: API server on `HOST:PORT` (default `0.0.0.0:8000`, reachable from a phone on the same Wi-Fi; see `apps/api/.env.example` for the Android and CORS notes)
-- `cd apps/api && ../../.venv/bin/python -m pytest`: API tests. Tests that need real SQL run in a temporary Postgres schema and are **skipped** unless `TEST_DATABASE_URL` is set (it may equal `DATABASE_URL`; `public` is never touched)
+- `cd apps/api && ../../.venv/bin/python -m pytest`: API tests. Tests that need real SQL run in a temporary schema of the local test database `unravel_test` and are **skipped** unless `TEST_DATABASE_URL` is set (`public` is never touched). The full suite takes about 15 s locally
+- `brew services start postgresql@17` / `brew services stop postgresql@17`: the local database (dev `unravel`, tests `unravel_test`)
 - `cd apps/api && ../../.venv/bin/python scripts/create_bucket.py`: create the private Supabase bucket (only when `STORAGE_BACKEND=supabase`)
 - `cd apps/api && ../../.venv/bin/python scripts/print_policy_table.py <pdf>`: upload a PDF to a running server and print every extracted field
 - `cd apps/api && ../../.venv/bin/python scripts/print_rules.py`: table of every deadline and required-document rule with its source and verified flag
