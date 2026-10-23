@@ -57,7 +57,8 @@ async def claim_rung_options(session: AsyncSession, row: ClaimRow) -> list[Griev
         events=tuple(EventFact(seq=i, to_state=e.to_state, occurred_at=e.occurred_at) for i, e in enumerate(claim.events, start=1)),
         deadlines=tuple(claim.deadlines),
     )
-    return rung_options(context, load_grievance_rungs(), load_ombudsman_rules().award_ceiling.shown_sentence())
+    ombudsman = load_ombudsman_rules()
+    return rung_options(context, load_grievance_rungs(), ombudsman.award_ceiling.shown_sentence(), ombudsman.award_time.shown())
 
 
 @router.get("/claims/{claim_id}/grievance-rungs")
