@@ -8,6 +8,8 @@ import { ClaimCard, EmptyState, ErrorState, Skeleton } from "@/components/primit
 /** Most urgent/active states first — a household should see what needs attention before what's settled. */
 const GROUP_ORDER: ClaimState[] = [
   "denied",
+  "insurer_replied",
+  "grievance_sent",
   "escalated",
   "queried",
   "under_review",
@@ -20,7 +22,9 @@ const GROUP_ORDER: ClaimState[] = [
 
 const GROUP_LABEL: Record<ClaimState, string> = {
   denied: "Denied",
-  escalated: "Escalated",
+  grievance_sent: "Grievance sent to insurer",
+  insurer_replied: "Insurer replied to grievance",
+  escalated: "Escalated beyond the insurer",
   queried: "Query raised",
   under_review: "Under review",
   documents_submitted: "Documents submitted",
