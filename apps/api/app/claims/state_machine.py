@@ -4,16 +4,26 @@ Every other piece of code that needs to know a legal transition asks this
 module. Nothing else lists states or transitions, so the rules cannot drift
 apart between the API, the database constraints and the tests.
 
-The graph (ratified as API_DECISIONS D-31):
+The graph (ratified as API_DECISIONS D-31, amended by D-49):
 
     intimated           -> documents_submitted, queried
     documents_submitted -> under_review, queried
     under_review        -> queried, approved, denied
     queried             -> documents_submitted, under_review
     approved            -> resolved
-    denied              -> escalated, resolved
+    denied              -> grievance_sent, resolved
+    grievance_sent      -> insurer_replied, escalated, resolved
+    insurer_replied     -> escalated, resolved
     escalated           -> resolved
     resolved            -> (nothing: the claim is closed)
+
+D-49 follows Rule 14(3)(a) of the Insurance Ombudsman Rules, 2017: a complaint
+to the Ombudsman lies only after a written representation to the insurer
+(`grievance_sent`) and its rejection or an unsatisfactory reply
+(`insurer_replied`), or no reply within one month. `escalated` means a
+complaint filed beyond the insurer. The one-month and one-year timings are
+deadline rules (app/rules/deadline_rules.yaml), not transitions: the graph says
+what may follow what, never when.
 """
 
 from __future__ import annotations
@@ -26,7 +36,9 @@ TRANSITIONS: dict[str, tuple[str, ...]] = {
     "under_review": ("queried", "approved", "denied"),
     "queried": ("documents_submitted", "under_review"),
     "approved": ("resolved",),
-    "denied": ("escalated", "resolved"),
+    "denied": ("grievance_sent", "resolved"),
+    "grievance_sent": ("insurer_replied", "escalated", "resolved"),
+    "insurer_replied": ("escalated", "resolved"),
     "escalated": ("resolved",),
     "resolved": (),
 }
