@@ -284,6 +284,7 @@ If a path matches more than one row (two sub-limits with the same category, or s
 *Revisit:* resolved by D-41 (address a row by its position).
 
 ### D-31 · The claim state machine
+*Amended by D-49: `denied` no longer leads straight to `escalated`; two states record the written grievance and the insurer's reply.*
 Ratifies the graph that `CONTRACTS.md` §3 carried as a mock assumption:
 
 ```
@@ -310,6 +311,7 @@ If two `POST /claims/{id}/events` requests race from the same state, exactly one
 *Ratified:* 2026-10-08.
 
 ### D-33 · Deadlines carry their source and whether the rule is verified
+*Amended by D-49: the Ombudsman rules count from the grievance and the reply, and are verified.*
 `Deadline` gains two fields, and `Claim` gains one:
 
 ```json
@@ -577,6 +579,35 @@ Extends D-37, D-43 and D-47. Approved by Ayush, 2026-10-22.
 *Ratified:* 2026-10-22. Additive.
 *Revisit:* when grounds other than waiting periods need a fixed paragraph.
 
+### D-49 · The Ombudsman comes after a written grievance (Rule 14(3))
+Amends D-31 and D-33. Approved by Ayush, 2026-10-23, after he verified Rule 14(3) of the Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023): a complaint lies only after a written representation to the insurer and its rejection, an unsatisfactory reply, or no reply within one month. The complaint must be made within one year of the reply, or of the end of that month.
+
+- **Two claim states** (`ClaimState`, additive; clients already map unknown states to their escape hatch):
+  - `grievance_sent`: a written grievance sent to the insurer;
+  - `insurer_replied`: the insurer rejected it or replied unsatisfactorily.
+
+  `escalated` now means a complaint filed beyond the insurer.
+- **Graph changes:**
+  - `denied → grievance_sent | resolved` (no longer straight to `escalated`);
+  - `grievance_sent → insurer_replied | escalated | resolved`;
+  - `insurer_replied → escalated | resolved`;
+  - `escalated → resolved`.
+
+  Existing events stay as written (append-only).
+- **Deadlines** (computed on read, D-17):
+  - `ombudsman_opens`, "You may approach the Ombudsman from" (replaces `escalation_eligibility`): `grievance_sent` + 1 month, shown only in `grievance_sent`. It counts from the date sent, and says that the Rules count from receipt.
+  - `ombudsman_filing`: the latest `insurer_replied` + 1 year; with no reply, `grievance_sent` + 1 month + 1 year; shown in `grievance_sent` and `insurer_replied`.
+
+  Both are `verified: true`, citing Rule 14(3) with the official URL. The rule-file trigger gains the `otherwise: {event, after}` form.
+- **Rungs** (D-43):
+  - The insurer's grievance cell is offered after a denial and in both new states.
+  - The Ombudsman is offered only in `insurer_replied` (until the window ends) or in `grievance_sent` once a month has passed. After a denial alone it is not offered, and says to write to the grievance cell first. A draft request for it is `409 rung_not_available` (D-44).
+  - A verified gate is enforced: before it opens, or after it closes, the rung is not offered. An unverified gate only changes the sentence.
+  - Once `escalated`, the Ombudsman rung gives Rule 17(4) (an award within three months of receiving all requirements) as information, never as a computed date.
+  - Both rungs are `verified: true`; Bima Bharosa is not.
+
+*Ratified:* 2026-10-23. Additive on the wire, except the renamed deadline id (`deadline-ombudsman_opens-…` replaces `deadline-escalation_eligibility-…`).
+
 ---
 
 ## 5. Pagination
@@ -633,8 +664,8 @@ These need verification against primary sources before they appear in any demo, 
 | --- | --- | --- |
 | Insurance Ombudsman award monetary ceiling | **Resolved 2026-10-23 (verified by Ayush):** ₹50 lakh, including relevant expenses. Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023), Rule 17(3) proviso (ii), substituted by G.S.R. 828(E) dated 9.11.2023 ([source](https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf)). `ombudsman_rules.yaml` `verified: true`. Shown only in the Ombudsman rung's reason, as a limit on what can be awarded, never as a promise; never in a letter | Feature 7 rung selector |
 | FY25 Council for Insurance Ombudsmen complaint count | **Unverified** | Problem-statement slide; Feature 9 framing |
-| Ombudsman filing window | **Window verified 2026-10-23: 1 year, Rule 14(3)(b). Trigger wrong in our rules:** by Rule 14(3)(a) the year runs from the insurer's reply to a written grievance, or from one month after the grievance if there is no reply, not from the denial. The rule stays `verified: false` until the correction (the D-49 plan) is approved and built | Feature 6 deadline rule; Feature 7 Ombudsman rung |
-| Days of insurer silence before escalation is permitted | **Verified 2026-10-23 as part of Rule 14(3)(a): one month** after the written representation with no reply. Built into the D-49 plan; `escalation_eligibility` stays unverified until then | Feature 6 deadline rule |
+| Ombudsman filing window | **Resolved 2026-10-23 (D-49):** 1 year (Rule 14(3)(b)) from the insurer's reply to the written grievance, or from one month after the grievance if there is no reply (Rule 14(3)(a)). `ombudsman_filing` is corrected and `verified: true` | Feature 6 deadline rule; Feature 7 Ombudsman rung |
+| Days of insurer silence before escalation is permitted | **Resolved 2026-10-23 (D-49): one month** after the written representation with no reply (Rule 14(3)(a)). The rule `ombudsman_opens` (which replaces `escalation_eligibility`) is `verified: true` | Feature 6 deadline rule |
 | Insurer decision deadline | **Not verified, being confirmed (2026-10-23):** IRDAI/HLT/REG/CIR/152/06/2020 (30 days from the last necessary document, 45 if investigated, interest at bank rate + 2%) vs the Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024 of 5 Sep 2024 (appears to set 15 days from submission for non-cashless health claims). Value unchanged (30 days), `verified: false` | Feature 6 deadline rule |
 | Claim intimation deadline (varies by insurer) | **Do not hardcode** | Must come from the extracted policy, per-policy |
 
