@@ -410,7 +410,12 @@ def test_logging_a_denial_makes_the_ombudsman_deadline_appear_unverified_with_it
     (deadline,) = [d for d in claim["deadlines"] if d["label"] == "Ombudsman filing window"]
     assert set(deadline) == {"id", "label", "due_at", "days_remaining", "basis", "urgency", "source", "verified"}
     assert deadline["verified"] is False
-    assert deadline["source"] == {"document": "Insurance Ombudsman Rules, 2017", "section": deadline["source"]["section"], "url": None}
+    # The source Ayush checked on 2026-10-23 (DECISIONS.md); the rule itself stays unverified until D-49 corrects its trigger.
+    assert deadline["source"] == {
+        "document": "Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)",
+        "section": deadline["source"]["section"],
+        "url": "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf",
+    }
     expected_due = date(denied_on.year + 1, denied_on.month, min(denied_on.day, 28) if denied_on.month == 2 else denied_on.day)
     assert datetime.fromisoformat(deadline["due_at"]).astimezone(INDIA).date() == expected_due
     assert deadline["days_remaining"] == (expected_due - india_date(datetime.now(timezone.utc))).days
