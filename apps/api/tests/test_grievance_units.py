@@ -74,24 +74,33 @@ DENIED = [("intimated", "2026-04-02"), ("documents_submitted", "2026-04-10"), ("
 # --- rule files ---
 
 
-def test_rule_files_load_and_every_rung_rule_is_unverified_with_no_invented_url() -> None:
+RULES_URL = "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"
+
+
+def test_rule_files_load_and_only_the_rungs_ayush_checked_are_verified() -> None:
     rungs = load_grievance_rungs()
     assert list(rungs.rungs) == ["insurer_grievance_cell", "irdai_bima_bharosa", "insurance_ombudsman"]
-    assert all(not r.verified and r.source.url is None for r in rungs.rungs.values())
+    verified = {name: (rung.verified, rung.source.url) for name, rung in rungs.rungs.items()}
+    assert verified == {
+        "insurer_grievance_cell": (True, RULES_URL), "insurance_ombudsman": (True, RULES_URL), "irdai_bima_bharosa": (False, None),
+    }, "Rule 14(3), checked by Ayush on 2026-10-23; Bima Bharosa is not checked"
     ceiling = load_ombudsman_rules().award_ceiling
     # Verified by Ayush on 2026-10-23: Rs 50 lakh, Rule 17(3) proviso (ii), with the official URL.
-    assert (ceiling.value, ceiling.verified) == (500_000_000, True) and ceiling.source.url.startswith("https://www.cioins.co.in/")
+    assert (ceiling.value, ceiling.verified) == (500_000_000, True) and ceiling.source.url == RULES_URL
 
 
 def test_no_number_in_any_sentence_of_the_rung_file() -> None:
-    """Dates in reasons come from deadline rules ({due}, {event_date}); the rung file itself states no figure."""
+    """Dates in reasons come from deadline rules ({due}, {opens}, {closes}, {event_date}); the rung file states no figure."""
     for rung in load_grievance_rungs().rungs.values():
-        sentences = [rung.label, rung.addressee, rung.unavailable]
-        sentences += [text for c in rung.when for text in (c.reason, c.reason_after_due) if text]
+        sentences = [rung.label, rung.addressee, rung.unavailable, *rung.not_offered.values()]
+        sentences += [text for c in rung.when for text in c.sentences()]
         assert not [text for text in sentences if re.search(r"\d", text)]
 
 
-# --- rungs ---
+# --- rungs (D-49: Rule 14(3) of the Insurance Ombudsman Rules) ---
+
+SENT = [*DENIED, ("grievance_sent", "2026-05-10")]
+REPLIED = [*SENT, ("insurer_replied", "2026-05-25")]
 
 
 def test_an_intimated_claim_has_no_rung_yet_and_says_when_it_will() -> None:
@@ -100,18 +109,57 @@ def test_an_intimated_claim_has_no_rung_yet_and_says_when_it_will() -> None:
     assert result["insurance_ombudsman"].reason.startswith("Available once")
 
 
-def test_after_a_denial_every_rung_is_offered_with_its_reason_and_unverified_marking() -> None:
+def test_after_a_denial_the_grievance_cell_comes_first_and_the_ombudsman_is_not_offered() -> None:
     result = options(DENIED)
 
-    assert all(o.available and not o.verified for o in result.values())
-    ombudsman = result["insurance_ombudsman"]
-    assert "denied on 2 May 2026" in ombudsman.reason and "until 2 May 2027" in ombudsman.reason
-    assert ombudsman.reason.endswith(UNVERIFIED_NOTE) and ombudsman.rule_ids == ["ombudsman_filing"]
+    cell, ombudsman = result["insurer_grievance_cell"], result["insurance_ombudsman"]
+    assert cell.available and cell.verified and "denied on 2 May 2026" in cell.reason
+    assert not ombudsman.available
+    assert "only after you have written to the insurer" in ombudsman.reason and "Write to the insurer's grievance cell first" in ombudsman.reason
+    assert result["irdai_bima_bharosa"].available and not result["irdai_bima_bharosa"].verified
 
 
-def test_an_expired_ombudsman_window_is_still_offered_but_says_it_may_have_passed() -> None:
-    ombudsman = options(DENIED, today=date(2027, 6, 1))["insurance_ombudsman"]
-    assert ombudsman.available and "may have passed" in ombudsman.reason and "2 May 2027" in ombudsman.reason
+def test_with_a_grievance_sent_the_ombudsman_opens_one_month_later_not_before() -> None:
+    early = options(SENT, today=date(2026, 6, 9))["insurance_ombudsman"]
+    opens_day = options(SENT, today=date(2026, 6, 10))["insurance_ombudsman"]
+
+    assert not early.available and "If the insurer has not replied by 10 Jun 2026" in early.reason
+    assert early.verified and early.rule_ids == ["ombudsman_opens", "ombudsman_filing"]
+    assert opens_day.available and "no reply is recorded" in opens_day.reason and "until 10 Jun 2027" in opens_day.reason
+
+
+def test_after_a_reply_the_ombudsman_is_offered_until_a_year_from_the_reply() -> None:
+    open_ = options(REPLIED, today=date(2026, 6, 1))["insurance_ombudsman"]
+    closed = options(REPLIED, today=date(2027, 5, 26))["insurance_ombudsman"]
+
+    assert open_.available and open_.verified and "replied to your grievance on 25 May 2026" in open_.reason
+    assert "until 25 May 2027" in open_.reason and UNVERIFIED_NOTE not in open_.reason
+    assert not closed.available and "ended on 25 May 2027" in closed.reason, "a verified window that has ended is enforced"
+
+
+def test_an_unverified_gate_still_offers_the_rung_marked() -> None:
+    data = load_deadline_rules().model_dump()
+    for rule in data["rules"]:
+        if rule["id"] == "ombudsman_opens":
+            rule["verified"] = False
+    from app.rules.loader import DeadlineRules
+
+    events = tuple(EventFact(seq=i, to_state=s, occurred_at=at(d)) for i, (s, d) in enumerate(SENT, start=1))
+    facts = ClaimFacts(claim_id=CLAIM_ID, current_state="grievance_sent", admitted_on=date(2026, 4, 2), events=events)
+    deadlines, _ = compute_deadlines(facts, 24.0, DeadlineRules.model_validate(data), date(2026, 5, 20))
+    context = RungContext(current_state="grievance_sent", events=events, deadlines=tuple(deadlines))
+
+    ombudsman = {o.rung: o for o in rung_options(context, load_grievance_rungs())}["insurance_ombudsman"]
+    assert ombudsman.available and not ombudsman.verified and ombudsman.reason.endswith(UNVERIFIED_NOTE)
+
+
+def test_once_a_complaint_is_filed_the_ombudsman_rung_gives_rule_17_4_as_information() -> None:
+    award_time = load_ombudsman_rules().award_time.shown()
+    path = [*REPLIED, ("escalated", "2026-06-05")]
+    ombudsman = {o.rung: o for o in rung_options(context_for(path), load_grievance_rungs(), LIMIT, award_time)}["insurance_ombudsman"]
+    assert not ombudsman.available and ombudsman.reason.startswith("You have already taken the complaint beyond the insurer.")
+    assert "within three months of receiving all the requirements" in ombudsman.reason
+    assert not CEILING_WORDS.search(ombudsman.reason), "the award limit is shown only where a complaint can still be made"
 
 
 def test_under_review_offers_the_grievance_cell_before_and_after_the_decision_date() -> None:
@@ -122,12 +170,6 @@ def test_under_review_offers_the_grievance_cell_before_and_after_the_decision_da
     assert early["insurer_grievance_cell"].available and "may be early" in early["insurer_grievance_cell"].reason
     assert "has passed" in late["insurer_grievance_cell"].reason
     assert not early["insurance_ombudsman"].available and not early["irdai_bima_bharosa"].available
-
-
-def test_escalated_dates_the_ombudsman_from_the_grievance_event() -> None:
-    result = options([*DENIED, ("escalated", "2026-05-10")], today=date(2026, 5, 20))
-    assert "from 9 Jun 2026" in result["insurance_ombudsman"].reason
-    assert result["insurance_ombudsman"].rule_ids == ["escalation_eligibility"]
 
 
 # --- the deterministic letter ---
@@ -346,7 +388,7 @@ def test_the_award_ceiling_never_appears_in_a_letter(clauses: list[Clause], rung
 def test_the_award_ceiling_appears_only_in_the_offered_ombudsman_rung_worded_as_a_limit() -> None:
     assert LIMIT == ("By the Insurance Ombudsman Rules, the Ombudsman can award at most ₹50,00,000, including relevant expenses. "
                      "This is a limit on what can be awarded, not an amount you can expect.")
-    for path in ([("intimated", "2026-04-02")], DENIED, [*DENIED, ("escalated", "2026-05-10")]):
+    for path in ([("intimated", "2026-04-02")], DENIED, SENT, REPLIED, [*REPLIED, ("escalated", "2026-06-05")]):
         for option in rung_options(context_for(path), load_grievance_rungs(), LIMIT):
             shown = bool(CEILING_WORDS.search(option.reason))
             assert shown == (option.rung == "insurance_ombudsman" and option.available), (path[-1], option.rung)
@@ -360,7 +402,7 @@ def test_an_unverified_ceiling_is_never_shown() -> None:
     unverified = AwardCeiling.model_validate({"value": 500_000_000, "verified": False, "rung_sentence": "at most {ceiling}",
                                              "source": {"document": "d", "section": None, "url": None}})
     assert unverified.shown_sentence() is None
-    for option in rung_options(context_for(DENIED), load_grievance_rungs(), unverified.shown_sentence()):
+    for option in rung_options(context_for(REPLIED), load_grievance_rungs(), unverified.shown_sentence()):
         assert not CEILING_WORDS.search(option.reason)
 
 
