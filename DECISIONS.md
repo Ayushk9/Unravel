@@ -1092,3 +1092,40 @@ Run with the teammate's key (ends `vHWQ`), with `scripts/diagnose_draft_call.py`
 - first 1 draft and 1 rejected judge (400), then 1 draft and 1 judge, then 1 receipt classification;
 - now 2 classifications (Rajan's report and ID proof), and 1 draft and 1 judge.
 
+## Rule verification by Ayush, and closing Phase 7 (2026-10-23)
+
+### Needs verification: resolved and still open
+
+Ayush checked these against the official text. Source for 1 and 2: [Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)](https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf).
+
+1. **RESOLVED: the Ombudsman award ceiling is ₹50 lakh, including relevant expenses.** Rule 17(3) proviso (ii), substituted by G.S.R. 828(E) dated 9.11.2023.
+   - `apps/api/app/rules/ombudsman_rules.yaml`: `value: 500000000` (paise), `verified: true`, with the URL.
+   - It appears only in the Ombudsman rung's reason, when that rung is offered, in one fixed sentence: "By the Insurance Ombudsman Rules, the Ombudsman can award at most ₹50,00,000, including relevant expenses. This is a limit on what can be awarded, not an amount you can expect."
+   - It never appears in a letter, and disappears everywhere if `verified` goes back to false. All three are tested.
+2. **PARTLY RESOLVED: the Ombudsman filing window is 1 year (Rule 14(3)(b)), but our trigger is wrong.**
+   - By Rule 14(3)(a) a complaint lies only after a written representation to the insurer, and its rejection, an unsatisfactory reply, or no reply within one month. The year runs from the reply or rejection, or from one month after the representation if there was no reply.
+   - `ombudsman_filing` now cites Rule 14(3)(a) and (b) with the URL, but **stays `verified: false`** until the D-49 plan (below) is approved and built. Ayush asked to see the plan before any coding; it changes the claim state machine (D-31) and the contract.
+   - Rule 17(4) (award within 3 months of receiving all requirements) is to be shown as information only.
+3. **STILL NOT VERIFIED: the insurer decision deadline.** IRDAI/HLT/REG/CIR/152/06/2020 says 30 days from the last necessary document (45 if investigated), with interest at bank rate + 2%. The Master Circular on Protection of Policyholders' Interests, IRDAI/PP&GR/CIR/MISC/117/9/2024 (5 Sep 2024), appears to set 15 days from submission of the claim for non-cashless health claims. `insurer_decision` now names both documents and says "being confirmed". Its value is unchanged (30 days) and it stays `verified: false`.
+
+### Closing items
+
+- **Citation precision with no model paragraphs:** kept as the number `0` on the wire, not made nullable, because a nullable change would break any client (Android) that reads it as a number. Both clients show **"No model-written paragraphs to check"** instead of a figure; recorded as a clarification under D-47. The web strip and `scripts/draft_grievance.py` do so. If reversed (null on the wire), it is a breaking change needing both clients updated together.
+- **Settled conditions are dropped from "Before you send":**
+  - Each model condition carries `restates_check`, the id of the eligibility check whose own requirement it restates, or `"none"`. It is set in the same draft call (prompt `grievance-v5`); there is no extra call.
+  - Code drops a condition whose check our rules found **satisfied** (`run_draft.drop_settled_conditions`) before judging, and the record keeps it under `conditions_dropped`.
+  - A further requirement no check evaluates (for example the PED declaration condition) is tagged `"none"` and always kept.
+  - **Why a tag and not the cited clause:** both kinds cite the same PED clause, so the clause alone cannot tell them apart. The tag is model output and could be wrong; a wrong tag on a real requirement would hide it. That risk is accepted as smaller than showing settled noise.
+- **`scripts/regenerate_demo_drafts.py`** (not run): drafts Lakshmi's and Rajan's letters as real `generate_grievance_draft` jobs through the runner's own job function, prints each screen link and every Gemini attempt by model. Job rows last 24 h after finishing, so it must run within 24 h of the panel. A test checks the counter sees retries and the fallback.
+
+### Proposed, awaiting approval: D-49, Ombudsman timing from the grievance to the insurer
+
+1. **Claim states** (amends D-31):
+   - New: `grievance_sent` (a written representation to the insurer) and `insurer_replied` (rejected, or replied unsatisfactorily).
+   - `escalated` narrows to "a complaint filed beyond the insurer (Ombudsman)".
+   - Graph: `denied → grievance_sent | resolved`; `grievance_sent → insurer_replied | escalated | resolved`; `insurer_replied → escalated | resolved`; `escalated → resolved`.
+   - Existing `escalated` events stay as written (append-only).
+2. **Deadlines** (amends D-33): `ombudsman_filing` counts from the latest `insurer_replied`, else from `grievance_sent` plus one month. The rule-file format gains a "trigger, else trigger plus offset" form. `escalation_eligibility` becomes "you may approach the Ombudsman from": `grievance_sent` plus one month, shown only while no reply is recorded. Both become `verified: true` once built.
+3. **Ombudsman rung:** offered only in `insurer_replied`, or in `grievance_sent` once a month has passed. After a denial alone it is not offered, with a reason saying to write to the insurer's grievance cell first. Rule 17(4) as an information line.
+4. **Contract:** two `ClaimState` values (clients already have an escape hatch), changed deadline ids and labels, and `POST /claims/{id}/events` accepting the new states. The web timeline and state badges get labels.
+
