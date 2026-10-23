@@ -11,8 +11,10 @@ from pydantic import AwareDatetime, Field, StrictBool, StringConstraints, model_
 from app.schemas.base import ApiModel
 from app.schemas.documents import DocumentType
 
+# In lifecycle order; the same states as app/claims/state_machine.TRANSITIONS (a test checks). D-49 added two.
 ClaimState = Literal[
-    "intimated", "documents_submitted", "under_review", "queried", "approved", "denied", "escalated", "resolved"
+    "intimated", "documents_submitted", "under_review", "queried", "approved", "denied",
+    "grievance_sent", "insurer_replied", "escalated", "resolved",
 ]
 ClaimType = Literal["cashless", "reimbursement", "other"]
 AdmissionType = Literal["planned", "emergency", "other"]
