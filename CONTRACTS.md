@@ -79,7 +79,7 @@ This is Phase 2 of the frontend build. It implements every ruling in
 | 13 | `GET /claims` | — | `Claim[]` (with `omitted_deadlines`, D-33) | 401 | Sync | No (full array, D-31) | — |
 | 14 | `POST /claims` | `ClaimCreateRequest` | 201 `Claim` | 401, 422 | Sync | — | — |
 | 15 | `GET /claims/{id}` | — | `Claim` | 401, 404 | Sync | — | — |
-| 16 | `POST /claims/{id}/events` | `{ to_state, occurred_at, note }` | `Claim` (recomputed) | 401, 404, **409** `illegal_transition` (allowed targets in `field_errors`, D-31) or `claim_changed` (lost a race, D-32), 422 (future or zone-less `occurred_at`) | Sync | — | — |
+| 16 | `POST /claims/{id}/events` | `{ to_state, occurred_at, note }`; `to_state` includes `grievance_sent`, `insurer_replied` (D-49) | `Claim` (recomputed) | 401, 404, **409** `illegal_transition` (allowed targets in `field_errors`, D-31, D-49) or `claim_changed` (lost a race, D-32), 422 (future or zone-less `occurred_at`) | Sync | — | — |
 | 17 | `POST /claims/{id}/eligibility` | — | `EligibilityAssessment` (with `confidence`, `values`, `missing_facts`, `ombudsman_precedent_note`, D-36) | 401, 404 | Sync | — | — |
 | 18 | `POST /claims/{id}/completeness` | — | `CompletenessReport` (with `required_details`, `verified`, D-35) | 401, 404 | Sync | — | — |
 | 19 | `POST /claims/{id}/bill-validation` | — | `BillValidationReport` | 401, 404, **409** (bill not parsed yet) | Sync | — | — |
