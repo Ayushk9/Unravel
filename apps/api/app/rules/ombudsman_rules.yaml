@@ -22,3 +22,15 @@ award_ceiling:
     document: Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)
     section: Rule 17(3), proviso (ii), substituted by G.S.R. 828(E) dated 9.11.2023
     url: "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"
+
+# award_time: how long the Ombudsman takes to pass an award. Information only, never a deadline
+# (the clock starts when the Ombudsman has all requirements, a date the app cannot know).
+# VERIFIED by Ayush on 2026-10-23: Rule 17(4), same document. Shown in the Ombudsman rung once
+# a complaint has been filed (claim state `escalated`).
+award_time:
+  verified: true
+  sentence: "By Rule 17(4) of the Insurance Ombudsman Rules, the Ombudsman is to pass an award within three months of receiving all the requirements from you. This is information, not a date the app can work out."
+  source:
+    document: Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)
+    section: Rule 17(4)
+    url: "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"

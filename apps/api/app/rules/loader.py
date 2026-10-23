@@ -39,10 +39,17 @@ class RuleSource(_Rule):
 
 
 class Trigger(_Rule):
-    """Exactly one of: the admission date, or the latest event entering a state."""
+    """Exactly one of: the admission date, or the latest event entering a state.
+
+    An event trigger may name a fallback (D-49): `otherwise: {event, after}` counts
+    from `after` past the latest `otherwise.event` when `event` has not happened.
+    The Ombudsman window uses it: from the insurer's reply, otherwise from one month
+    after the grievance was sent.
+    """
 
     admission: bool = False
     event: str | None = None
+    otherwise: FallbackTrigger | None = None
 
     @model_validator(mode="after")
     def _exactly_one(self) -> Trigger:
@@ -50,6 +57,8 @@ class Trigger(_Rule):
             raise ValueError("a trigger must be either {admission: true} or {event: <state>}")
         if self.event is not None and self.event not in STATES:
             raise ValueError(f"unknown state {self.event!r}")
+        if self.otherwise is not None and self.event is None:
+            raise ValueError("a fallback (otherwise) needs an event trigger")
         return self
 
 
@@ -66,6 +75,24 @@ class Offset(_Rule):
         if fixed == (self.policy_field is not None) or (self.value is None) != (self.unit is None):
             raise ValueError("an offset must be either {value, unit} or {policy_field}")
         return self
+
+
+class FallbackTrigger(_Rule):
+    """The fallback of an event trigger: `after` past the latest event entering `event`."""
+
+    event: str
+    after: Offset
+
+    @model_validator(mode="after")
+    def _fixed(self) -> FallbackTrigger:
+        if self.event not in STATES:
+            raise ValueError(f"unknown state {self.event!r}")
+        if self.after.value is None:
+            raise ValueError("a fallback's `after` must be a fixed length {value, unit}")
+        return self
+
+
+Trigger.model_rebuild()
 
 
 class DeadlineRule(_Rule):
@@ -136,33 +163,61 @@ class RequiredDocuments(_Rule):
 
 
 class RungCondition(_Rule):
-    """One claim state in which a rung is offered, and the sentence that says why."""
+    """One claim state in which a rung is offered, and the sentence that says why.
+
+    D-49 adds a gate: `opens_with` (offered only from that deadline's date) and
+    `closes_with` (no longer offered after it), each with its own sentence.
+    """
 
     state: str
     reason: str
     deadline: str | None = None
     reason_after_due: str | None = None
+    opens_with: str | None = None
+    reason_before_open: str | None = None
+    closes_with: str | None = None
+    reason_after_close: str | None = None
+
+    def sentences(self) -> list[str]:
+        return [text for text in (self.reason, self.reason_after_due, self.reason_before_open, self.reason_after_close) if text]
 
     @model_validator(mode="after")
     def _consistent(self) -> RungCondition:
         if self.state not in STATES:
             raise ValueError(f"unknown state {self.state!r}")
-        uses_due = "{due}" in self.reason or "{due}" in (self.reason_after_due or "")
-        if uses_due and self.deadline is None:
-            raise ValueError(f"state {self.state}: a reason uses {{due}} but no deadline is named")
+        text = " ".join(self.sentences())
+        for placeholder, rule in (("{due}", self.deadline), ("{opens}", self.opens_with), ("{closes}", self.closes_with)):
+            if placeholder in text and rule is None:
+                raise ValueError(f"state {self.state}: a reason uses {placeholder} but names no deadline for it")
         if self.reason_after_due is not None and self.deadline is None:
             raise ValueError(f"state {self.state}: reason_after_due needs a deadline")
+        if (self.opens_with is None) != (self.reason_before_open is None):
+            raise ValueError(f"state {self.state}: opens_with and reason_before_open go together")
+        if (self.closes_with is None) != (self.reason_after_close is None):
+            raise ValueError(f"state {self.state}: closes_with and reason_after_close go together")
         return self
+
+    def deadline_ids(self) -> list[str]:
+        return [rule for rule in (self.deadline, self.opens_with, self.closes_with) if rule]
 
 
 class Rung(_Rule):
     label: str
     addressee: str
     when: tuple[RungCondition, ...]
+    # Per claim state: why the rung is not offered there (D-49), instead of `unavailable`.
+    not_offered: dict[str, str] = Field(default_factory=dict)
     unavailable: str
     source: RuleSource
     verified: bool
     version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _known_states(self) -> Rung:
+        unknown = [state for state in self.not_offered if state not in STATES]
+        if unknown:
+            raise ValueError(f"not_offered: unknown state(s) {unknown}")
+        return self
 
 
 class GrievanceRungs(_Rule):
@@ -198,9 +253,21 @@ class AwardCeiling(_Rule):
         return self.rung_sentence.format(ceiling=format_rupees(self.value))
 
 
+class InfoSentence(_Rule):
+    """A fixed sentence shown as information, with its source; shown only while verified."""
+
+    verified: bool
+    sentence: str
+    source: RuleSource
+
+    def shown(self) -> str | None:
+        return self.sentence if self.verified else None
+
+
 class OmbudsmanRules(_Rule):
     version: int = Field(ge=1)
     award_ceiling: AwardCeiling
+    award_time: InfoSentence
 
 
 def _check_rung_deadlines(rungs: GrievanceRungs, deadlines: DeadlineRules) -> None:
@@ -208,13 +275,12 @@ def _check_rung_deadlines(rungs: GrievanceRungs, deadlines: DeadlineRules) -> No
     by_id = {rule.id: rule for rule in deadlines.rules}
     for name, rung in rungs.rungs.items():
         for condition in rung.when:
-            if condition.deadline is None:
-                continue
-            rule = by_id.get(condition.deadline)
-            if rule is None:
-                raise ValueError(f"rung {name}: unknown deadline rule {condition.deadline!r}")
-            if condition.state not in rule.active_in or rule.trigger.event is None:
-                raise ValueError(f"rung {name}: deadline {rule.id} is not an event deadline shown in state {condition.state}")
+            for rule_id in condition.deadline_ids():
+                rule = by_id.get(rule_id)
+                if rule is None:
+                    raise ValueError(f"rung {name}: unknown deadline rule {rule_id!r}")
+                if condition.state not in rule.active_in or rule.trigger.event is None:
+                    raise ValueError(f"rung {name}: deadline {rule.id} is not an event deadline shown in state {condition.state}")
 
 
 def _read(path: Path) -> dict:
