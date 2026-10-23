@@ -554,6 +554,8 @@ Extends D-43. Approved by Ayush, 2026-10-22.
 - **"Our rules agree"** means the eligibility band is `likely_ineligible` (a check failed with high confidence, D-36). The recorded denial reason is free text and is never keyword-matched. So this can't confirm that the failed check is the very ground the insurer named; it says our assessment also finds the claim likely ineligible.
 - Then `assessment_note` is exactly "Our assessment agrees with the insurer's stated reason. This letter asks the insurer to explain its decision; it does not dispute it.", and clients show it with the letter. The subject becomes "Request for an explanation of the denial …" and the closing asks for a written reply to each point instead of a review. Otherwise `assessment_note` is `null`.
 
+*Clarified 2026-10-23:* when a draft has no `source: "model"` paragraph, `citation_precision` is still sent as `0` (the field stays a number, so no client breaks), but it is not a score. Clients show "No model-written paragraphs to check" instead of a figure.
+
 *Ratified:* 2026-10-22. Additive.
 
 ### D-48 · The denial ground, a rules-built opening, and "Before you send"
@@ -629,10 +631,11 @@ These need verification against primary sources before they appear in any demo, 
 
 | Item | Status | Where it bites |
 | --- | --- | --- |
-| Insurance Ombudsman award monetary ceiling (₹30 lakh vs ₹50 lakh across sources) | **Conflicting** — verify against the Ombudsman Rules as amended. Held in `apps/api/app/rules/ombudsman_rules.yaml` as `value: null, verified: false`; read into no output (D-43) | Feature 7 rung selector; any eligibility copy |
+| Insurance Ombudsman award monetary ceiling | **Resolved 2026-10-23 (verified by Ayush):** ₹50 lakh, including relevant expenses. Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023), Rule 17(3) proviso (ii), substituted by G.S.R. 828(E) dated 9.11.2023 ([source](https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf)). `ombudsman_rules.yaml` `verified: true`. Shown only in the Ombudsman rung's reason, as a limit on what can be awarded, never as a promise; never in a letter | Feature 7 rung selector |
 | FY25 Council for Insurance Ombudsmen complaint count | **Unverified** | Problem-statement slide; Feature 9 framing |
-| Ombudsman filing window from date of repudiation | **Unverified** | Feature 6 deadline rule — this one is load-bearing |
-| Days of insurer silence before escalation is permitted | **Unverified** | Feature 6 deadline rule |
+| Ombudsman filing window | **Window verified 2026-10-23: 1 year, Rule 14(3)(b). Trigger wrong in our rules:** by Rule 14(3)(a) the year runs from the insurer's reply to a written grievance, or from one month after the grievance if there is no reply, not from the denial. The rule stays `verified: false` until the correction (the D-49 plan) is approved and built | Feature 6 deadline rule; Feature 7 Ombudsman rung |
+| Days of insurer silence before escalation is permitted | **Verified 2026-10-23 as part of Rule 14(3)(a): one month** after the written representation with no reply. Built into the D-49 plan; `escalation_eligibility` stays unverified until then | Feature 6 deadline rule |
+| Insurer decision deadline | **Not verified, being confirmed (2026-10-23):** IRDAI/HLT/REG/CIR/152/06/2020 (30 days from the last necessary document, 45 if investigated, interest at bank rate + 2%) vs the Master Circular IRDAI/PP&GR/CIR/MISC/117/9/2024 of 5 Sep 2024 (appears to set 15 days from submission for non-cashless health claims). Value unchanged (30 days), `verified: false` | Feature 6 deadline rule |
 | Claim intimation deadline (varies by insurer) | **Do not hardcode** | Must come from the extracted policy, per-policy |
 
 **Update 2026-10-08:** the two deadline items above now have working values in `apps/api/app/rules/deadline_rules.yaml` (Ombudsman filing window: 1 year from denial; escalation after insurer silence: 30 days). They are a best understanding, marked `verified: false`, and are shown to users as unverified. They remain open until checked.
