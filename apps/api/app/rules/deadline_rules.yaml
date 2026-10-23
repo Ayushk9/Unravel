@@ -53,14 +53,20 @@ rules:
     label: Insurer should decide by
     trigger: {event: documents_submitted}
     active_in: [documents_submitted, under_review]
-    offset: {value: 30, unit: days}   # TODO(Ayush): verify. Newer IRDAI circulars may set shorter limits, especially for cashless.
+    # NOT VERIFIED (Ayush, 2026-10-23), being confirmed between two documents:
+    #   - IRDAI/HLT/REG/CIR/152/06/2020: 30 days from the last necessary document
+    #     (45 days if investigated), with interest at bank rate + 2% if late;
+    #   - Master Circular on Protection of Policyholders' Interests, IRDAI/PP&GR/CIR/MISC/117/9/2024
+    #     (5 Sep 2024): appears to set 15 days from submission of the claim for non-cashless health claims.
+    # No value change until confirmed.
+    offset: {value: 30, unit: days}
     description: An insurer is expected to settle or reject a claim within 30 days of receiving the last necessary document.
     source:
-      document: IRDAI (Protection of Policyholders' Interests) Regulations, 2017
-      section: Claims procedure for health insurance policies (regulation number to be confirmed; may be superseded by the 2024 regulations and master circular)
-      url: null   # TODO(Ayush): add the official URL
+      document: "IRDAI circular IRDAI/HLT/REG/CIR/152/06/2020; IRDAI Master Circular on Protection of Policyholders' Interests, IRDAI/PP&GR/CIR/MISC/117/9/2024 (5 Sep 2024)"
+      section: "Being confirmed: the 2020 circular says 30 days from the last necessary document (45 if investigated); the 2024 master circular appears to set 15 days from submission for non-cashless health claims"
+      url: null   # TODO(Ayush): add the official URL once the governing document is confirmed
     verified: false
-    version: 1
+    version: 2
 
   - id: escalation_eligibility
     label: You may approach the Ombudsman from
@@ -79,11 +85,15 @@ rules:
     label: Ombudsman filing window
     trigger: {event: denied}
     active_in: [denied, escalated]
-    offset: {value: 1, unit: years}   # TODO(Ayush): verify. Listed as unverified and load-bearing in API_DECISIONS section 8.
+    # The 1-year window is VERIFIED (Ayush, 2026-10-23: Rule 14(3)(b)), but this rule's TRIGGER is
+    # wrong: by Rule 14(3)(a) the year runs from the insurer's reply to a written grievance (or from one
+    # month after the grievance was sent, if no reply), not from the claim's denial. It stays
+    # verified: false until the trigger is corrected (DECISIONS.md, the D-49 plan awaiting approval).
+    offset: {value: 1, unit: years}
     description: A complaint to the Insurance Ombudsman must be made within one year of the insurer's rejection.
     source:
-      document: Insurance Ombudsman Rules, 2017
-      section: Rule 14 (time limit for making a complaint); sub-rule to be confirmed
-      url: null   # TODO(Ayush): add the official URL
+      document: Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)
+      section: Rule 14(3)(b) (one year); Rule 14(3)(a) (only after a written representation to the insurer)
+      url: "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"
     verified: false
-    version: 1
+    version: 2
