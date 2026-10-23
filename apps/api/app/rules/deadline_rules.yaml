@@ -1,9 +1,10 @@
 # Deadline rules for claims (Feature 6).
 #
-# NOTHING IN THIS FILE HAS BEEN VERIFIED AGAINST A PRIMARY SOURCE.
-# Every rule is `verified: false`. The values are a best understanding,
-# written down so they can be checked, not facts to rely on. The API sends
-# `verified` with every deadline and the app marks unverified ones.
+# Each rule says whether a person has checked it against its source
+# (`verified`). The two Ombudsman rules were verified by Ayush on 2026-10-23
+# against the Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023),
+# Rule 14(3). The others are a best understanding, `verified: false`. The API
+# sends `verified` with every deadline and the app marks unverified ones.
 #
 # To verify a rule: read the source, correct `offset` and `source` if needed
 # (fill in `url`), set `verified: true`, and raise `version` by one.
@@ -16,6 +17,9 @@
 #   trigger      what starts the clock:
 #                  {admission: true}        the claim's admission date
 #                  {event: <state>}         the latest event entering that state
+#                  {event: <state>, otherwise: {event: <state>, after: {value, unit}}}
+#                                           as above; if that event has not happened,
+#                                           `after` past the latest `otherwise.event` (D-49)
 #   active_in    claim states in which the deadline is shown
 #   offset       how long after the trigger:
 #                  {value: N, unit: days|months|years}
@@ -37,7 +41,7 @@ rules:
   - id: claim_intimation
     label: Claim intimation window
     trigger: {admission: true}
-    active_in: [intimated, documents_submitted, under_review, queried, approved, denied, escalated, resolved]
+    active_in: [intimated, documents_submitted, under_review, queried, approved, denied, grievance_sent, insurer_replied, escalated, resolved]
     # Not a fixed number: each policy states its own window, and it is read
     # from that policy's extracted coverage profile. Never hardcoded.
     offset: {policy_field: intimation_deadline_hours}
@@ -68,32 +72,35 @@ rules:
     verified: false
     version: 2
 
-  - id: escalation_eligibility
+  - id: ombudsman_opens
     label: You may approach the Ombudsman from
-    trigger: {event: escalated}
-    active_in: [escalated]
-    offset: {value: 30, unit: days}   # TODO(Ayush): verify. The rule says "one month"; check whether that is 30 days or a calendar month.
-    description: If the insurer has not replied within one month of receiving your written grievance, you may take the complaint to the Insurance Ombudsman.
+    trigger: {event: grievance_sent}
+    # Only while no reply is recorded: once the insurer replies, the claim leaves grievance_sent.
+    active_in: [grievance_sent]
+    offset: {value: 1, unit: months}
+    description: >-
+      If the insurer has not replied within one month of your written grievance, you may complain to the Insurance
+      Ombudsman. This is counted from the date you sent the grievance; the Rules count from the insurer's receipt of it.
     source:
-      document: Insurance Ombudsman Rules, 2017
-      section: Rule 14 (manner in which complaint is to be made); sub-rule to be confirmed
-      url: null   # TODO(Ayush): add the official URL
-    verified: false
-    version: 1
+      document: Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)
+      section: Rule 14(3)(a)
+      url: "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"
+    verified: true   # Ayush, 2026-10-23
+    version: 2
 
   - id: ombudsman_filing
     label: Ombudsman filing window
-    trigger: {event: denied}
-    active_in: [denied, escalated]
-    # The 1-year window is VERIFIED (Ayush, 2026-10-23: Rule 14(3)(b)), but this rule's TRIGGER is
-    # wrong: by Rule 14(3)(a) the year runs from the insurer's reply to a written grievance (or from one
-    # month after the grievance was sent, if no reply), not from the claim's denial. It stays
-    # verified: false until the trigger is corrected (DECISIONS.md, the D-49 plan awaiting approval).
+    # Rule 14(3)(b): within one year of the insurer's reply (or rejection) of the written grievance; if the insurer did
+    # not reply, within one year of the end of the month it had to reply in (Rule 14(3)(a)).
+    trigger: {event: insurer_replied, otherwise: {event: grievance_sent, after: {value: 1, unit: months}}}
+    active_in: [grievance_sent, insurer_replied]
     offset: {value: 1, unit: years}
-    description: A complaint to the Insurance Ombudsman must be made within one year of the insurer's rejection.
+    description: >-
+      A complaint to the Insurance Ombudsman must be made within one year of the insurer's reply to your written
+      grievance or, if it did not reply, within one year of the month after you sent it.
     source:
       document: Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)
-      section: Rule 14(3)(b) (one year); Rule 14(3)(a) (only after a written representation to the insurer)
+      section: Rule 14(3)(a) and (b)
       url: "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"
-    verified: false
-    version: 2
+    verified: true   # Ayush, 2026-10-23; trigger corrected under D-49
+    version: 3
