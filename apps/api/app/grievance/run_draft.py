@@ -50,7 +50,7 @@ from app.grievance.letter import (
     subject,
     template_paragraphs,
 )
-from app.grievance.llm import GRIEVANCE_PROMPT_VERSION, RUNG_DESCRIPTIONS, GrievanceLlm, generated_draft_problems
+from app.grievance.llm import GRIEVANCE_PROMPT_VERSION, RUNG_DESCRIPTIONS, GeneratedCondition, GrievanceLlm, generated_draft_problems
 from app.jobs.parse_document import JobFailure
 from app.jobs.queue import ClaimedJob, SessionFactory, set_progress
 from app.models_server.client import Models, ModelServerError
@@ -123,6 +123,22 @@ def citation_precision(paragraphs: list[DraftParagraph]) -> float:
     if not written:
         return 0.0
     return sum(1 for p in written if p.verified) / len(written)
+
+
+def drop_settled_conditions(conditions: list[GeneratedCondition], checks: tuple[CheckResult, ...]) -> tuple[list[GeneratedCondition], list[dict[str, str]]]:
+    """Drop a condition that restates a check our rules already found satisfied: it is settled, not a risk.
+
+    Deterministic, given the model's `restates_check` tag (made in the same draft call; no extra call).
+    A condition tagged "none" (a requirement no check evaluates) is always kept.
+    """
+    satisfied = {check.id for check in checks if check.status == "satisfied"}
+    kept, dropped = [], []
+    for condition in conditions:
+        if condition.restates_check in satisfied:
+            dropped.append({"text": condition.text, "restates_check": condition.restates_check, "reason": "check already satisfied"})
+        else:
+            kept.append(condition)
+    return kept, dropped
 
 
 def search_queries(denial_reason: str | None, checks: tuple[CheckResult, ...], denial_ground: str | None = None) -> list[str]:
@@ -325,7 +341,8 @@ async def draft_letter(
     t = time.perf_counter()
     chunk_text = {short: c.text for short, c in by_short_id.items()}
     written = [Sentence(p.text, tuple(dict.fromkeys(p.chunk_ids))) for p in drafted.value.paragraphs]
-    found_conditions = [Sentence(c.text, tuple(dict.fromkeys(c.chunk_ids))) for c in drafted.value.conditions]
+    open_conditions, settled = drop_settled_conditions(drafted.value.conditions, context.checks)
+    found_conditions = [Sentence(c.text, tuple(dict.fromkeys(c.chunk_ids))) for c in open_conditions]
     candidates = written + found_conditions
     # Only text that passes the number check is worth a judge's verdict.
     worth_judging = [i for i, s in enumerate(candidates) if not precheck([s], chunk_text, facts)[1]]
@@ -362,6 +379,7 @@ async def draft_letter(
             for i, (s, o) in enumerate(zip(candidates, results, strict=True))
         ],
         "judgements": [{"paragraph": i, "chunk_id": chunk_id, "supported": ok} for (i, chunk_id), ok in verdicts.items()],
+        "conditions_dropped": settled,
     }
     citations = [Citation.model_validate(clause_citation(by_short_id[s], context.document_id)) for s in cited_order]
     missing = NOT_DRAFTED if drafted.value.abstain else None
