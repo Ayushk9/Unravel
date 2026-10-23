@@ -27,8 +27,11 @@ def main() -> None:
     print("-" * 150)
     for rule in deadlines.rules:
         trigger = "admission date" if rule.trigger.admission else f"latest '{rule.trigger.event}' event"
+        if rule.trigger.otherwise is not None:  # D-49: the fallback when that event has not happened
+            after = rule.trigger.otherwise.after
+            trigger += f", else {after.value} {after.unit} after '{rule.trigger.otherwise.event}'"
         offset = f"{rule.offset.value} {rule.offset.unit}" if rule.offset.value else f"policy's {rule.offset.policy_field}"
-        print(f"{rule.id:<24} {offset + ' from ' + trigger:<60} {str(rule.verified).lower():<9} {_source(**rule.source.model_dump())}")
+        print(f"{rule.id:<24} {offset + ' from ' + trigger:<86} {str(rule.verified).lower():<9} {_source(**rule.source.model_dump())}")
     print(
         f"\n{'urgency thresholds':<24} critical <= {deadlines.urgency.critical_within_days} days, "
         f"soon <= {deadlines.urgency.soon_within_days} days   (a product choice, not a regulation)"
