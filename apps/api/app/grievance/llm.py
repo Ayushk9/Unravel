@@ -17,14 +17,14 @@ Drafts are never cached (D-42).
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
 from app.qa.llm import Answered, CallOptions, ClausePrompt, GeminiQaLlm, Verdicts
 
 # Bump when a prompt, schema or call option below changes. Stored with every draft.
-GRIEVANCE_PROMPT_VERSION = "grievance-v4"
+GRIEVANCE_PROMPT_VERSION = "grievance-v5"
 
 # Why these limits (diagnosed 2026-10-20; DECISIONS.md, Phase 7 Stage B):
 # - The draft is composition from at most 6 given clauses under strict citation
@@ -48,11 +48,21 @@ class GeneratedParagraph(BaseModel):
     chunk_ids: list[str] = Field(min_length=1, max_length=4)
 
 
+# The eligibility checks a condition can restate, or "none" (a requirement the rules do not check).
+RestatedCheck = Literal[
+    "none", "initial_waiting_period", "ped_waiting_period", "disease_specific_waiting_period",
+    "permanent_exclusions", "room_rent_sub_limit", "claim_intimation", "sum_insured_adequacy",
+]
+
+
 class GeneratedCondition(BaseModel):
     """A condition written in a cited clause that the insurer could rely on. Shown before sending, never in the letter (D-48)."""
 
     text: str = Field(min_length=1, max_length=400)
     chunk_ids: list[str] = Field(min_length=1, max_length=2)
+    # Which eligibility check's own requirement this condition restates, if any. A condition restating
+    # a check the rules already found SATISFIED is dropped by code (run_draft.drop_settled_conditions).
+    restates_check: RestatedCheck = "none"
 
 
 class GeneratedDraft(BaseModel):
@@ -101,6 +111,11 @@ If the supporting checks and clauses give no honest ground for the letter, set "
 "conditions": list (at most {max_conditions}) conditions written in the clauses you were given that the insurer could rely on
 against this claim, each in one plain sentence that says only what the clause says, citing its clause id. These are shown
 to the policyholder privately before sending, never put in the letter. Return an empty list if there are none.
+For each condition set "restates_check" to the id of the check whose OWN requirement it restates, if it is exactly that
+requirement (for example the length of the initial waiting period -> "initial_waiting_period"); otherwise "none".
+A further requirement that no check evaluates (for example that a disease had to be declared at application) is "none".
+Check ids: initial_waiting_period, ped_waiting_period, disease_specific_waiting_period, permanent_exclusions,
+room_rent_sub_limit, claim_intimation, sum_insured_adequacy.
 """
 
 JUDGE_PROMPT = """You check paragraphs of a policyholder's grievance letter against the policy's own text.
