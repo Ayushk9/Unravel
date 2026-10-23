@@ -1118,7 +1118,7 @@ Ayush checked these against the official text. Source for 1 and 2: [Insurance Om
   - **Why a tag and not the cited clause:** both kinds cite the same PED clause, so the clause alone cannot tell them apart. The tag is model output and could be wrong; a wrong tag on a real requirement would hide it. That risk is accepted as smaller than showing settled noise.
 - **`scripts/regenerate_demo_drafts.py`** (not run): drafts Lakshmi's and Rajan's letters as real `generate_grievance_draft` jobs through the runner's own job function, prints each screen link and every Gemini attempt by model. Job rows last 24 h after finishing, so it must run within 24 h of the panel. A test checks the counter sees retries and the fallback.
 
-### Proposed, awaiting approval: D-49, Ombudsman timing from the grievance to the insurer
+### D-49, Ombudsman timing from the grievance to the insurer (approved 2026-10-23 and built; see below)
 
 1. **Claim states** (amends D-31):
    - New: `grievance_sent` (a written representation to the insurer) and `insurer_replied` (rejected, or replied unsatisfactorily).
@@ -1128,4 +1128,43 @@ Ayush checked these against the official text. Source for 1 and 2: [Insurance Om
 2. **Deadlines** (amends D-33): `ombudsman_filing` counts from the latest `insurer_replied`, else from `grievance_sent` plus one month. The rule-file format gains a "trigger, else trigger plus offset" form. `escalation_eligibility` becomes "you may approach the Ombudsman from": `grievance_sent` plus one month, shown only while no reply is recorded. Both become `verified: true` once built.
 3. **Ombudsman rung:** offered only in `insurer_replied`, or in `grievance_sent` once a month has passed. After a denial alone it is not offered, with a reason saying to write to the insurer's grievance cell first. Rule 17(4) as an information line.
 4. **Contract:** two `ClaimState` values (clients already have an escape hatch), changed deadline ids and labels, and `POST /claims/{id}/events` accepting the new states. The web timeline and state badges get labels.
+
+## The database moves to a local PostgreSQL; D-49 built (2026-10-23)
+
+### Database (Ayush's decision; plan approved with postgresql@17)
+
+- **Why @17, not @16:** Homebrew's `pgvector` (0.8.7) is built only for postgresql@17 and @18; @16 would have meant compiling pgvector from source. Ayush chose @17.
+- **What runs where:**
+  - `brew install postgresql@17 pgvector`, then `brew services start postgresql@17`, the only service started;
+  - databases `unravel` (dev) and `unravel_test` (tests), each with `CREATE EXTENSION vector`;
+  - local trust authentication, so no password.
+- **`.env`:** `DATABASE_URL` and `TEST_DATABASE_URL` point at them. The old Supabase URL is kept there commented out, so its history can be recovered with `pg_dump` if it becomes reachable. Supabase stays for login keys (JWKS) only; dev mode keeps the stub token.
+- **Results:**
+  - `alembic upgrade head` (0001 to 0011) and the round trip are clean, and `seed.py` has seeded the household.
+  - The full API suite now runs in about 12 s, down from about 24 min over the Supabase pooler.
+  - The two waiting commits were pushed after a green run (571 passed). A third pinned test (`test_claims_api`, the Ombudsman source) was found and fixed on the way: it was among the 191 the outage hid.
+- **Lost:** the Supabase history (question log, grievance-draft records, and any corrections made in the app) unless it is dumped later.
+- **Lakshmi's band:** she will be `at_risk` until Ayush re-confirms the Star PED period on the policy screen.
+- **Left behind:** the old files in `apps/api/storage/`, which are now orphans.
+
+### D-49 as built
+
+- `app/claims/state_machine.py` (10 states, 18 edges) and migration `0011_grievance_states`, which replaces the two CHECK constraints. Its downgrade refuses while any event uses a new state, because the log is append-only.
+- `deadline_rules.yaml`:
+  - `ombudsman_opens` (replaces `escalation_eligibility`) and the corrected `ombudsman_filing`, both `verified: true`;
+  - the `otherwise` trigger in the loader and `app/claims/deadlines.py`;
+  - basis sentences such as "Counted from 20 Sep 2026, 1 month after 20 Aug 2026, because no reply from the insurer is recorded."
+- `grievance_rungs.yaml`:
+  - the `opens_with` / `closes_with` gates, enforced only for verified rules;
+  - a per-state `not_offered` sentence;
+  - the grievance cell and Ombudsman rungs verified;
+  - Rule 17(4) (`ombudsman_rules.yaml` `award_time`) shown once a complaint is filed.
+- Web:
+  - labels "Grievance sent to insurer", "Insurer replied to grievance" and "Escalated beyond the insurer";
+  - the event options, claim list groups and mock graph;
+  - the grievance link in the new states.
+- **Decided conservatively:**
+  - `ombudsman_opens` counts from the date the grievance was **sent**, because the date the insurer received it is unknown to the app; the deadline's text says so. If the receipt date is ever recorded, count from it instead.
+  - **A verified window that has ended stops the Ombudsman rung being offered** ("ended on …"). The Rules give one year; offering a closed route would mislead.
+- **Not yet done:** none of the demo claims is in a grievance state. Lakshmi and Rajan are `denied`, so their Ombudsman rung now says to write to the grievance cell first. Showing the Ombudsman rung live needs a `grievance_sent` event (dated over a month ago) or an `insurer_replied` event, which only Ayush should log.
 
