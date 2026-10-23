@@ -149,19 +149,46 @@ def compute_deadlines(
             _apply_intimation_rule(rule, facts, intimation_deadline_hours, today, rules.urgency, deadlines, omitted)
             continue
 
-        trigger_event = _latest_event(facts, rule.trigger.event or "")
-        if trigger_event is None:
+        start = _counting_start(rule, facts)
+        if start is None:
             # The claim is in a state the rule covers but never passed
-            # through the rule's trigger. Nothing to count from.
+            # through the rule's trigger (or its fallback). Nothing to count from.
             continue
+        counted_from, how = start
         # The loader guarantees a fixed offset when the trigger is an event.
         assert rule.offset.value is not None and rule.offset.unit is not None
-        counted_from = india_date(trigger_event.occurred_at)
         due = add_offset(counted_from, rule.offset.value, rule.offset.unit)
-        basis = f"{rule.description} Counted from {_format(counted_from)}."
+        basis = f"{rule.description} Counted from {_format(counted_from)}{how}."
         deadlines.append(_deadline(rule, facts, due, basis, today, rules.urgency))
 
     return deadlines, omitted
+
+
+# How an event is named in a basis sentence ("because no reply from the insurer is recorded").
+_EVENT_NAMES = {"insurer_replied": "reply from the insurer", "grievance_sent": "written grievance"}
+
+
+def _counting_start(rule: DeadlineRule, facts: ClaimFacts) -> tuple[date, str] | None:
+    """The date an event rule counts from, and how it was reached (for the basis sentence).
+
+    The latest event entering the trigger state; otherwise (D-49) the fallback's
+    offset past the latest event entering the fallback state; otherwise None.
+    """
+    event = _latest_event(facts, rule.trigger.event or "")
+    if event is not None:
+        return india_date(event.occurred_at), ""
+    fallback = rule.trigger.otherwise
+    if fallback is None:
+        return None
+    earlier = _latest_event(facts, fallback.event)
+    if earlier is None:
+        return None
+    assert fallback.after.value is not None and fallback.after.unit is not None
+    sent = india_date(earlier.occurred_at)
+    unit = fallback.after.unit if fallback.after.value != 1 else fallback.after.unit.rstrip("s")
+    missing = _EVENT_NAMES.get(rule.trigger.event or "", (rule.trigger.event or "").replace("_", " "))
+    how = f", {fallback.after.value} {unit} after {_format(sent)}, because no {missing} is recorded"
+    return add_offset(sent, fallback.after.value, fallback.after.unit), how
 
 
 def _apply_intimation_rule(
