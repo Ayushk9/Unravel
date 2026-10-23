@@ -222,7 +222,7 @@ describe("ClaimGrievance: the five states", () => {
 
     expect(await screen.findByText("The clauses we found don't give honest grounds to argue from.")).toBeTruthy();
     expect(screen.getByText(/Write here why you disagree with the decision/)).toBeTruthy();
-    expect(screen.queryByText(/paragraphs confirmed/)).toBeNull();
+    expect(screen.getByText("No model-written paragraphs to check")).toBeTruthy();
     expect(screen.queryByText(/couldn't draft the letter/i)).toBeNull();
   });
 
@@ -245,7 +245,7 @@ describe("ClaimGrievance: the five states", () => {
     expect(await screen.findByText(AGREES)).toBeTruthy();
     expect(screen.getAllByText("Standard request (template text)")).toHaveLength(3);
     expect(screen.queryByText(UNVERIFIED_FLAG)).toBeNull();
-    expect(screen.queryByText(/paragraphs? confirmed/)).toBeNull();
+    expect(screen.getByText("No model-written paragraphs to check")).toBeTruthy();
     for (const text of TEMPLATES) expect(screen.getByText(text)).toBeTruthy();
   });
 
@@ -271,8 +271,8 @@ describe("ClaimGrievance: the five states", () => {
     expect(await screen.findByText(opening)).toBeTruthy();
     expect(screen.getByText("From our eligibility checks (fixed text)")).toBeTruthy();
     expect(screen.queryByText(UNVERIFIED_FLAG)).toBeNull();
-    // A rules paragraph is not counted as model text, so with no model paragraph there is no count.
-    expect(screen.queryByText(/paragraphs? confirmed/)).toBeNull();
+    // A rules paragraph is not counted as model text: with no model paragraph, nothing to check, never "0".
+    expect(screen.getByText("No model-written paragraphs to check")).toBeTruthy();
     const panel = screen.getByRole("region", { name: "Before you send" });
     expect(within(panel).getByText(/renewed without a break/)).toBeTruthy();
     expect(within(panel).getAllByText(/couldn't confirm this against your policy's text/)).toHaveLength(1);

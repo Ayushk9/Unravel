@@ -81,11 +81,13 @@ describe("confirmationSummary", () => {
       { text: "Please tell me the clause.", citation_ids: [], verified: false, source: "template" as const },
     ]);
     expect(summary?.text).toBe("1 of 1 paragraph confirmed against your policy.");
-    expect(confirmationSummary([{ text: "t", citation_ids: [], verified: false, source: "template" as const }])).toBeNull();
+    expect(confirmationSummary([{ text: "t", citation_ids: [], verified: false, source: "template" as const }]).text).toBe(
+      "No model-written paragraphs to check",
+    );
   });
 
-  it("says nothing when there are no paragraphs (the abstention card speaks instead)", () => {
-    expect(confirmationSummary([])).toBeNull();
+  it("says there is nothing to check when there are no model paragraphs, never 'precision 0'", () => {
+    expect(confirmationSummary([])).toEqual({ confirmed: 0, total: 0, text: "No model-written paragraphs to check" });
   });
 
   it("has no warning when every paragraph is confirmed", () => {
