@@ -53,11 +53,18 @@ def test_a_document_type_outside_the_contract_is_caught_on_load() -> None:
         RequiredDocuments.model_validate(data)
 
 
-def test_no_source_url_has_been_invented() -> None:
-    """Until a person fills one in, every url is null rather than a plausible-looking guess."""
-    urls = [rule["source"]["url"] for rule in _deadline_data()["rules"]]
+# Source URLs Ayush has checked and given (DECISIONS.md, 2026-10-23). Any other URL is a guess.
+URLS_GIVEN_BY_AYUSH = {
+    "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf",
+}
 
-    assert urls == [None] * len(urls)
+
+def test_no_source_url_has_been_invented() -> None:
+    """Every url is null until a person fills it in, and only a url Ayush gave may appear."""
+    urls = {rule["id"]: rule["source"]["url"] for rule in _deadline_data()["rules"]}
+
+    assert {rule_id for rule_id, url in urls.items() if url is not None} <= {"ombudsman_filing"}
+    assert {url for url in urls.values() if url is not None} <= URLS_GIVEN_BY_AYUSH
 
 
 def _squash(sql: str) -> str:
