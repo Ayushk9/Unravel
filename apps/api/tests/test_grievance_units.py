@@ -79,7 +79,8 @@ def test_rule_files_load_and_every_rung_rule_is_unverified_with_no_invented_url(
     assert list(rungs.rungs) == ["insurer_grievance_cell", "irdai_bima_bharosa", "insurance_ombudsman"]
     assert all(not r.verified and r.source.url is None for r in rungs.rungs.values())
     ceiling = load_ombudsman_rules().award_ceiling
-    assert ceiling.value is None and ceiling.verified is False and ceiling.source.url is None
+    # Verified by Ayush on 2026-10-23: Rs 50 lakh, Rule 17(3) proviso (ii), with the official URL.
+    assert (ceiling.value, ceiling.verified) == (500_000_000, True) and ceiling.source.url.startswith("https://www.cioins.co.in/")
 
 
 def test_no_number_in_any_sentence_of_the_rung_file() -> None:
@@ -330,9 +331,10 @@ def test_drafts_are_not_cached(clauses: list[Clause]) -> None:
     assert llm.calls == ["draft", "judge", "draft", "judge"] and first.id != second.id
 
 
-# --- the Ombudsman award ceiling never appears ---
+# --- the Ombudsman award ceiling: only in the Ombudsman rung, only as a limit, never in a letter ---
 
-CEILING_WORDS = re.compile(r"lakh|ceiling|award limit|maximum (award|amount)|30,00,000|50,00,000", re.IGNORECASE)
+CEILING_WORDS = re.compile(r"lakh|ceiling|award limit|maximum (award|amount)|30,00,000|50,00,000|award at most", re.IGNORECASE)
+LIMIT = load_ombudsman_rules().award_ceiling.shown_sentence()
 
 
 @pytest.mark.parametrize("rung", ["insurer_grievance_cell", "irdai_bima_bharosa", "insurance_ombudsman"])
@@ -341,18 +343,31 @@ def test_the_award_ceiling_never_appears_in_a_letter(clauses: list[Clause], rung
     assert not CEILING_WORDS.search(result.model_dump_json())
 
 
-def test_the_award_ceiling_never_appears_in_rung_reasons_or_precedent_notes() -> None:
+def test_the_award_ceiling_appears_only_in_the_offered_ombudsman_rung_worded_as_a_limit() -> None:
+    assert LIMIT == ("By the Insurance Ombudsman Rules, the Ombudsman can award at most ₹50,00,000, including relevant expenses. "
+                     "This is a limit on what can be awarded, not an amount you can expect.")
     for path in ([("intimated", "2026-04-02")], DENIED, [*DENIED, ("escalated", "2026-05-10")]):
-        for option in rung_options(context_for(path), load_grievance_rungs()):
-            assert not CEILING_WORDS.search(option.model_dump_json())
+        for option in rung_options(context_for(path), load_grievance_rungs(), LIMIT):
+            shown = bool(CEILING_WORDS.search(option.reason))
+            assert shown == (option.rung == "insurance_ombudsman" and option.available), (path[-1], option.rung)
     for note in (NOTE_NONE_LOADED, NOTE_NO_MATCH, NOTE_MATCHED):
         assert not CEILING_WORDS.search(note)
 
 
-def test_only_the_loader_reads_the_award_ceiling() -> None:
+def test_an_unverified_ceiling_is_never_shown() -> None:
+    from app.rules.loader import AwardCeiling
+
+    unverified = AwardCeiling.model_validate({"value": 500_000_000, "verified": False, "rung_sentence": "at most {ceiling}",
+                                             "source": {"document": "d", "section": None, "url": None}})
+    assert unverified.shown_sentence() is None
+    for option in rung_options(context_for(DENIED), load_grievance_rungs(), unverified.shown_sentence()):
+        assert not CEILING_WORDS.search(option.reason)
+
+
+def test_only_the_loader_and_the_rung_route_read_the_award_ceiling() -> None:
     app_dir = Path(__file__).resolve().parents[1] / "app"
-    readers = [p.relative_to(app_dir).as_posix() for p in app_dir.rglob("*.py") if "award_ceiling" in p.read_text(encoding="utf-8")]
-    assert readers == ["rules/loader.py"]
+    readers = sorted(p.relative_to(app_dir).as_posix() for p in app_dir.rglob("*.py") if "award_ceiling" in p.read_text(encoding="utf-8"))
+    assert readers == ["api/v1/grievances.py", "rules/loader.py"]
 
 
 # --- the addressee never carries contact details ---
@@ -538,3 +553,44 @@ def test_a_rules_opening_with_a_model_abstention_is_not_reported_as_having_no_ar
     assert [p.source for p in result.paragraphs] == ["rules"]
     assert result.missing_context is None, "the letter argues from the rules"
     assert [n.source for n in result.before_you_send] == ["rules", "rules", "model"] and result.before_you_send[-1].verified
+
+
+# --- settled conditions are dropped (2026-10-23) ---
+
+
+def initial_satisfied() -> CheckResult:
+    return CheckResult(id="initial_waiting_period", title="Initial waiting period", critical=True, status="satisfied", confidence="medium",
+                       values={}, explanation="", governing_clause=None, missing_facts=())
+
+
+def test_a_condition_restating_a_satisfied_check_is_dropped_and_a_further_requirement_is_kept(clauses: list[Clause]) -> None:
+    from app.grievance.run_draft import drop_settled_conditions
+
+    thirty_days = GeneratedCondition(text="Treatment within 30 days of the first policy is excluded.", chunk_ids=["c1"],
+                                     restates_check="initial_waiting_period")
+    declared = GeneratedCondition(text="Cover is subject to the disease having been declared at application.", chunk_ids=["c1"],
+                                  restates_check="none")
+    ped_failed_restated = GeneratedCondition(text="Pre-existing diseases are covered after 36 months.", chunk_ids=["c1"],
+                                             restates_check="ped_waiting_period")
+    checks = (ped_satisfied().model_copy(update={"status": "failed"}), initial_satisfied())
+
+    kept, dropped = drop_settled_conditions([thirty_days, declared, ped_failed_restated], checks)
+
+    assert [c.text for c in kept] == [declared.text, ped_failed_restated.text], "only a SATISFIED check's restatement is settled"
+    assert dropped == [{"text": thirty_days.text, "restates_check": "initial_waiting_period", "reason": "check already satisfied"}]
+
+
+def test_settled_conditions_never_reach_before_you_send_or_the_judge(clauses: list[Clause]) -> None:
+    answer = GeneratedDraft(abstain=True, conditions=[
+        GeneratedCondition(text="Treatment within 30 days of the first policy is excluded.", chunk_ids=["c1"], restates_check="initial_waiting_period"),
+        GeneratedCondition(text="Cover is subject to the disease having been declared at application.", chunk_ids=["c1"]),
+    ])
+    judged: list[str] = []
+    judge = lambda pairs: [judged.append(text) or True for text, _ in pairs]  # noqa: E731
+    context = draft_context(checks=(ped_satisfied(), initial_satisfied()), denial_ground="ped_waiting_period", band="likely_eligible")
+
+    result = draft(FakeGrievanceLlm(draft=lambda *_: answer, judge=judge), context)
+
+    model_notes = [n.text for n in result.before_you_send if n.source == "model"]
+    assert model_notes == ["Cover is subject to the disease having been declared at application."]
+    assert judged == ["Cover is subject to the disease having been declared at application."], "a dropped condition costs no judging"
