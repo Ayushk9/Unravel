@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.exc import DBAPIError
 
-from app.claims.deadlines import INDIA, india_date
+from app.claims.deadlines import INDIA, add_months, india_date
 from app.claims.events import append_event
 from app.claims.state_machine import STATES, TRANSITIONS, allowed_targets
 from app.core.errors import ApiError
@@ -162,11 +162,14 @@ def test_invalid_create_requests_are_422_and_create_nothing(world: SimpleNamespa
 
 @pytest.fixture(scope="module")
 def walked(world: SimpleNamespace) -> SimpleNamespace:
-    """Three claims driven along paths that together use every allowed transition."""
+    """Claims driven along paths that together use every allowed transition (D-31 as amended by D-49)."""
     paths = [
         ("documents_submitted", "under_review", "queried", "documents_submitted", "queried", "under_review", "approved", "resolved"),
-        ("queried", "under_review", "denied", "escalated", "resolved"),
+        ("queried", "under_review", "denied", "grievance_sent", "insurer_replied", "escalated", "resolved"),
         ("documents_submitted", "under_review", "denied", "resolved"),
+        ("documents_submitted", "under_review", "denied", "grievance_sent", "escalated", "resolved"),
+        ("documents_submitted", "under_review", "denied", "grievance_sent", "resolved"),
+        ("documents_submitted", "under_review", "denied", "grievance_sent", "insurer_replied", "resolved"),
     ]
     claims = []
     for path in paths:
@@ -183,7 +186,7 @@ def test_every_allowed_transition_succeeds(walked: SimpleNamespace) -> None:
 
     every_allowed_edge = {(state, target) for state, targets in TRANSITIONS.items() for target in targets}
     assert traversed == every_allowed_edge
-    assert len(every_allowed_edge) == 13
+    assert len(every_allowed_edge) == 18  # D-31 amended by D-49
 
 
 def test_the_log_is_ordered_and_each_event_starts_where_the_last_ended(walked: SimpleNamespace, world: SimpleNamespace) -> None:
@@ -224,7 +227,7 @@ def test_every_illegal_transition_from_a_new_claim_is_409_with_the_allowed_targe
     for to_state in illegal:
         _assert_illegal(_move(world, claim["id"], to_state), "intimated")
 
-    assert len(illegal) == 8
+    assert len(illegal) == 10
     after = world.api.get(f"/claims/{claim['id']}").json()
     assert after["current_state"] == "intimated" and len(after["events"]) == 1, "a refused transition writes nothing"
 
@@ -398,31 +401,35 @@ def test_an_event_slipped_in_between_read_and_write_is_caught_by_the_unique_cons
 # --- deadlines through the API ---
 
 
-def test_logging_a_denial_makes_the_ombudsman_deadline_appear_unverified_with_its_source(world: SimpleNamespace) -> None:
+def test_the_ombudsman_clock_starts_with_the_written_grievance_not_the_denial(world: SimpleNamespace) -> None:
+    """Rule 14(3) of the Insurance Ombudsman Rules, verified by Ayush on 2026-10-23 (D-49)."""
     claim = _create(world)
     _walk(world, claim["id"], "documents_submitted", "under_review")
-    denied_on = india_date(datetime.now(timezone.utc)) - timedelta(days=10)
-    occurred_at = datetime.combine(denied_on, datetime.min.time(), tzinfo=INDIA).replace(hour=11).isoformat()
+    today = india_date(datetime.now(timezone.utc))
 
-    response = _move(world, claim["id"], "denied", occurred_at=occurred_at, note="Denied as pre-existing")
+    def on(day: date) -> str:
+        return datetime.combine(day, datetime.min.time(), tzinfo=INDIA).replace(hour=11).isoformat()
 
-    claim = response.json()
-    (deadline,) = [d for d in claim["deadlines"] if d["label"] == "Ombudsman filing window"]
-    assert set(deadline) == {"id", "label", "due_at", "days_remaining", "basis", "urgency", "source", "verified"}
-    assert deadline["verified"] is False
-    # The source Ayush checked on 2026-10-23 (DECISIONS.md); the rule itself stays unverified until D-49 corrects its trigger.
-    assert deadline["source"] == {
+    denied = _move(world, claim["id"], "denied", occurred_at=on(today - timedelta(days=20)), note="Denied as pre-existing").json()
+    assert not [d for d in denied["deadlines"] if "Ombudsman" in d["label"]], "a denial alone starts no Ombudsman clock"
+    assert not [d for d in denied["deadlines"] if d["label"] == "Insurer should decide by"], "a decision exists"
+
+    sent_on = today - timedelta(days=10)
+    sent = _move(world, claim["id"], "grievance_sent", occurred_at=on(sent_on), note="Wrote to the grievance cell").json()
+
+    by_label = {d["label"]: d for d in sent["deadlines"]}
+    opens, filing = by_label["You may approach the Ombudsman from"], by_label["Ombudsman filing window"]
+    assert set(filing) == {"id", "label", "due_at", "days_remaining", "basis", "urgency", "source", "verified"}
+    assert opens["verified"] is True and filing["verified"] is True
+    assert filing["source"] == {
         "document": "Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)",
-        "section": deadline["source"]["section"],
+        "section": "Rule 14(3)(a) and (b)",
         "url": "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf",
     }
-    expected_due = date(denied_on.year + 1, denied_on.month, min(denied_on.day, 28) if denied_on.month == 2 else denied_on.day)
-    assert datetime.fromisoformat(deadline["due_at"]).astimezone(INDIA).date() == expected_due
-    assert deadline["days_remaining"] == (expected_due - india_date(datetime.now(timezone.utc))).days
-    assert deadline["urgency"] == "normal"
-    assert deadline["due_at"].endswith("+05:30"), "an instant with an explicit offset (D-12)"
-    # The insurer's decision window no longer applies once a decision exists.
-    assert not [d for d in claim["deadlines"] if d["label"] == "Insurer should decide by"]
+    one_month = add_months(sent_on, 1)
+    assert datetime.fromisoformat(opens["due_at"]).astimezone(INDIA).date() == one_month
+    assert datetime.fromisoformat(filing["due_at"]).astimezone(INDIA).date() == add_months(one_month, 12)
+    assert filing["due_at"].endswith("+05:30"), "an instant with an explicit offset (D-12)"
 
 
 def test_deadlines_are_recomputed_on_every_read_not_stored(world: SimpleNamespace) -> None:
