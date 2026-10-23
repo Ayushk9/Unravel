@@ -73,7 +73,7 @@ export function ClaimWorkspace() {
         <div className="flex flex-col items-end gap-2">
           <ClaimStateBadge state={claim.data.current_state} />
           {/* Feature 7: a letter is worth drafting once the insurer has said no, or the user has already complained. */}
-          {(claim.data.current_state === "denied" || claim.data.current_state === "escalated") && (
+          {["denied", "grievance_sent", "insurer_replied", "escalated"].includes(claim.data.current_state) && (
             <Link
               to={`/claims/${claim.data.id}/grievance`}
               className="inline-flex items-center gap-1.5 rounded border border-rule bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-secondary"
@@ -174,6 +174,8 @@ const CLAIM_STATE_OPTIONS: ClaimState[] = [
   "queried",
   "approved",
   "denied",
+  "grievance_sent",
+  "insurer_replied",
   "escalated",
   "resolved",
 ];
