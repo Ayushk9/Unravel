@@ -90,74 +90,88 @@ def test_urgency_bands(days_remaining: int, urgency: str) -> None:
     assert urgency_for(days_remaining, RULES.urgency) == urgency
 
 
-# --- the Ombudsman filing window (1 year from denial) ---
+# --- the Ombudsman: Rule 14(3) of the Insurance Ombudsman Rules, 2017 (D-49) ---
+# A complaint lies only after a written grievance to the insurer; it may be made from one
+# month after the grievance with no reply, and within one year of the reply (or, with no
+# reply, of the month after the grievance).
 
 DENIED = (("intimated", ist(2026, 7, 6)), ("documents_submitted", ist(2026, 7, 12)), ("under_review", ist(2026, 7, 14)), ("denied", ist(2026, 8, 10, 11)))
+SENT = (*DENIED, ("grievance_sent", ist(2026, 8, 20)))
+REPLIED = (*SENT, ("insurer_replied", ist(2026, 9, 10)))
+URL = "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"
 
 
-def test_ombudsman_window_appears_on_denial_with_source_and_unverified_flag() -> None:
-    # Admitted the day before intimation, so the 24-hour intimation window was met.
-    deadlines, omitted = compute_deadlines(facts(*DENIED, admitted_on=date(2026, 7, 5)), 24.0, RULES, today=date(2026, 8, 20))
+def ids(deadlines: list) -> set[str]:
+    return {d.id.removesuffix(f"-{CLAIM_ID}").removeprefix("deadline-") for d in deadlines}
 
-    deadline = only(deadlines, "ombudsman_filing")
-    assert deadline.label == "Ombudsman filing window"
-    assert deadline.due_at == datetime(2027, 8, 10, 23, 59, 59, tzinfo=INDIA)
-    assert deadline.days_remaining == 355
-    assert deadline.urgency == "normal"
-    assert deadline.verified is False
-    assert deadline.source.document.startswith("Insurance Ombudsman Rules, 2017")
-    assert "Counted from 10 Aug 2026" in deadline.basis
+
+def test_a_denial_alone_starts_no_ombudsman_clock() -> None:
+    deadlines, _ = compute_deadlines(facts(*DENIED, admitted_on=date(2026, 7, 5)), 24.0, RULES, today=date(2026, 8, 20))
+    assert ids(deadlines) == set(), "a complaint lies only after a written grievance to the insurer"
+
+
+def test_with_a_grievance_and_no_reply_the_ombudsman_opens_after_a_month_and_the_window_runs_a_year_from_then() -> None:
+    deadlines, omitted = compute_deadlines(facts(*SENT, admitted_on=date(2026, 7, 5)), 24.0, RULES, today=date(2026, 8, 25))
+
+    opens = only(deadlines, "ombudsman_opens")
+    assert opens.label == "You may approach the Ombudsman from"
+    assert opens.due_at == datetime(2026, 9, 20, 23, 59, 59, tzinfo=INDIA)
+    assert opens.verified is True and opens.source.section == "Rule 14(3)(a)" and opens.source.url == URL
+    filing = only(deadlines, "ombudsman_filing")
+    assert filing.due_at.date() == date(2027, 9, 20), "one year from one month after 20 Aug 2026"
+    assert filing.verified is True and filing.source.url == URL
+    assert "Counted from 20 Sep 2026, 1 month after 20 Aug 2026, because no reply from the insurer is recorded." in filing.basis
     assert omitted == []
 
 
-def test_a_deadline_falling_exactly_on_today_is_open_and_critical() -> None:
-    deadlines, _ = compute_deadlines(facts(*DENIED), 24.0, RULES, today=date(2027, 8, 10))
+def test_after_the_insurers_reply_the_window_runs_a_year_from_the_reply() -> None:
+    deadlines, _ = compute_deadlines(facts(*REPLIED), 24.0, RULES, today=date(2026, 9, 20))
 
-    deadline = only(deadlines, "ombudsman_filing")
-    assert (deadline.days_remaining, deadline.urgency) == (0, "critical")
+    assert "ombudsman_opens" not in ids(deadlines), "only while no reply is recorded"
+    filing = only(deadlines, "ombudsman_filing")
+    assert filing.due_at.date() == date(2027, 9, 10) and filing.days_remaining == 355 and filing.urgency == "normal"
+    assert "Counted from 10 Sep 2026." in filing.basis
+
+
+def test_a_deadline_falling_exactly_on_today_is_open_and_critical() -> None:
+    deadlines, _ = compute_deadlines(facts(*REPLIED), 24.0, RULES, today=date(2027, 9, 10))
+    assert (only(deadlines, "ombudsman_filing").days_remaining, only(deadlines, "ombudsman_filing").urgency) == (0, "critical")
 
 
 def test_the_day_after_the_due_date_it_is_expired_but_still_listed() -> None:
-    deadlines, _ = compute_deadlines(facts(*DENIED), 24.0, RULES, today=date(2027, 8, 11))
-
-    deadline = only(deadlines, "ombudsman_filing")
-    assert (deadline.days_remaining, deadline.urgency) == (-1, "expired")
+    deadlines, _ = compute_deadlines(facts(*REPLIED), 24.0, RULES, today=date(2027, 9, 11))
+    assert (only(deadlines, "ombudsman_filing").days_remaining, only(deadlines, "ombudsman_filing").urgency) == (-1, "expired")
 
 
-def test_a_denial_on_29_february_is_due_on_28_february_next_year() -> None:
-    events = (("intimated", ist(2028, 2, 1)), ("documents_submitted", ist(2028, 2, 2)), ("under_review", ist(2028, 2, 3)), ("denied", ist(2028, 2, 29)))
-
+def test_a_reply_on_29_february_is_due_on_28_february_next_year() -> None:
+    events = (*DENIED, ("grievance_sent", ist(2028, 2, 1)), ("insurer_replied", ist(2028, 2, 29)))
     deadlines, _ = compute_deadlines(facts(*events), 24.0, RULES, today=date(2028, 3, 1))
-
     assert only(deadlines, "ombudsman_filing").due_at.date() == date(2029, 2, 28)
 
 
-def test_denial_logged_late_at_night_utc_counts_from_the_india_date() -> None:
-    denial = datetime(2026, 8, 9, 20, 0, tzinfo=timezone.utc)  # already 10 Aug in India
-    events = (*DENIED[:3], ("denied", denial))
+def test_a_grievance_sent_on_31_january_opens_on_the_last_day_of_february() -> None:
+    events = (*DENIED, ("grievance_sent", ist(2027, 1, 31)))
+    deadlines, _ = compute_deadlines(facts(*events), 24.0, RULES, today=date(2027, 2, 1))
+    assert only(deadlines, "ombudsman_opens").due_at.date() == date(2027, 2, 28)
+    assert only(deadlines, "ombudsman_filing").due_at.date() == date(2028, 2, 28)
 
-    deadlines, _ = compute_deadlines(facts(*events), 24.0, RULES, today=date(2026, 8, 20))
 
-    assert only(deadlines, "ombudsman_filing").due_at.date() == date(2027, 8, 10)
+def test_a_reply_logged_late_at_night_utc_counts_from_the_india_date() -> None:
+    reply = datetime(2026, 9, 9, 20, 0, tzinfo=timezone.utc)  # already 10 Sep in India
+    events = (*SENT, ("insurer_replied", reply))
+    deadlines, _ = compute_deadlines(facts(*events), 24.0, RULES, today=date(2026, 9, 20))
+    assert only(deadlines, "ombudsman_filing").due_at.date() == date(2027, 9, 10)
 
 
 def test_same_inputs_give_the_same_answer_whatever_the_real_date() -> None:
-    first = compute_deadlines(facts(*DENIED), 24.0, RULES, today=date(2026, 9, 1))
-    second = compute_deadlines(facts(*DENIED), 24.0, RULES, today=date(2026, 9, 1))
-
+    first = compute_deadlines(facts(*SENT), 24.0, RULES, today=date(2026, 9, 1))
+    second = compute_deadlines(facts(*SENT), 24.0, RULES, today=date(2026, 9, 1))
     assert first == second
 
 
-def test_the_ombudsman_window_counts_from_the_latest_denial() -> None:
-    """Deadlines follow occurred_at of the most recent event entering the state."""
-    events = (*DENIED, ("escalated", ist(2026, 9, 1)))
-
-    deadlines, _ = compute_deadlines(facts(*events), 24.0, RULES, today=date(2026, 9, 2))
-
-    assert only(deadlines, "ombudsman_filing").due_at.date() == date(2027, 8, 10)
-    escalation = only(deadlines, "escalation_eligibility")
-    assert escalation.due_at.date() == date(2026, 10, 1)  # 1 Sep + 30 days
-    assert escalation.verified is False
+def test_once_the_complaint_is_filed_no_ombudsman_clock_is_shown() -> None:
+    deadlines, _ = compute_deadlines(facts(*REPLIED, ("escalated", ist(2026, 10, 1))), 24.0, RULES, today=date(2026, 10, 2))
+    assert ids(deadlines) == set()
 
 
 # --- the insurer's decision window (30 days from documents submitted) ---
@@ -259,22 +273,34 @@ def test_missing_admission_date_omits_the_deadline_with_a_reason() -> None:
 # --- the rule file itself ---
 
 
-def test_every_rule_is_marked_unverified_and_names_a_source() -> None:
-    assert len(RULES.rules) == 4
+def test_only_the_rules_ayush_checked_are_verified_and_every_rule_names_a_source() -> None:
+    assert [rule.id for rule in RULES.rules] == ["claim_intimation", "insurer_decision", "ombudsman_opens", "ombudsman_filing"]
+    verified = {rule.id for rule in RULES.rules if rule.verified}
+    assert verified == {"ombudsman_opens", "ombudsman_filing"}, "Rule 14(3), checked by Ayush on 2026-10-23"
     for rule in RULES.rules:
-        assert rule.verified is False, f"{rule.id} must stay unverified until a person has checked it"
         assert rule.source.document
         assert rule.description.endswith(".")
 
 
-def test_a_verified_rule_is_reported_as_verified() -> None:
+def test_an_unverified_rule_is_reported_as_unverified() -> None:
     """Flipping the flag in the file is all it takes; no code change."""
     data = RULES.model_dump()
     for rule in data["rules"]:
         if rule["id"] == "ombudsman_filing":
-            rule["verified"] = True
+            rule["verified"] = False
     rules = DeadlineRules.model_validate(data)
 
-    deadlines, _ = compute_deadlines(facts(*DENIED), 24.0, rules, today=date(2026, 8, 20))
+    deadlines, _ = compute_deadlines(facts(*SENT), 24.0, rules, today=date(2026, 8, 25))
 
-    assert only(deadlines, "ombudsman_filing").verified is True
+    assert only(deadlines, "ombudsman_filing").verified is False
+
+
+def test_a_fallback_trigger_needs_an_event_trigger_and_a_fixed_length() -> None:
+    from pydantic import ValidationError
+
+    from app.rules.loader import Trigger
+
+    with pytest.raises(ValidationError):
+        Trigger.model_validate({"admission": True, "otherwise": {"event": "grievance_sent", "after": {"value": 1, "unit": "months"}}})
+    with pytest.raises(ValidationError):
+        Trigger.model_validate({"event": "insurer_replied", "otherwise": {"event": "grievance_sent", "after": {"policy_field": "intimation_deadline_hours"}}})
