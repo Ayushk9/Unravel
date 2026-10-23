@@ -460,6 +460,8 @@ const ALL_CLAIM_STATES = [
   "queried",
   "approved",
   "denied",
+  "grievance_sent",
+  "insurer_replied",
   "escalated",
   "resolved",
   "unknown",

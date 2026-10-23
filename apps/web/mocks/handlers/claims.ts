@@ -105,7 +105,8 @@ db.registerJobResolver("generate_grievance_draft", (params): GrievanceDraft => {
 
 /** D-43 mock: every rung is offered after a denial or an escalation, marked unverified like the real rule file. */
 function mockRungs(claim: Claim): GrievanceRungOption[] {
-  const open = claim.current_state === "denied" || claim.current_state === "escalated";
+  // Simplified D-49: the real server also gates the Ombudsman on one month after the grievance.
+  const open = ["denied", "grievance_sent", "insurer_replied"].includes(claim.current_state);
   const note = "This is based on a rule that has not yet been checked against its source.";
   const rows: [GrievanceRungOption["rung"], string, string][] = [
     ["insurer_grievance_cell", "Insurer's grievance cell", "Writing to the insurer's grievance cell is usually the first step."],

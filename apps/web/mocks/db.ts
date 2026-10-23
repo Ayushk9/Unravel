@@ -273,7 +273,10 @@ export const CLAIM_TRANSITIONS: Record<ClaimState, ClaimState[]> = {
   under_review: ["queried", "approved", "denied"],
   queried: ["documents_submitted", "under_review"],
   approved: ["resolved"],
-  denied: ["escalated", "resolved"],
+  // D-49: a complaint beyond the insurer comes only after a written grievance to it.
+  denied: ["grievance_sent", "resolved"],
+  grievance_sent: ["insurer_replied", "escalated", "resolved"],
+  insurer_replied: ["escalated", "resolved"],
   escalated: ["resolved"],
   resolved: [],
   unknown: [],
