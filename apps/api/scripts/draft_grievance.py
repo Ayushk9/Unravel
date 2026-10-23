@@ -79,7 +79,10 @@ async def main(claim_id: UUID, rung: str) -> None:
     # Why each model text passed or failed (paragraphs and conditions, in that order).
     for check in (outcome.record["verification"] or {}).get("paragraphs", []):
         print(f"     check: {check.get('kind', 'paragraph')} verified={check['verified']} reason={check['reason']} {check['detail'] or ''}")
-    print(f"  citation_precision={draft.citation_precision:.2f} assessment_note={draft.assessment_note} missing_context={draft.missing_context}")
+    written = [p for p in draft.paragraphs if p.source == "model"]
+    # With no model paragraph, precision 0 is not a score (DECISIONS.md, 2026-10-23).
+    precision = f"citation_precision={draft.citation_precision:.2f}" if written else "No model-written paragraphs to check"
+    print(f"  {precision} assessment_note={draft.assessment_note} missing_context={draft.missing_context}")
     print("\nBEFORE YOU SEND (screen only, not in the letter)")
     for note in draft.before_you_send:
         cited = [f"p{by_id[i].provenance.page}" for i in note.citation_ids if i in by_id and by_id[i].provenance]
