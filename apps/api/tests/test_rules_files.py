@@ -63,7 +63,7 @@ def test_no_source_url_has_been_invented() -> None:
     """Every url is null until a person fills it in, and only a url Ayush gave may appear."""
     urls = {rule["id"]: rule["source"]["url"] for rule in _deadline_data()["rules"]}
 
-    assert {rule_id for rule_id, url in urls.items() if url is not None} <= {"ombudsman_filing"}
+    assert {rule_id for rule_id, url in urls.items() if url is not None} <= {"ombudsman_opens", "ombudsman_filing"}
     assert {url for url in urls.values() if url is not None} <= URLS_GIVEN_BY_AYUSH
 
 
