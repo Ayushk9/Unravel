@@ -169,3 +169,26 @@ def test_grievance_calls_cap_thinking_and_output_while_qa_keeps_the_defaults() -
     assert (judge.thinking_config.thinking_level, judge.max_output_tokens) == ("LOW", 1024)
     assert (qa.thinking_config, qa.max_output_tokens) == (None, None), "Q&A is unchanged"
     assert all(config.temperature == 0.0 for config in client.configs)
+
+
+def test_the_demo_regeneration_script_counts_every_attempt_by_model() -> None:
+    """scripts/regenerate_demo_drafts.py reports Gemini use; its counter must see retries and the fallback."""
+    import importlib.util
+    from pathlib import Path
+
+    from app.grievance.llm import GeneratedDraft
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "regenerate_demo_drafts.py"
+    spec = importlib.util.spec_from_file_location("regenerate_demo_drafts", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    async def no_wait(_: float) -> None:
+        return None
+
+    client = FakeClient([503, 503, 503, 503, GeneratedDraft(abstain=True)])
+    llm = module.CountingGrievanceLlm(api_key="x", model="main-model", fallback_model="backup-model", timeout_seconds=5, sleep=no_wait, client=client)
+
+    run(llm.draft("a letter", "facts", []))
+
+    assert dict(llm.attempts) == {"main-model": 4, "backup-model": 1}
