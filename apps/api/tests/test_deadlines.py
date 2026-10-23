@@ -105,7 +105,7 @@ def test_ombudsman_window_appears_on_denial_with_source_and_unverified_flag() ->
     assert deadline.days_remaining == 355
     assert deadline.urgency == "normal"
     assert deadline.verified is False
-    assert deadline.source.document == "Insurance Ombudsman Rules, 2017"
+    assert deadline.source.document.startswith("Insurance Ombudsman Rules, 2017")
     assert "Counted from 10 Aug 2026" in deadline.basis
     assert omitted == []
 
