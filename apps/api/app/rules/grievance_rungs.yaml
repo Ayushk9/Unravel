@@ -1,11 +1,11 @@
 # Which rung of the escalation ladder a grievance letter can be drafted for,
 # given the claim's current state (Feature 7, GET /claims/{id}/grievance-rungs).
 #
-# NOTHING IN THIS FILE HAS BEEN VERIFIED AGAINST A PRIMARY SOURCE.
-# Every rung is `verified: false`. The sentences describe a best
-# understanding of the usual order of escalation, written down so they can be
-# checked. The API sends `verified` with every rung and the app marks
-# unverified ones "based on an unverified rule".
+# The insurer's grievance cell and the Ombudsman rungs follow Rule 14(3) of the
+# Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023), verified by Ayush
+# on 2026-10-23 (D-49). Bima Bharosa is still `verified: false`. The API sends
+# `verified` with every rung and the app marks unverified ones "based on an
+# unverified rule". A rung is verified only if it AND every deadline it uses are.
 #
 # No number lives here. A date in a reason comes from a deadline rule in
 # deadline_rules.yaml (named by `deadline`), which carries its own source and
@@ -20,17 +20,22 @@
 #   when          the claim states in which the rung is offered, in order. Each has
 #                   state      a claim state (app/claims/state_machine.py)
 #                   reason     one sentence: why this rung fits now
-#                   deadline   optional: the id of a deadline rule active in that state
+#                   deadline   optional: the id of a deadline rule active in that state ({due})
 #                   reason_after_due  optional: used instead of `reason` once that deadline has passed
+#                   opens_with optional (D-49): the rung is offered only from this deadline's date ({opens});
+#                              reason_before_open is shown until then. Enforced only if the rule is verified.
+#                   closes_with optional (D-49): the rung is no longer offered after this deadline's date
+#                              ({closes}); reason_after_close is shown then. Enforced only if the rule is verified.
 #                 Placeholders: {event_date} (the date the claim entered `state`),
 #                 {due} (the deadline's due date). A placeholder whose value is
 #                 unknown makes the loader reject the file, never a guess.
-#   unavailable   the sentence shown when the claim is in none of the `when` states
+#   not_offered   optional: per claim state, the sentence shown when the rung is not offered in that state
+#   unavailable   the sentence shown when the claim is in none of the `when` states (and not in not_offered)
 #   source        where the escalation step is described; url stays null until checked
 #   verified      has a person checked this rung's sentences against the source?
 #   version       raise when the meaning changes
 
-version: 1
+version: 2
 
 rungs:
   insurer_grievance_cell:
@@ -39,9 +44,11 @@ rungs:
     addressee: "Grievance Redressal Officer, {insurer}"
     when:
       - state: denied
-        reason: Your claim was denied on {event_date}. Writing to the insurer's grievance cell is usually the first step in asking for the decision to be reviewed.
-      - state: escalated
-        reason: You have already written to the insurer. You can send a follow-up letter to its grievance cell.
+        reason: Your claim was denied on {event_date}. A written grievance to the insurer comes first; the Insurance Ombudsman takes a complaint only after one.
+      - state: grievance_sent
+        reason: You sent your grievance on {event_date}. You can send the insurer's grievance cell a follow-up letter.
+      - state: insurer_replied
+        reason: The insurer replied to your grievance on {event_date}. You can write to its grievance cell again if the reply leaves questions unanswered.
       - state: documents_submitted
         deadline: insurer_decision
         reason: The insurer is expected to decide by {due}. You can write to its grievance cell about a delay, though it may be early to.
@@ -52,11 +59,11 @@ rungs:
         reason_after_due: The date by which the insurer was expected to decide ({due}) has passed. You can write to its grievance cell about the delay.
     unavailable: Available once the claim has been submitted to the insurer, or denied.
     source:
-      document: IRDAI (Protection of Policyholders' Interests) Regulations, 2017
-      section: Grievance redressal procedure (regulation number to be confirmed)
-      url: null   # TODO(Ayush): add the official URL
-    verified: false
-    version: 1
+      document: Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)
+      section: Rule 14(3)(a) (a written representation to the insurer comes before a complaint)
+      url: "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"
+    verified: true   # Ayush, 2026-10-23. The delay reasons use insurer_decision, which is not verified.
+    version: 2
 
   irdai_bima_bharosa:
     label: IRDAI Bima Bharosa
@@ -64,8 +71,10 @@ rungs:
     when:
       - state: denied
         reason: Your claim was denied on {event_date}. Bima Bharosa usually expects you to have complained to the insurer's grievance cell first.
-      - state: escalated
-        reason: You have written to the insurer's grievance cell. If it has not resolved your complaint, you can register it on Bima Bharosa.
+      - state: grievance_sent
+        reason: You sent your grievance to the insurer on {event_date}. If it is not resolved, you can register it on Bima Bharosa.
+      - state: insurer_replied
+        reason: The insurer replied to your grievance on {event_date}. If you are not satisfied, you can register a grievance on Bima Bharosa.
     unavailable: Available once the claim has been denied, or you have written to the insurer's grievance cell.
     source:
       document: IRDAI Bima Bharosa (Integrated Grievance Management System)
@@ -79,18 +88,23 @@ rungs:
     # No office address: which office covers a complainant, and its address, are unverified data.
     addressee: The Insurance Ombudsman (the office covering your area)
     when:
-      - state: denied
-        deadline: ombudsman_filing
-        reason: Your claim was denied on {event_date}. A complaint to the Insurance Ombudsman can be made until {due}. The Ombudsman usually expects you to have written to the insurer first.
-        reason_after_due: The window for a complaint to the Ombudsman ended on {due}, so it may have passed. Check the rule before relying on it.
-      - state: escalated
-        deadline: escalation_eligibility
-        reason: You may approach the Ombudsman from {due} if the insurer has not replied to your grievance by then.
-        reason_after_due: The insurer has had until {due} to reply to your grievance, so you may now approach the Ombudsman.
-    unavailable: Available once the claim has been denied, or you have written to the insurer's grievance cell.
+      - state: grievance_sent
+        opens_with: ombudsman_opens
+        closes_with: ombudsman_filing
+        reason_before_open: You sent your grievance on {event_date}. If the insurer has not replied by {opens}, you may complain to the Insurance Ombudsman from that date.
+        reason: You sent your grievance on {event_date} and no reply is recorded. You may complain to the Insurance Ombudsman until {closes}.
+        reason_after_close: The window to complain to the Insurance Ombudsman ended on {closes}.
+      - state: insurer_replied
+        closes_with: ombudsman_filing
+        reason: The insurer replied to your grievance on {event_date}. If its reply does not settle the matter, you may complain to the Insurance Ombudsman until {closes}.
+        reason_after_close: The window to complain to the Insurance Ombudsman ended on {closes}, one year after the insurer's reply.
+    not_offered:
+      denied: The Insurance Ombudsman takes a complaint only after you have written to the insurer and it has rejected your grievance, replied unsatisfactorily, or not replied within one month. Write to the insurer's grievance cell first.
+      escalated: You have already taken the complaint beyond the insurer.
+    unavailable: Available once you have written to the insurer's grievance cell and it has replied, or has not replied within one month.
     source:
-      document: Insurance Ombudsman Rules, 2017
-      section: Rule 14 (manner of making a complaint); sub-rule to be confirmed
-      url: null   # TODO(Ayush): add the official URL
-    verified: false
-    version: 1
+      document: Insurance Ombudsman Rules, 2017 (as amended till 09.11.2023)
+      section: Rule 14(3)(a) and (b)
+      url: "https://www.cioins.co.in/notification/Insurance%20Ombudsman%20Rules,%202017(%20as%20amended%20till%2009.11.2023).pdf"
+    verified: true   # Ayush, 2026-10-23
+    version: 2
