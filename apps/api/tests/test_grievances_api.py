@@ -111,15 +111,24 @@ def _draft(world: SimpleNamespace, rung: str = "insurer_grievance_cell", key: st
 # --- rungs ---
 
 
-def test_rungs_after_a_denial_are_all_offered_and_marked_unverified(world: SimpleNamespace) -> None:
+def test_rungs_after_a_denial_put_the_grievance_cell_first_and_hold_back_the_ombudsman(world: SimpleNamespace) -> None:
     response = world.api.get(f"/claims/{world.claim_id}/grievance-rungs")
 
     assert response.status_code == 200
     options = response.json()
     assert [o["rung"] for o in options] == ["insurer_grievance_cell", "irdai_bima_bharosa", "insurance_ombudsman"]
     assert all(set(o) == {"rung", "label", "available", "reason", "rule_ids", "verified"} for o in options)
-    assert all(o["available"] and o["verified"] is False for o in options)
-    assert "12 Apr 2026" in options[2]["reason"], "denied on the third event's date"
+    cell, bima, ombudsman = options
+    assert cell["available"] and cell["verified"] is True and "12 Apr 2026" in cell["reason"], "denied on the third event's date"
+    assert bima["available"] and bima["verified"] is False
+    assert not ombudsman["available"] and "Write to the insurer's grievance cell first" in ombudsman["reason"], "Rule 14(3)(a), D-49"
+
+
+def test_a_draft_for_the_ombudsman_right_after_a_denial_is_409_rung_not_available(world: SimpleNamespace) -> None:
+    response = _request(world, rung="insurance_ombudsman")
+    error = response.json()["error"]
+    assert response.status_code == 409 and error["code"] == "rung_not_available"
+    assert {f["message"] for f in error["field_errors"]} == {"insurer_grievance_cell", "irdai_bima_bharosa"}
 
 
 # --- the job ---
