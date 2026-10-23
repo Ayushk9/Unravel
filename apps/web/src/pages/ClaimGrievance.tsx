@@ -228,8 +228,10 @@ function DraftView({ draft, onOpenCitation }: { draft: GrievanceDraft; onOpenCit
 
   return (
     <section className="flex flex-col gap-4" aria-label="Draft letter">
-      {/* A count, never a percentage or gauge (product rule 2). */}
-      {summary && (
+      {/* A count, never a percentage or gauge (product rule 2). With no model paragraph there is nothing to count. */}
+      {summary.total === 0 ? (
+        <p className="rounded border border-neutral-border bg-neutral-bg px-4 py-2 text-sm text-muted-foreground">{summary.text}</p>
+      ) : (
         <div
           className={`flex items-center gap-2 rounded border px-4 py-2 text-sm ${
             summary.confirmed === summary.total ? "border-positive-border bg-positive-bg" : "border-caution-border bg-caution-bg"
