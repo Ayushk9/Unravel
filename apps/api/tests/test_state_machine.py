@@ -1,4 +1,4 @@
-"""The transition table, checked for every one of the 64 (from, to) pairs."""
+"""The transition table, checked for every one of the 100 (from, to) pairs."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 
 from app.claims.state_machine import INITIAL_STATE, STATES, TRANSITIONS, allowed_targets, is_allowed
 
-# Written out independently of the code under test, from API_DECISIONS D-31.
+# Written out independently of the code under test, from API_DECISIONS D-31 as amended by D-49.
 EXPECTED = {
     ("intimated", "documents_submitted"),
     ("intimated", "queried"),
@@ -18,16 +18,35 @@ EXPECTED = {
     ("queried", "documents_submitted"),
     ("queried", "under_review"),
     ("approved", "resolved"),
-    ("denied", "escalated"),
+    ("denied", "grievance_sent"),
     ("denied", "resolved"),
+    ("grievance_sent", "insurer_replied"),
+    ("grievance_sent", "escalated"),
+    ("grievance_sent", "resolved"),
+    ("insurer_replied", "escalated"),
+    ("insurer_replied", "resolved"),
     ("escalated", "resolved"),
 }
 ALL_PAIRS = [(from_state, to_state) for from_state in STATES for to_state in STATES]
 
 
-def test_there_are_eight_states_and_sixty_four_pairs() -> None:
-    assert len(STATES) == 8 and len(ALL_PAIRS) == 64
+def test_there_are_ten_states_and_a_hundred_pairs() -> None:
+    assert len(STATES) == 10 and len(ALL_PAIRS) == 100
     assert INITIAL_STATE == "intimated"
+
+
+def test_a_denial_cannot_go_straight_to_the_ombudsman() -> None:
+    """Rule 14(3)(a): a complaint lies only after a written grievance to the insurer (D-49)."""
+    assert not is_allowed("denied", "escalated")
+    assert is_allowed("denied", "grievance_sent") and is_allowed("grievance_sent", "escalated")
+
+
+def test_the_wire_enum_lists_exactly_the_machines_states_in_order() -> None:
+    from typing import get_args
+
+    from app.schemas.claims import ClaimState
+
+    assert get_args(ClaimState) == STATES
 
 
 @pytest.mark.parametrize(("from_state", "to_state"), ALL_PAIRS)
