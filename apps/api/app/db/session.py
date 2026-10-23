@@ -11,9 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 def create_engine(database_url: str) -> AsyncEngine:
     """Create the engine. No connection is opened until the first query.
 
-    pool_pre_ping checks a pooled connection is still alive before using it,
-    because Supabase closes idle connections. The pool is kept small: the
-    free-tier session pooler allows only a limited number of connections.
+    The database is a local PostgreSQL (since 2026-10-23; it was Supabase).
+    pool_pre_ping checks a pooled connection is still alive before using it, so a
+    database restart never hands a dead connection to a request. It costs little
+    on localhost. The pool is small: one local API process needs no more.
     """
     return create_async_engine(database_url, pool_pre_ping=True, pool_size=5, max_overflow=0)
 
