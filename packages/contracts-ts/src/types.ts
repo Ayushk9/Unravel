@@ -245,7 +245,9 @@ export type ClaimState =
   | "queried"
   | "approved"
   | "denied"
-  | "escalated"
+  | "grievance_sent" // D-49: a written grievance sent to the insurer
+  | "insurer_replied" // D-49: the insurer rejected it or replied unsatisfactorily
+  | "escalated" // D-49: a complaint filed beyond the insurer (Ombudsman)
   | "resolved"
   | "unknown";
 

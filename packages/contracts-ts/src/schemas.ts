@@ -227,6 +227,8 @@ export const claimStateSchema = z
     "queried",
     "approved",
     "denied",
+    "grievance_sent",
+    "insurer_replied",
     "escalated",
     "resolved",
     "unknown",
