@@ -177,9 +177,25 @@ class GrievanceRungs(_Rule):
 
 
 class AwardCeiling(_Rule):
-    value: int | None = Field(default=None, gt=0)
+    value: int | None = Field(default=None, gt=0)  # integer paise
     verified: bool
+    # The only wording in which the figure may be shown ({ceiling} = the value, formatted).
+    rung_sentence: str | None = None
     source: RuleSource
+
+    @model_validator(mode="after")
+    def _verified_means_complete(self) -> AwardCeiling:
+        if self.verified and (self.value is None or self.source.url is None or not self.rung_sentence or "{ceiling}" not in self.rung_sentence):
+            raise ValueError("a verified award ceiling needs a value, a source url and a rung_sentence containing {ceiling}")
+        return self
+
+    def shown_sentence(self) -> str | None:
+        """The sentence for the Ombudsman rung, or None while the figure is unverified."""
+        if not (self.verified and self.value is not None and self.rung_sentence):
+            return None
+        from engines.rules.money import format_rupees
+
+        return self.rung_sentence.format(ceiling=format_rupees(self.value))
 
 
 class OmbudsmanRules(_Rule):
