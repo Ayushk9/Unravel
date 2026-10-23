@@ -75,10 +75,17 @@ def _option(name: str, rungs: GrievanceRungs, condition: RungCondition | None, c
     )
 
 
-def rung_options(context: RungContext, rungs: GrievanceRungs) -> list[GrievanceRungOption]:
-    """One option per rung, in ladder order."""
+def rung_options(context: RungContext, rungs: GrievanceRungs, ombudsman_limit: str | None = None) -> list[GrievanceRungOption]:
+    """One option per rung, in ladder order.
+
+    `ombudsman_limit` is the verified award-ceiling sentence (AwardCeiling.shown_sentence),
+    added to the Ombudsman rung's reason when that rung is offered; None shows nothing.
+    """
     options = []
     for name, rung in rungs.rungs.items():
         condition = next((c for c in rung.when if c.state == context.current_state), None)
-        options.append(_option(name, rungs, condition, context))
+        option = _option(name, rungs, condition, context)
+        if name == "insurance_ombudsman" and option.available and ombudsman_limit:
+            option = option.model_copy(update={"reason": f"{option.reason} {ombudsman_limit}"})
+        options.append(option)
     return options
