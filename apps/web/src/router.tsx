@@ -1,4 +1,4 @@
-import { createBrowserRouter, type RouteObject } from "react-router-dom";
+import { createBrowserRouter, Navigate, type RouteObject } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { RouteErrorFallback } from "@/components/RouteErrorFallback";
 import { PlaceholderScreen } from "@/pages/PlaceholderScreen";
@@ -16,9 +16,10 @@ import { Alerts } from "@/pages/Alerts";
 import { Settings } from "@/pages/Settings";
 
 /**
- * Route table from docs/claude-code-frontend-prompt.md §6. Screens not built
- * yet render PlaceholderScreen rather than nothing, so nav + responsive
- * layout have somewhere real to exercise before the features land.
+ * Route table from docs/claude-code-frontend-prompt.md §6. There is no sign-in
+ * screen: every request carries the demo household's stub token (client.ts),
+ * so "/" and "/sign-in" go straight to the dashboard. Insurer benchmarking is
+ * not part of this version: its route says so in one line and is not in the nav.
  */
 /**
  * Every leaf route gets the same errorElement (see RouteErrorFallback) — a
@@ -26,8 +27,9 @@ import { Settings } from "@/pages/Settings";
  * AppShell's nav frame, not React Router's raw stack-trace screen. Applied
  * via .map() so a new route can't accidentally be added without one.
  */
-const appShellChildren: RouteObject[] = [
-  { index: true, element: <PlaceholderScreen title="Sign in" phase="a later phase" /> },
+export const appShellChildren: RouteObject[] = [
+  { index: true, element: <Navigate to="/dashboard" replace /> },
+  { path: "sign-in", element: <Navigate to="/dashboard" replace /> },
   { path: "dashboard", element: <Dashboard /> },
   { path: "policies", element: <PolicyList /> },
   { path: "policies/upload", element: <PolicyUpload /> },
@@ -38,9 +40,9 @@ const appShellChildren: RouteObject[] = [
   { path: "claims/:id", element: <ClaimWorkspace /> },
   { path: "claims/:id/grievance", element: <ClaimGrievance /> },
   { path: "alerts", element: <Alerts /> },
-  { path: "insurers", element: <PlaceholderScreen title="Insurer benchmarking" phase="Phase 6" /> },
+  { path: "insurers", element: <PlaceholderScreen title="Insurer benchmarking" message="Planned: insurer benchmarking (not part of this version)." /> },
   { path: "settings", element: <Settings /> },
-  { path: "*", element: <PlaceholderScreen title="Page not found" phase="—" /> },
+  { path: "*", element: <PlaceholderScreen title="Page not found" message="There is no page at this address." /> },
 ].map((route) => ({ ...route, errorElement: <RouteErrorFallback /> }));
 
 export const router = createBrowserRouter([

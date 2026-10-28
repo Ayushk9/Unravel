@@ -7,7 +7,6 @@ const NAV_ITEMS = [
   { to: "/policies", label: "Policies" },
   { to: "/claims", label: "Claims" },
   { to: "/alerts", label: "Alerts" },
-  { to: "/insurers", label: "Insurers" },
   { to: "/settings", label: "Settings" },
 ];
 
@@ -25,9 +24,13 @@ export function AppShell() {
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-rule bg-card">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <NavLink to="/" className="font-serif text-lg font-semibold text-foreground">
-            Unravel
-          </NavLink>
+          <div className="flex flex-col">
+            <NavLink to="/dashboard" className="font-serif text-lg font-semibold text-foreground">
+              Unravel
+            </NavLink>
+            {/* Every request carries the demo household's stub token (client.ts), so this is always whose data it is. */}
+            <span className="text-xs text-muted-foreground">Demo household: Rao household</span>
+          </div>
 
           <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
             {NAV_ITEMS.map((item) => (

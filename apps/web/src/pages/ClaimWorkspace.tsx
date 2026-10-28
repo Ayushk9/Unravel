@@ -414,13 +414,13 @@ function DocumentsTab({ claimId }: { claimId: string }) {
   );
 }
 
-// --- Bill tab (stub — Feature 3 lands in Phase 5) ---
+// --- Bill tab (Feature 3, bill validation, is not part of this version) ---
 
 function BillTab() {
   return (
     <EmptyState
-      title="Bill validation lands in Phase 5"
-      description="Extracted line items, flagged charges, and the amount at risk will show up here once bill validation is built."
+      title="Planned: bill validation (not part of this version)"
+      description="Checking each line of a hospital bill against your policy's limits is not included in this version."
     />
   );
 }

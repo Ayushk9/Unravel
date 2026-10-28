@@ -1168,3 +1168,18 @@ Ayush checked these against the official text. Source for 1 and 2: [Insurance Om
   - **A verified window that has ended stops the Ombudsman rung being offered** ("ended on …"). The Rules give one year; offering a closed route would mislead.
 - **Not yet done:** none of the demo claims is in a grievance state. Lakshmi and Rajan are `denied`, so their Ombudsman rung now says to write to the grievance cell first. Showing the Ombudsman rung live needs a `grievance_sent` event (dated over a month ago) or an `insurer_replied` event, which only Ayush should log.
 
+
+## No placeholder screens in the demo (2026-10-28)
+
+### Approved `apps/web` edit
+
+Approved by Ayush on 2026-10-28 ("Panel-facing placeholder screens must not appear in the demo"). What changed:
+
+- **`/` and `/sign-in` redirect to `/dashboard`, in every mode, not only dev.** Ambiguous: the request said "in dev mode". Chosen: always, because there is no sign-in screen in any mode, and `client.ts` sends the demo household's stub token on every request, so the app can only ever show that household. If real sign-in is built, `/sign-in` becomes that screen and `/` redirects only when signed in.
+- **The header says "Demo household: Rao household"**, as fixed text, for the same reason: it is always the demo household. The logo links to `/dashboard`.
+- **Insurer benchmarking: the nav link is removed.** `/insurers` stays as a route, for someone typing the address, and says "Planned: insurer benchmarking (not part of this version)." There is no benchmarks endpoint in the API.
+- **Bill validation** (no endpoint in the API either): the claim workspace's Bill tab and the claim wizard's bill step say "Planned: bill validation (not part of this version)" instead of "lands in Phase 5" / "a later phase". The tab is kept: removing it would change the workspace layout two days before the freeze.
+- **`PlaceholderScreen`** takes a `message` instead of a `phase`, so it can no longer say "Not built yet — arrives in …". "Page not found" now says "There is no page at this address." instead of "arrives in —".
+- `src/components/layout/AppShell.test.tsx`: the two redirects, the header line, no Insurers link, and no "not built yet" / "later phase" / "Phase n" text on `/insurers` or an unknown address.
+
+Left as they are: code comments that mention phases, and `/kitchen-sink`, a developer route not in the nav.

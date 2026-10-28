@@ -488,7 +488,7 @@ function StepBillReview({ claimId, onNext, onBack }: { claimId: string; onNext: 
 
       {!hasParsedBill && (
         <p className="rounded border border-dashed border-rule px-4 py-6 text-center text-sm text-muted-foreground">
-          No itemised bill uploaded yet — this step fills in once one is. Full line-item review with source highlighting lands in a later phase.
+          Planned: bill validation (not part of this version). You can continue to the next step.
         </p>
       )}
 
@@ -524,7 +524,6 @@ function StepBillReview({ claimId, onNext, onBack }: { claimId: string; onNext: 
               ))}
             </ul>
           )}
-          <p className="text-xs text-muted-foreground">Full line-item review with source highlighting lands in a later phase.</p>
         </div>
       )}
 
