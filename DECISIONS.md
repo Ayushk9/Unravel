@@ -1183,3 +1183,10 @@ Approved by Ayush on 2026-10-28 ("Panel-facing placeholder screens must not appe
 - `src/components/layout/AppShell.test.tsx`: the two redirects, the header line, no Insurers link, and no "not built yet" / "later phase" / "Phase n" text on `/insurers` or an unknown address.
 
 Left as they are: code comments that mention phases, and `/kitchen-sink`, a developer route not in the nav.
+
+## D-49 demo state seeded; the dev database rebuilt (2026-10-30)
+
+- **Rebuilt:** the local dev database held only the household after the move to PostgreSQL. The Star wording was uploaded again through `POST /documents` (Engine A's cached extraction, no Gemini call; 135 clauses indexed), then `seed_demo_claims.py` was run. New ids: Star policy `01a18c9d-3079-73c3-b5c0-d458e011325a`, document `01a18c9c-cb05-7342-936b-7a1633e3b37b`. Claim ids are fixed and unchanged. The sample claim documents were not uploaded again (one Gemini call each).
+- **Lakshmi** gets `grievance_sent` (10 May 2026) and `insurer_replied` (5 Jun 2026, rejected), appended by `seed_grievance_steps` through `append_event`, the code behind `POST /claims/{id}/events`. Her Ombudsman rung is offered until 5 Jun 2027. **Rajan** stays `denied`; his Ombudsman rung says to write to the grievance cell first.
+- **Fixed:** on an empty database the script failed, because the synthetic fixture linked Rajan before he exists. The fixture now links only the four members on its schedule.
+- **Still to do by hand:** confirm waiting period #3 (36 months, p31) on the Star policy screen, or Lakshmi shows `at_risk`, not `likely_ineligible`.

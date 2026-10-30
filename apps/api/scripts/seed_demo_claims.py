@@ -29,6 +29,13 @@ updated; its event log, which is append-only, is unchanged).
                                                    This script deliberately does not confirm it.
     Ishaan, emergency   insufficient_information   whether the illness is pre-existing is not answered
 
+THE GRIEVANCE STEPS (D-49) are appended after the claims exist, through the
+same code as POST /claims/{id}/events, so the state machine judges them:
+
+    Lakshmi   denied 2 May 2026 -> grievance_sent 10 May 2026 -> insurer_replied (rejected) 5 Jun 2026.
+              The Ombudsman rung is offered; the filing window ends 5 Jun 2027.
+    Rajan     left at denied: his Ombudsman rung says to write to the grievance cell first.
+
 THE FIXTURE (below) is kept for tests of the clause viewer and Q&A scripts.
 
 Fixture: SYNTHETIC. Claude wrote this policy by hand: a fictional insurer ("Kavach"),
@@ -79,8 +86,10 @@ from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from app.claims.deadlines import india_date  # noqa: E402
+from app.claims.events import append_event  # noqa: E402
 from app.claims.facts import save_facts  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
+from app.core.errors import ApiError  # noqa: E402
 from app.core.ids import new_id  # noqa: E402
 from app.db.models import (  # noqa: E402
     Claim, ClaimEvent, Document, DocumentChunk, Household, Member, Policy, policy_member,
@@ -92,7 +101,7 @@ from app.db.models import SubLimit as SubLimitRow  # noqa: E402
 from app.db.models import WaitingPeriod as WaitingPeriodRow  # noqa: E402
 from app.db.session import create_engine, create_session_factory  # noqa: E402
 from app.qa.demo_policy import find_real_policy  # noqa: E402
-from app.schemas.claims import ClaimFacts  # noqa: E402
+from app.schemas.claims import ClaimEventRequest, ClaimFacts  # noqa: E402
 from app.schemas.policies import PolicyUpdate  # noqa: E402
 from app.services.policy_update import apply_policy_update  # noqa: E402
 from app.services.policy_writer import store_extraction  # noqa: E402
@@ -309,6 +318,16 @@ CLAIMS = (
     ),
 )
 
+# D-49 demo state. Appended after the claims exist (seed_grievance_steps), not written with them,
+# so a claim seeded before D-49 gets them too. Rajan has none: he stays at denied.
+LAKSHMI_CLAIM_ID = UUID("01920000-0000-7000-8000-0000000000f3")
+GRIEVANCE_STEPS = {
+    LAKSHMI_CLAIM_ID: (
+        ("grievance_sent", ist(date(2026, 5, 10)), "Written grievance sent to the insurer's grievance cell"),
+        ("insurer_replied", ist(date(2026, 6, 5)), "Insurer rejected the grievance"),
+    ),
+}
+
 # SAMPLE-0002: a demo copy of the Star policy (same wording document, a copy of its extracted terms)
 # held since 2021 without a break. It exists only so a wrongful PED denial can be shown today: the
 # Star policy's own cover started 1 Nov 2024, so its 36-month PED period has not ended yet.
@@ -350,8 +369,10 @@ async def seed_policy(session: AsyncSession, settings) -> UUID:
     policy.policy_type = "family_floater"
     policy.start_date = date(2024, 3, 14)
     policy.end_date = date(2027, 3, 13)
-    for member_id in MEMBER.values():
-        await session.execute(policy_member.insert().values(policy_id=policy_id, member_id=member_id))
+    # The four on the schedule. Rajan is not: he is created later, with his own policy (seed_renewed_policy).
+    for name, member_id in MEMBER.items():
+        if name != "Rajan":
+            await session.execute(policy_member.insert().values(policy_id=policy_id, member_id=member_id))
     return policy_id
 
 
@@ -464,6 +485,32 @@ async def seed_claims(session: AsyncSession, star: Policy) -> list[str]:
     return done
 
 
+async def seed_grievance_steps(session: AsyncSession) -> list[str]:
+    """Append each claim's grievance steps through append_event (the code behind POST /claims/{id}/events).
+
+    A step whose state is already in the claim's log is skipped, so running
+    the script again writes nothing. A step the state machine refuses is
+    reported and the claim's remaining steps are not tried.
+    """
+    done = []
+    household = await session.get(Household, HOUSEHOLD_ID)
+    for claim_id, steps in GRIEVANCE_STEPS.items():
+        claim = await session.get(Claim, claim_id)
+        logged = set(await session.scalars(select(ClaimEvent.to_state).where(ClaimEvent.claim_id == claim_id)))
+        for state, occurred_at, note in steps:
+            if state in logged:
+                done.append(f"{state}: already logged")
+                continue
+            body = ClaimEventRequest(to_state=state, occurred_at=occurred_at, note=note)
+            try:
+                await append_event(session, claim, household.auth_user_id, body, datetime.now(INDIA))
+            except ApiError as error:
+                done.append(f"{state}: not logged ({error.message})")
+                break
+            done.append(f"{state}: logged")
+    return done
+
+
 async def main() -> None:
     settings = get_settings()
     engine = create_engine(settings.database_url)
@@ -491,6 +538,7 @@ async def main() -> None:
         identity = await seed_star_identity(session, star)
         renewed = await seed_renewed_policy(session, star)
         claims = await seed_claims(session, star)
+        grievance = await seed_grievance_steps(session)
     await engine.dispose()
     print(f"Fixture policy {policy_id} ({POLICY_NUMBER}); clauses: {chunks} written" + (" (run scripts/index_chunks.py)" if chunks else ""))
     print(f"Household city tier: {tier}" + (" (set now)" if set_tier else " (already chosen; left alone)"))
@@ -498,6 +546,7 @@ async def main() -> None:
     print(f"SAMPLE-0002 (demo copy of the Star policy, cover since 1 Jun 2021) for Rajan's claim: {renewed}.")
     for line in claims:
         print(f"  {line}")
+    print("Lakshmi's grievance steps (D-49): " + "; ".join(grievance))
     print("Lakshmi's claim is at_risk until a person confirms waiting period #3 (36 months, p31) on the policy screen.")
 
 
