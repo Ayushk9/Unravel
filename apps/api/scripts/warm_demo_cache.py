@@ -3,6 +3,9 @@
 Run from apps/api (needs the database, the Q&A models and Gemini):
     ../../.venv/bin/python scripts/warm_demo_cache.py [policy_id]          ask and cache
     ../../.venv/bin/python scripts/warm_demo_cache.py --check [policy_id]  prove the cache answers
+    ../../.venv/bin/python scripts/warm_demo_cache.py --force "<question>" [policy_id]
+                                          ask that question again (only it); its cached answer is replaced
+                                          only if the new one may be cached
 
 The policy is the dev household's newest real policy (app/qa/demo_policy.py),
 never the synthetic test fixture. Answers go into the same cache the API
@@ -16,6 +19,14 @@ the one the primary model gives; an answer from the fallback model, or an
 abstention, is reported and left out (run the script again later). An entry
 already in the cache that breaks either rule is reported and removed, then the
 question is asked again.
+
+Each question gets up to QUESTION_TIMEOUT_SECONDS (300 s), and so does each
+Gemini call within it: Gemini is slow when overloaded, and a warm-up can wait.
+The live app keeps its own, shorter limit (QA_LLM_TIMEOUT_SECONDS).
+
+For every answer, the sentences verification removed are printed with the
+reason: the number check (a number not in the cited clause) or the judge (no
+cited clause supports it). They are never cached or shown to a user.
 
 --check runs each question through the real job code (run_answer_question)
 with a Gemini stand-in and a model-server stand-in that FAIL if called. A
@@ -47,6 +58,11 @@ from app.qa.demo_policy import find_real_policy  # noqa: E402
 from app.qa.llm import PROMPT_VERSION, GeminiQaLlm, LlmError  # noqa: E402
 from app.qa.run_question import answer_question, run_answer_question  # noqa: E402
 from engines.retrieval.language import normalise_question  # noqa: E402
+from engines.retrieval.verify import NUMBER_REASON, SUPPORT_REASON  # noqa: E402
+
+# The warm-up's own limits; the live app's come from settings and are not changed here.
+QUESTION_TIMEOUT_SECONDS = 300
+REASON_NAMES = {NUMBER_REASON: "number check", SUPPORT_REASON: "judge"}
 
 DEMO_QUESTIONS = [
     "What if I choose a ₹12,000/day room?",
@@ -62,15 +78,17 @@ class HeldCache:
 
     answer_question writes its answer (and a Hindi question's English rewrite)
     to the cache itself. The script needs to see who answered first, so the
-    writes are held here and only committed by keep().
+    writes are held here and only committed by keep(). With --force, the
+    question's own answer is hidden from reads (`hide`), so it is asked again.
     """
 
-    def __init__(self, cache: QaCache) -> None:
+    def __init__(self, cache: QaCache, hide: str | None = None) -> None:
         self._cache = cache
+        self._hide = hide
         self._held: list[tuple[str, object]] = []
 
     def get(self, key: str):
-        return self._cache.get(key)
+        return None if key == self._hide else self._cache.get(key)
 
     def set(self, key: str, value: object) -> None:
         self._held.append((key, value))
@@ -91,6 +109,18 @@ def not_cacheable(result: dict, models: dict[str, str], primary: str) -> str | N
     return None
 
 
+def print_removed(record: dict) -> None:
+    """The sentences verification removed from this answer, each with why."""
+    removed = (record.get("verification") or {}).get("removed") or []
+    if not removed:
+        print("      removed by verification: none")
+        return
+    print(f"      removed by verification: {len(removed)}")
+    for item in removed:
+        detail = f" (missing: {item['detail']})" if item.get("detail") else ""
+        print(f"        - [{REASON_NAMES.get(item['reason'], item['reason'])}{detail}] {item['text']}")
+
+
 class NoCallsAllowed:
     """Stands in for Gemini and the model server in --check: any call is a failure."""
 
@@ -101,7 +131,7 @@ class NoCallsAllowed:
         return refuse
 
 
-async def main(policy_arg: str | None, check: bool) -> None:
+async def main(policy_arg: str | None, check: bool, force: str | None) -> None:
     settings = get_settings()
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
@@ -141,13 +171,15 @@ async def main(policy_arg: str | None, check: bool) -> None:
                          load_timeout_seconds=settings.model_load_timeout_seconds, request_timeout_seconds=settings.model_request_timeout_seconds)
     server.start()
     llm = GeminiQaLlm(api_key=settings.gemini_api_key, model=settings.gemini_model, fallback_model=settings.gemini_fallback_model,
-                      timeout_seconds=settings.qa_llm_timeout_seconds)
+                      timeout_seconds=QUESTION_TIMEOUT_SECONDS)
     primary = settings.gemini_model
     abstained = []
     try:
-        for question in DEMO_QUESTIONS:
+        for question in [force] if force else DEMO_QUESTIONS:
             key = answer_key(str(document.id), document_hash, normalise_question(question), PROMPT_VERSION, primary)
-            existing = cache.get(key)
+            # --force ignores the cached answer and asks again. The old entry is replaced only
+            # by a new one that may be cached, so a timeout the night before never leaves a gap.
+            existing = None if force else cache.get(key)
             if isinstance(existing, dict) and "result" in existing:
                 reason = not_cacheable(existing["result"], existing.get("models") or {}, primary)
                 if reason is None:
@@ -155,15 +187,22 @@ async def main(policy_arg: str | None, check: bool) -> None:
                     continue
                 print(f"  REMOVED cached entry ({reason}): {question}")
                 cache.delete(key)
-            held = HeldCache(cache)
+            held = HeldCache(cache, hide=key if force else None)
+            kept_note = " The earlier cached answer, if any, is kept." if force else ""
             try:
-                outcome = await answer_question(
-                    session_factory=session_factory, models=server, llm=llm, cache=held, gemini_model=primary,
-                    household_id=policy.household_id, document_id=document.id, document_hash=document_hash, question=question,
+                outcome = await asyncio.wait_for(
+                    answer_question(
+                        session_factory=session_factory, models=server, llm=llm, cache=held, gemini_model=primary,
+                        household_id=policy.household_id, document_id=document.id, document_hash=document_hash, question=question,
+                    ),
+                    QUESTION_TIMEOUT_SECONDS,
                 )
+            except TimeoutError:
+                print(f"  NOT cached (no answer within {QUESTION_TIMEOUT_SECONDS}s): {question}.{kept_note}")
+                continue
             except (LlmError, ModelServerError) as error:
                 # Not cached; run the script again later to fill it in.
-                print(f"  NOT cached ({getattr(error, 'code', 'models')}): {question}")
+                print(f"  NOT cached ({getattr(error, 'code', 'models')}): {question}.{kept_note}")
                 continue
             result = outcome.result
             reason = not_cacheable(result, outcome.record["models"], primary)
@@ -171,12 +210,13 @@ async def main(policy_arg: str | None, check: bool) -> None:
                 held.keep()
                 print(f"  cached ({outcome.timings['total']:.1f}s, by {outcome.record['models']}): {question}")
             else:
-                print(f"  NOT cached ({reason}): {question}")
+                print(f"  NOT cached ({reason}): {question}.{kept_note}")
                 if result["abstained"]:
                     abstained.append(question)
             print(f"      abstained={result['abstained']} verification={result['verification']}")
             print(f"      {result['answer'] or result['missing_context']}")
             print(f"      citations: {[c['label'] for c in result['citations']]}")
+            print_removed(outcome.record)
         if abstained:
             print(f"\n{len(abstained)} demo question(s) ABSTAINED and were not cached:")
             for question in abstained:
@@ -187,5 +227,16 @@ async def main(policy_arg: str | None, check: bool) -> None:
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--check"]
-    asyncio.run(main(args[0] if args else None, "--check" in sys.argv))
+    args = sys.argv[1:]
+    force = None
+    if "--force" in args:
+        at = args.index("--force")
+        if at + 1 >= len(args):
+            raise SystemExit('--force needs the question, in quotes: --force "Is cosmetic surgery covered?"')
+        force = args[at + 1]
+        del args[at:at + 2]
+    check = "--check" in args
+    args = [a for a in args if a != "--check"]
+    if check and force:
+        raise SystemExit("--check and --force do not go together.")
+    asyncio.run(main(args[0] if args else None, check, force))
